@@ -1,0 +1,6 @@
+{
+  "name": "소나무재선충병 통합예찰·방제 지원 플랫폼",
+  "description": "AI 기반 500m 격자 위험도 예측, 드론 판독, 현장요원 실시간 위치 추적, 방제 우선순위 수립, 행정 및 AI 수종전환 추천, 그리고 백서 기반 AI 챗봇을 제공하는 소나무재선충병 전주기 관리 및 통합 관제 플랫폼입니다.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
