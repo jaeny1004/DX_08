@@ -1,9 +1,30 @@
+# Node / frontend
 node_modules/
+**/node_modules/
 build/
 dist/
 coverage/
-.DS_Store
 *.log
+.vercel/
+
+# Environment variables
+.env
+**/.env
 .env*
 !.env.example
-.vercel
+
+# Python / RAG runtime
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+rag-backend/.pytest_cache/
+
+# Local vector database
+rag-backend/data/chroma/
+
+# OS files
+.DS_Store
+__MACOSX/

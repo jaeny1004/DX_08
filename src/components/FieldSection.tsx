@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -61,11 +60,6 @@ type ParsedAiResult = {
   error?: string;
 };
 
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const ROBOFLOW_API_KEY = import.meta.env.VITE_ROBOFLOW_API_KEY as string | undefined;
 const ROBOFLOW_MODEL_ID =
@@ -359,7 +353,7 @@ export default function FieldSection({
 
     if (!selectedImageUrl) {
       alert(
-        "선택된 제보에 image_url이 없습니다. Supabase pine_records 또는 CrowdReport 데이터에 image_url을 연결해야 합니다."
+        "선택된 제보에 이미지 URL이 없습니다. CrowdReport 샘플 데이터에 photoUrl 또는 imageUrl을 연결해 주세요."
       );
       return;
     }
