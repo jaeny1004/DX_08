@@ -1,0 +1,12 @@
+{
+  "total_grid": 375490,
+  "top10_priority_grid": 37549,
+  "top5_priority_grid": 18774,
+  "top1_priority_grid": 3754,
+  "very_high_priority_grid": 3754,
+  "high_priority_grid": 7510,
+  "environment_caution_grid": 138504,
+  "access_score_mean": 52.33,
+  "access_score_std": 13.28,
+  "top10_capture_rate": 90.1
+}

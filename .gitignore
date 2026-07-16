@@ -28,3 +28,11 @@ rag-backend/data/chroma/
 # OS files
 .DS_Store
 __MACOSX/
+@"
+
+# GitHub 업로드 제외 대용량 파일
+/data/admin/BND_ADM_DONG_PG.shp
+/public/data/sigungu_boundary.geojson
+/public/data/simulation_candidate_top30_v4.geojson
+/rag-backend/data/docs/소나무재선충병 바로 알기(국립산림과학원).pdf
+"@ | Add-Content .gitignore

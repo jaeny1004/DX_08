@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   TreePine,
@@ -34,6 +34,11 @@ import {
   CrowdReport,
   ControlTask,
 } from "./types";
+
+import {
+  DispatchAssignment,
+  DispatchStatus,
+} from "./types/dispatch";
 
 type ModuleId =
   | "dashboard"
@@ -66,8 +71,38 @@ export default function App() {
   const [selectedGrid, setSelectedGrid] =
     useState<any>(null);
 
+  const [
+    dispatchAssignments,
+    setDispatchAssignments,
+  ] = useState<DispatchAssignment[]>(() => {
+    try {
+      const saved = localStorage.getItem(
+        "pwd-dispatch-assignments"
+      );
+
+      if (!saved) {
+        return [];
+      }
+
+      const parsed = JSON.parse(saved);
+
+      return Array.isArray(parsed)
+        ? parsed
+        : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [isChatOpen, setIsChatOpen] =
     useState(false);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "pwd-dispatch-assignments",
+      JSON.stringify(dispatchAssignments)
+    );
+  }, [dispatchAssignments]);
 
   const handleAddTree = (
     newTree: TreeRecord
@@ -122,6 +157,51 @@ export default function App() {
               status,
             }
           : worker
+      )
+    );
+  };
+
+  const handleAssignWorker = (
+    assignment: DispatchAssignment
+  ) => {
+    setDispatchAssignments((previous) => {
+      const duplicated = previous.some(
+        (item) =>
+          item.workerId === assignment.workerId &&
+          item.gridId === assignment.gridId
+      );
+
+      if (duplicated) {
+        return previous;
+      }
+
+      return [assignment, ...previous];
+    });
+  };
+
+  const handleUpdateDispatchStatus = (
+    assignmentId: string,
+    status: DispatchStatus
+  ) => {
+    setDispatchAssignments((previous) =>
+      previous.map((assignment) =>
+        assignment.assignmentId === assignmentId
+          ? {
+              ...assignment,
+              status,
+            }
+          : assignment
+      )
+    );
+  };
+
+  const handleCancelDispatch = (
+    assignmentId: string
+  ) => {
+    setDispatchAssignments((previous) =>
+      previous.filter(
+        (assignment) =>
+          assignment.assignmentId !== assignmentId
       )
     );
   };
@@ -355,7 +435,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6 pb-20">
+      <main className="flex-1 w-full max-w-[1800px] mx-auto p-4 md:p-6 space-y-6 pb-20">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeModule}
@@ -382,6 +462,8 @@ export default function App() {
                 trees={trees}
                 workers={workers}
                 reports={reports}
+                dispatchAssignments={dispatchAssignments}
+                onAssignWorker={handleAssignWorker}
                 onGridSelect={setSelectedGrid}
               />
             )}
@@ -398,6 +480,9 @@ export default function App() {
               <FieldSection
                 workers={workers}
                 reports={reports}
+                dispatchAssignments={dispatchAssignments}
+                onUpdateDispatchStatus={handleUpdateDispatchStatus}
+                onCancelDispatch={handleCancelDispatch}
                 onUpdateWorkerStatus={handleUpdateWorkerStatus}
                 onUpdateReportStatus={handleUpdateReportStatus}
                 onConfirmInfection={handleConfirmInfection}

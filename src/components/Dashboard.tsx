@@ -17,11 +17,22 @@ import {
 import { GridCell, TreeRecord, WorkerStatus, CrowdReport } from "../types";
 import DashboardRiskMapCard from "./DashboardRiskMapCard";
 
+import {
+  DispatchAssignment,
+} from "../types/dispatch";
+
 interface DashboardProps {
   grids: GridCell[];
   trees: TreeRecord[];
   workers: WorkerStatus[];
   reports: CrowdReport[];
+
+  dispatchAssignments: DispatchAssignment[];
+
+  onAssignWorker: (
+    assignment: DispatchAssignment
+  ) => void;
+
   onGridSelect?: (grid: any) => void;
 }
 
@@ -30,6 +41,8 @@ export default function Dashboard({
   trees,
   workers,
   reports,
+  dispatchAssignments,
+  onAssignWorker,
   onGridSelect,
 }: DashboardProps) {
   const [selectedSido, setSelectedSido] = useState<string>("전국");
@@ -168,13 +181,13 @@ export default function Dashboard({
         </motion.div>
       </div>
 
-      {/* Main Interactive Map Section (FR-HOM-001, FR-HOM-002) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
-          <DashboardRiskMapCard
-            onGridSelect={onGridSelect}
-          />
-        </div>
+      {/* Main Interactive Map Section */}
+      <div className="w-full">
+        <DashboardRiskMapCard
+          dispatchAssignments={dispatchAssignments}
+          onAssignWorker={onAssignWorker}
+          onGridSelect={onGridSelect}
+        />
       </div>
        
 
