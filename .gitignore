@@ -1,9 +1,38 @@
+# Node / frontend
 node_modules/
+**/node_modules/
 build/
 dist/
 coverage/
-.DS_Store
 *.log
+.vercel/
+
+# Environment variables
+.env
+**/.env
 .env*
 !.env.example
-.vercel
+
+# Python / RAG runtime
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+rag-backend/.pytest_cache/
+
+# Local vector database
+rag-backend/data/chroma/
+
+# OS files
+.DS_Store
+__MACOSX/
+@"
+
+# GitHub 업로드 제외 대용량 파일
+/data/admin/BND_ADM_DONG_PG.shp
+/public/data/sigungu_boundary.geojson
+/public/data/simulation_candidate_top30_v4.geojson
+/rag-backend/data/docs/소나무재선충병 바로 알기(국립산림과학원).pdf
+"@ | Add-Content .gitignore
