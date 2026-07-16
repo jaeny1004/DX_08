@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -22,12 +21,39 @@ import {
 } from "lucide-react";
 import { WorkerStatus, CrowdReport } from "../types";
 
+import {
+  DispatchAssignment,
+  DispatchStatus,
+} from "../types/dispatch";
+
 interface FieldSectionProps {
   workers: WorkerStatus[];
   reports: CrowdReport[];
-  onUpdateWorkerStatus: (id: string, status: WorkerStatus["status"]) => void;
-  onUpdateReportStatus: (id: string, status: CrowdReport["status"]) => void;
-  onConfirmInfection: (report: CrowdReport) => void;
+
+  dispatchAssignments: DispatchAssignment[];
+
+  onUpdateDispatchStatus: (
+    assignmentId: string,
+    status: DispatchStatus
+  ) => void;
+
+  onCancelDispatch: (
+    assignmentId: string
+  ) => void;
+
+  onUpdateWorkerStatus: (
+    id: string,
+    status: WorkerStatus["status"]
+  ) => void;
+
+  onUpdateReportStatus: (
+    id: string,
+    status: CrowdReport["status"]
+  ) => void;
+
+  onConfirmInfection: (
+    report: CrowdReport
+  ) => void;
 }
 
 type RoboflowPrediction = {
@@ -61,11 +87,6 @@ type ParsedAiResult = {
   error?: string;
 };
 
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const ROBOFLOW_API_KEY = import.meta.env.VITE_ROBOFLOW_API_KEY as string | undefined;
 const ROBOFLOW_MODEL_ID =
@@ -272,6 +293,9 @@ function getRiskTheme(level: ParsedAiResult["level"] | undefined) {
 export default function FieldSection({
   workers,
   reports,
+  dispatchAssignments,
+  onUpdateDispatchStatus,
+  onCancelDispatch,
   onUpdateWorkerStatus,
   onUpdateReportStatus,
   onConfirmInfection,
@@ -359,7 +383,7 @@ export default function FieldSection({
 
     if (!selectedImageUrl) {
       alert(
-        "선택된 제보에 image_url이 없습니다. Supabase pine_records 또는 CrowdReport 데이터에 image_url을 연결해야 합니다."
+        "선택된 제보에 이미지 URL이 없습니다. CrowdReport 샘플 데이터에 photoUrl 또는 imageUrl을 연결해 주세요."
       );
       return;
     }
@@ -470,6 +494,103 @@ export default function FieldSection({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                      {dispatchAssignments.map((assignment) => (
+                        <tr
+                          key={assignment.assignmentId}
+                          className="bg-indigo-50/40 hover:bg-indigo-50 transition-colors"
+                        >
+                          <td className="py-3.5 px-3">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 border border-white shrink-0" />
+
+                              <div>
+                                <div className="font-bold text-slate-900">
+                                  {assignment.workerName}
+                                </div>
+
+                                <div className="text-[10px] text-indigo-600">
+                                  {assignment.workerType} · {assignment.assignmentType}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-3 font-medium text-slate-600">
+                            <div>
+                              {assignment.targetSidoName}{" "}
+                              {assignment.targetSigunguName}{" "}
+                              {assignment.targetEmdName}
+                            </div>
+
+                            <div className="mt-0.5 text-[10px] font-mono text-indigo-600">
+                              GRID-{assignment.gridId}
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-3 font-mono text-slate-500">
+                            {assignment.distanceKm === null
+                              ? "-"
+                              : `${assignment.distanceKm.toLocaleString(
+                                  "ko-KR",
+                                  {
+                                    maximumFractionDigits: 1,
+                                  }
+                                )}km`}
+                          </td>
+
+                          <td className="py-3.5 px-3 font-mono">
+                            <div className="flex items-center gap-1.5 text-slate-600">
+                              <Battery
+                                size={14}
+                                className={
+                                  (assignment.batteryPercent ?? 100) <= 50
+                                    ? "text-rose-500"
+                                    : "text-emerald-600"
+                                }
+                              />
+
+                              <span>
+                                {assignment.batteryPercent === null
+                                  ? "-"
+                                  : `${assignment.batteryPercent}%`}
+                              </span>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <select
+                                value={assignment.status}
+                                onChange={(event) =>
+                                  onUpdateDispatchStatus(
+                                    assignment.assignmentId,
+                                    event.target.value as DispatchStatus
+                                  )
+                                }
+                                className="text-[11px] font-bold border border-indigo-200 rounded-lg p-1 outline-none bg-white"
+                              >
+                                <option value="배정 대기">배정 대기</option>
+                                <option value="출동">출동</option>
+                                <option value="현장">현장</option>
+                                <option value="복귀">복귀</option>
+                              </select>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onCancelDispatch(
+                                    assignment.assignmentId
+                                  )
+                                }
+                                className="rounded-lg border border-rose-200 bg-white px-2 py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50"
+                              >
+                                취소
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+
                       {workers.map((w) => (
                         <tr
                           key={w.id}
