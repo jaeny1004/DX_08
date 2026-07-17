@@ -9,8 +9,20 @@ import {
   TreePine,
   MessageSquare,
   X,
-  Calendar,
-  Activity,
+  LayoutDashboard,
+  Radar,
+  Footprints,
+  ShieldCheck,
+  FileText,
+  Settings,
+  FlaskConical,
+  AlertTriangle,
+  PanelLeftOpen,
+  PanelLeftClose,
+  Clock3,
+  MapPinned,
+  Radio,
+  LogOut,
 } from "lucide-react";
 
 import Dashboard from "./components/Dashboard";
@@ -21,6 +33,17 @@ import AdminSection from "./components/AdminSection";
 import SystemSection from "./components/SystemSection";
 import Chatbot from "./components/Chatbot";
 import SimulationSection from "./components/SimulationSection";
+import AuthScreen from "./components/auth/AuthScreen";
+
+import {
+  getAccessToken,
+  getCurrentUser,
+  logout,
+} from "./services/authApi";
+
+import {
+  AuthUser,
+} from "./types/auth";
 
 import {
   initialGrids,
@@ -96,6 +119,39 @@ export default function App() {
 
   const [isChatOpen, setIsChatOpen] =
     useState(false);
+
+  const [isSidebarOpen, setIsSidebarOpen] =
+    useState(false);
+
+  const [isAlertPanelOpen, setIsAlertPanelOpen] =
+    useState(false);
+
+  const [authUser, setAuthUser] =
+    useState<AuthUser | null>(null);
+
+  const [isAuthChecking, setIsAuthChecking] =
+    useState(true);
+
+  useEffect(() => {
+    const token = getAccessToken();
+
+    if (!token) {
+      setIsAuthChecking(false);
+      return;
+    }
+
+    getCurrentUser()
+      .then((user) => {
+        setAuthUser(user);
+      })
+      .catch(() => {
+        logout();
+        setAuthUser(null);
+      })
+      .finally(() => {
+        setIsAuthChecking(false);
+      });
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(
@@ -307,211 +363,506 @@ export default function App() {
   const modules = [
     {
       id: "dashboard",
-      label: "🏠 종합 상황판",
-      desc: "HOM-001 위성 상황 대시보드",
+      label: "종합 상황판",
+      icon: LayoutDashboard,
     },
     {
       id: "monitoring",
-      label: "🌲 병해충 모니터링",
-      desc: "MON-001 드론 및 감염목 감시",
+      label: "병해충 모니터링",
+      icon: Radar,
     },
     {
       id: "field",
-      label: "🚶 현장 스마트 예찰",
-      desc: "FLD-001 스마트 출동 및 시민 참여",
+      label: "현장 스마트 예찰",
+      icon: Footprints,
     },
     {
       id: "control",
-      label: "🛡️ 방제 사업 관리",
-      desc: "CTR-001 AI 우선순위 및 실적 관리",
+      label: "방제 사업 관리",
+      icon: ShieldCheck,
     },
     {
       id: "admin",
-      label: "📋 행정 기안 지원",
-      desc: "ADM-001 행정 문서 자동 생성",
+      label: "행정 기안 지원",
+      icon: FileText,
     },
     {
       id: "system",
-      label: "⚙️ 시스템 보안 관제",
-      desc: "SYS-001 데이터 검증 및 ML 성능",
+      label: "시스템 보안 관제",
+      icon: Settings,
     },
     {
       id: "simulation",
-      label: "🧪 확산 시뮬레이션",
-      desc: "SIM-001 방제 전후 위험 변화",
+      label: "확산 시뮬레이션",
+      icon: FlaskConical,
     },
   ] as const;
 
-  return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
-      <header className="bg-emerald-950 border-b border-emerald-900 sticky top-0 z-40 text-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-green-500 flex items-center justify-center text-white border border-emerald-400/40 shadow-inner">
-              <TreePine
-                size={22}
-                className="animate-pulse"
-              />
-            </div>
+  const activeModuleLabel =
+    modules.find((module) => module.id === activeModule)?.label ??
+    "종합 상황판";
 
-            <div>
-              <h1 className="text-sm font-black tracking-tight flex items-center gap-1.5 uppercase">
-                <span>
-                  소나무재선충병 통합 예찰·방제 정보 플랫폼
-                </span>
-
-                <span className="text-[10px] bg-amber-400 text-emerald-950 font-bold px-2 py-0.5 rounded-full">
-                  국가 표준 시범 시스템
-                </span>
-              </h1>
-
-              <p className="text-[10px] text-emerald-300 font-semibold mt-0.5">
-                Pine Wilt Disease Integrated Surveillance &amp; Control Platform (PWD-ISCP)
-              </p>
-            </div>
+  if (isAuthChecking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+        <div className="text-center text-white">
+          <div className="mx-auto flex h-14 w-14 animate-pulse items-center justify-center rounded-2xl bg-emerald-600">
+            <TreePine size={27} />
           </div>
-
-          <div className="hidden lg:flex items-center gap-6 text-[11px] font-bold font-mono text-emerald-100">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>행정망 연동: 정상</span>
-            </div>
-
-            <div className="flex items-center gap-1.5 border-l border-emerald-800 pl-6">
-              <Calendar
-                size={12}
-                className="text-amber-300"
-              />
-              <span>관제 기간: 2016-2026 타임랩스 활성</span>
-            </div>
-
-            <div className="flex items-center gap-1.5 border-l border-emerald-800 pl-6">
-              <Activity
-                size={12}
-                className="text-rose-400"
-              />
-              <span>XGBoost·LightGBM 앙상블: PR-AUC 0.3183</span>
-            </div>
+          <div className="mt-4 text-sm font-extrabold">
+            로그인 상태 확인 중...
           </div>
         </div>
+      </div>
+    );
+  }
 
-        <div className="bg-emerald-900 border-t border-emerald-850/80">
-          <div className="max-w-7xl mx-auto px-4 overflow-x-auto">
-            <div className="flex gap-2 py-2 shrink-0">
-              {modules.map((module) => (
+  if (!authUser) {
+    return (
+      <AuthScreen
+        onAuthenticated={(user) => {
+          setAuthUser(user);
+        }}
+      />
+    );
+  }
+
+  const liveAlerts = [
+    {
+      id: "ALERT-001",
+      time: "14:28",
+      title: "고위험 후보 격자 위험도 상승",
+      description:
+        "신규 확산위험 후보지역의 위험도가 상승해 우선 예찰 검토가 필요합니다.",
+      tone: "danger" as const,
+      icon: Radio,
+    },
+    {
+      id: "ALERT-002",
+      time: "14:15",
+      title: "접근 취약지역 드론 예찰 검토",
+      description:
+        "도로 접근성이 낮은 후보지역에 대한 드론 사전 예찰 검토가 요청됐습니다.",
+      tone: "warning" as const,
+      icon: MapPinned,
+    },
+    {
+      id: "ALERT-003",
+      time: "13:30",
+      title: "현장 확인 결과 입력 대기",
+      description:
+        "현장 예찰 완료 격자의 활동보고서 입력 상태를 확인해야 합니다.",
+      tone: "info" as const,
+      icon: Clock3,
+    },
+  ];
+
+  return (
+    <div className="h-screen overflow-hidden bg-[#F5F7FA] font-sans text-slate-800">
+      <div
+        className="grid h-full transition-[grid-template-columns] duration-300 ease-out"
+        style={{
+          gridTemplateColumns: isSidebarOpen
+            ? "260px minmax(0, 1fr)"
+            : "88px minmax(0, 1fr)",
+        }}
+      >
+        <aside className="relative flex h-full min-w-0 flex-col border-r border-slate-200 bg-white py-4 shadow-sm">
+          <div
+            className={
+              isSidebarOpen
+                ? "flex w-full items-center gap-3 px-4"
+                : "flex w-full justify-center"
+            }
+          >
+            <button
+              type="button"
+              onClick={() =>
+                setIsAlertPanelOpen((previous) => !previous)
+              }
+              className={
+                isAlertPanelOpen
+                  ? "relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-rose-300 bg-rose-100 text-rose-700 shadow-sm"
+                  : "relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm"
+              }
+              aria-label="실시간 알림 열기"
+              title="실시간 알림"
+            >
+              <AlertTriangle size={25} />
+
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1 text-[10px] font-black text-white">
+                {liveAlerts.length}
+              </span>
+            </button>
+
+            {isSidebarOpen && (
+              <button
+                type="button"
+                onClick={() =>
+                  setIsAlertPanelOpen((previous) => !previous)
+                }
+                className="min-w-0 text-left"
+              >
+                <div className="truncate text-lg font-black text-slate-950">
+                  실시간 알림
+                </div>
+
+                <div className="mt-0.5 truncate text-[10px] font-bold text-slate-400">
+                  미확인 {liveAlerts.length}건
+                </div>
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              setIsSidebarOpen((previous) => !previous)
+            }
+            className="absolute -right-4 top-[86px] z-30 flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition hover:text-emerald-700"
+            aria-label={
+              isSidebarOpen
+                ? "사이드바 닫기"
+                : "사이드바 열기"
+            }
+            title={
+              isSidebarOpen
+                ? "사이드바 닫기"
+                : "사이드바 열기"
+            }
+          >
+            {isSidebarOpen ? (
+              <PanelLeftClose size={17} />
+            ) : (
+              <PanelLeftOpen size={17} />
+            )}
+          </button>
+
+          <div
+            className={
+              isSidebarOpen
+                ? "mx-4 my-4 h-px bg-slate-200"
+                : "mx-auto my-4 h-px w-10 bg-slate-200"
+            }
+          />
+
+          <nav
+            className={
+              isSidebarOpen
+                ? "flex flex-1 flex-col gap-2 px-3"
+                : "flex flex-1 flex-col items-center gap-2"
+            }
+          >
+            {modules.map((module) => {
+              const Icon = module.icon;
+              const active = activeModule === module.id;
+
+              return (
                 <button
                   key={module.id}
                   type="button"
-                  onClick={() =>
-                    setActiveModule(module.id)
-                  }
+                  onClick={() => setActiveModule(module.id)}
+                  title={module.label}
+                  aria-label={module.label}
                   className={
-                    `px-4 py-2.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all flex flex-col items-start ` +
-                    `${
-                      activeModule === module.id
-                        ? "bg-white text-emerald-950 shadow-sm"
-                        : "text-emerald-100 hover:bg-emerald-850 hover:text-white"
-                    }`
+                    isSidebarOpen
+                      ? active
+                        ? "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-100 px-3 text-left text-emerald-900 shadow-sm"
+                        : "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 text-left text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                      : active
+                        ? "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-100 text-emerald-900 shadow-sm"
+                        : "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
                   }
                 >
-                  <span>{module.label}</span>
+                  <Icon size={21} className="shrink-0" />
 
-                  <span
-                    className={
-                      `text-[9px] font-medium mt-0.5 ` +
-                      `${
-                        activeModule === module.id
-                          ? "text-slate-500"
-                          : "text-emerald-300/80"
-                      }`
-                    }
-                  >
-                    {module.desc}
-                  </span>
+                  {isSidebarOpen ? (
+                    <span className="truncate text-sm font-extrabold">
+                      {module.label}
+                    </span>
+                  ) : (
+                    <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                      {module.label}
+                    </span>
+                  )}
                 </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </header>
+              );
+            })}
+          </nav>
 
-      <main className="flex-1 w-full max-w-[1800px] mx-auto p-4 md:p-6 space-y-6 pb-20">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeModule}
-            initial={{
-              opacity: 0,
-              y: 15,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            exit={{
-              opacity: 0,
-              y: -15,
-            }}
-            transition={{
-              duration: 0.25,
-            }}
-            className="space-y-6"
+          <div
+            className={
+              isSidebarOpen
+                ? "mx-3 mt-3 flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 text-emerald-800"
+                : "mx-auto mt-3 flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-emerald-800"
+            }
           >
-            {activeModule === "dashboard" && (
-              <Dashboard
-                grids={grids}
-                trees={trees}
-                workers={workers}
-                reports={reports}
-                dispatchAssignments={dispatchAssignments}
-                onAssignWorker={handleAssignWorker}
-                onGridSelect={setSelectedGrid}
-              />
-            )}
+            <TreePine size={21} className="shrink-0" />
 
-            {activeModule === "monitoring" && (
-              <MonitoringSection
-                trees={trees}
-                onAddTree={handleAddTree}
-                onUpdateTreeStatus={handleUpdateTreeStatus}
-              />
+            {isSidebarOpen && (
+              <div className="min-w-0">
+                <div className="truncate text-xs font-extrabold">
+                  PWD-ISCP
+                </div>
+                <div className="truncate text-[9px] font-bold text-slate-400">
+                  의사결정 지원 플랫폼
+                </div>
+              </div>
             )}
+          </div>
+        </aside>
 
-            {activeModule === "field" && (
-              <FieldSection
-                workers={workers}
-                reports={reports}
-                dispatchAssignments={dispatchAssignments}
-                onUpdateDispatchStatus={handleUpdateDispatchStatus}
-                onCancelDispatch={handleCancelDispatch}
-                onUpdateWorkerStatus={handleUpdateWorkerStatus}
-                onUpdateReportStatus={handleUpdateReportStatus}
-                onConfirmInfection={handleConfirmInfection}
-              />
-            )}
+        <div className="flex min-h-0 min-w-0 flex-col">
+          <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
+            <div className="flex min-w-0 items-center gap-4">
+              <div>
+                <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-700">
+                  Pine Wilt Control Center
+                </div>
 
-            {activeModule === "control" && (
-              <ControlSection
-                tasks={tasks}
-                grids={grids}
-                onAddTask={handleAddTask}
-                onUpdateTaskProgress={handleUpdateTaskProgress}
-              />
-            )}
+                <h1 className="mt-0.5 text-3xl font-black tracking-tight text-slate-950">
+                  {activeModule === "dashboard"
+                    ? "홈"
+                    : activeModuleLabel}
+                </h1>
+              </div>
 
-            {activeModule === "admin" && (
-              <AdminSection />
-            )}
+              <div className="hidden h-9 w-px bg-slate-200 xl:block" />
 
-            {activeModule === "system" && (
-              <SystemSection />
-            )}
+              <div className="hidden max-w-[560px] truncate text-xs font-semibold text-slate-500 xl:block">
+                AI 기반 소나무재선충병 신규 확산위험 후보 분석 및 우선 예찰 의사결정 지원
+              </div>
+            </div>
 
-            {activeModule === "simulation" && (
-              <SimulationSection />
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </main>
+            <div className="flex items-center gap-3">
+              <div className="hidden items-center gap-4 text-[11px] font-bold text-slate-500 xl:flex">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  행정망 연동 정상
+                </span>
+
+                <span className="rounded-full bg-slate-100 px-3 py-1.5">
+                  PR-AUC 0.3183
+                </span>
+              </div>
+
+              <div className="hidden text-right sm:block">
+                <div className="text-xs font-extrabold text-slate-800">
+                  {authUser.name}
+                </div>
+                <div className="mt-0.5 max-w-[180px] truncate text-[10px] font-bold text-slate-400">
+                  {authUser.organization}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  logout();
+                  setAuthUser(null);
+                  setSelectedGrid(null);
+                  setIsChatOpen(false);
+                  setIsAlertPanelOpen(false);
+                }}
+                className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+              >
+                <LogOut size={16} />
+                <span className="hidden md:inline">
+                  로그아웃
+                </span>
+              </button>
+            </div>
+          </header>
+
+          <main className="min-h-0 flex-1 overflow-hidden p-3 xl:p-4">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeModule}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.18 }}
+                className="h-full min-h-0"
+              >
+                {activeModule === "dashboard" && (
+                  <Dashboard
+                    grids={grids}
+                    trees={trees}
+                    workers={workers}
+                    reports={reports}
+                    dispatchAssignments={dispatchAssignments}
+                    onAssignWorker={handleAssignWorker}
+                    onGridSelect={setSelectedGrid}
+                  />
+                )}
+
+                {activeModule === "monitoring" && (
+                  <div className="h-full overflow-y-auto pr-1">
+                    <MonitoringSection
+                      trees={trees}
+                      onAddTree={handleAddTree}
+                      onUpdateTreeStatus={handleUpdateTreeStatus}
+                    />
+                  </div>
+                )}
+
+                {activeModule === "field" && (
+                  <div className="h-full overflow-y-auto pr-1">
+                    <FieldSection
+                      workers={workers}
+                      reports={reports}
+                      dispatchAssignments={dispatchAssignments}
+                      onUpdateDispatchStatus={handleUpdateDispatchStatus}
+                      onCancelDispatch={handleCancelDispatch}
+                      onUpdateWorkerStatus={handleUpdateWorkerStatus}
+                      onUpdateReportStatus={handleUpdateReportStatus}
+                      onConfirmInfection={handleConfirmInfection}
+                    />
+                  </div>
+                )}
+
+                {activeModule === "control" && (
+                  <div className="h-full overflow-y-auto pr-1">
+                    <ControlSection
+                      tasks={tasks}
+                      grids={grids}
+                      onAddTask={handleAddTask}
+                      onUpdateTaskProgress={handleUpdateTaskProgress}
+                    />
+                  </div>
+                )}
+
+                {activeModule === "admin" && (
+                  <div className="h-full overflow-y-auto pr-1">
+                    <AdminSection />
+                  </div>
+                )}
+
+                {activeModule === "system" && (
+                  <div className="h-full overflow-y-auto pr-1">
+                    <SystemSection />
+                  </div>
+                )}
+
+                {activeModule === "simulation" && (
+                  <div className="h-full overflow-y-auto pr-1">
+                    <SimulationSection />
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {isAlertPanelOpen && (
+          <>
+            <motion.button
+              type="button"
+              aria-label="실시간 알림 닫기"
+              onClick={() => setIsAlertPanelOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[45] bg-slate-950/20"
+            />
+
+            <motion.aside
+              initial={{
+                opacity: 0,
+                x: -18,
+                scale: 0.98,
+              }}
+              animate={{
+                opacity: 1,
+                x: 0,
+                scale: 1,
+              }}
+              exit={{
+                opacity: 0,
+                x: -18,
+                scale: 0.98,
+              }}
+              transition={{
+                duration: 0.18,
+              }}
+              className="fixed left-4 top-4 z-[50] flex max-h-[calc(100vh-32px)] w-[390px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                <div>
+                  <div className="text-xs font-extrabold text-rose-600">
+                    REAL-TIME ALERT
+                  </div>
+
+                  <h2 className="mt-1 text-xl font-black text-slate-950">
+                    실시간 통합 알림
+                  </h2>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAlertPanelOpen(false)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="실시간 알림 닫기"
+                >
+                  <X size={19} />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+                {liveAlerts.map((alert) => {
+                  const Icon = alert.icon;
+
+                  const toneClass =
+                    alert.tone === "danger"
+                      ? "border-rose-200 bg-rose-50 text-rose-800"
+                      : alert.tone === "warning"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-blue-200 bg-blue-50 text-blue-800";
+
+                  return (
+                    <article
+                      key={alert.id}
+                      className={`rounded-2xl border p-4 ${toneClass}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80">
+                          <Icon size={18} />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <h3 className="text-sm font-extrabold">
+                              {alert.title}
+                            </h3>
+
+                            <span className="shrink-0 text-[10px] font-black opacity-70">
+                              {alert.time}
+                            </span>
+                          </div>
+
+                          <p className="mt-1 text-xs font-semibold leading-5 opacity-80">
+                            {alert.description}
+                          </p>
+
+                          <div className="mt-2 text-[10px] font-black opacity-60">
+                            {alert.id}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <div className="border-t border-slate-100 bg-slate-50 px-5 py-3 text-[11px] font-semibold leading-5 text-slate-500">
+                알림은 감염 확정이 아닌 신규 확산위험 후보와 현장 확인 필요사항을 안내합니다.
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isChatOpen && (
@@ -519,52 +870,34 @@ export default function App() {
             <motion.button
               type="button"
               aria-label="챗봇 닫기"
-              onClick={() =>
-                setIsChatOpen(false)
-              }
-              initial={{
-                opacity: 0,
-              }}
-              animate={{
-                opacity: 1,
-              }}
-              exit={{
-                opacity: 0,
-              }}
+              onClick={() => setIsChatOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               className="fixed inset-0 z-[55] bg-slate-950/25 backdrop-blur-[1px]"
             />
 
             <motion.aside
-              initial={{
-                x: "100%",
-              }}
-              animate={{
-                x: 0,
-              }}
-              exit={{
-                x: "100%",
-              }}
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
               transition={{
                 type: "spring",
                 stiffness: 320,
                 damping: 34,
               }}
-              className="fixed right-0 top-0 bottom-0 z-[60] w-full sm:w-[630px] bg-white shadow-2xl border-l border-slate-200"
+              className="fixed bottom-0 right-0 top-0 z-[60] w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[630px]"
             >
               <button
                 type="button"
-                onClick={() =>
-                  setIsChatOpen(false)
-                }
-                className="absolute top-5 right-5 z-50 w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                onClick={() => setIsChatOpen(false)}
+                className="absolute right-5 top-5 z-50 flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
                 aria-label="챗봇 닫기"
               >
                 <X size={20} />
               </button>
 
-              <Chatbot
-                selectedGrid={selectedGrid}
-              />
+              <Chatbot selectedGrid={selectedGrid} />
             </motion.aside>
           </>
         )}
@@ -574,44 +907,24 @@ export default function App() {
         <div className="fixed bottom-6 right-6 z-50">
           <motion.button
             type="button"
-            onClick={() =>
-              setIsChatOpen(true)
-            }
-            whileHover={{
-              scale: 1.05,
-            }}
-            whileTap={{
-              scale: 0.95,
-            }}
-            className="w-14 h-14 rounded-full bg-emerald-800 text-white shadow-xl hover:bg-emerald-900 transition-colors flex items-center justify-center border-2 border-emerald-400/35 relative group"
+            onClick={() => setIsChatOpen(true)}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="group relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-emerald-400/35 bg-emerald-800 text-white shadow-xl transition-colors hover:bg-emerald-900"
             aria-label="AI 챗봇 열기"
           >
             <MessageSquare size={22} />
 
-            <span className="absolute -top-1 -right-1 bg-amber-400 text-emerald-950 font-black text-[9px] px-1.5 py-0.5 rounded-full border border-white animate-bounce">
+            <span className="absolute -right-1 -top-1 animate-bounce rounded-full border border-white bg-amber-400 px-1.5 py-0.5 text-[9px] font-black text-emerald-950">
               AI
             </span>
 
-            <span className="absolute right-16 bg-slate-900/90 text-white text-[10px] font-bold py-1 px-2.5 rounded-xl shadow whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all pointer-events-none">
+            <span className="pointer-events-none absolute right-16 whitespace-nowrap rounded-xl bg-slate-900/90 px-2.5 py-1 text-[10px] font-bold text-white opacity-0 shadow transition-all group-hover:opacity-100">
               위험격자·백서 통합 질의 비서
             </span>
           </motion.button>
         </div>
       )}
-
-      <footer className="bg-slate-900 text-slate-500 py-6 border-t border-slate-800 mt-auto text-center text-xs">
-        <div className="max-w-7xl mx-auto px-4 space-y-1.5 font-medium">
-          <p>
-            산림청·지자체 소나무재선충병 특별 방제대책본부
-            (R&amp;D 통합 실증 인프라)
-          </p>
-
-          <p className="text-[10px] text-slate-600 font-mono">
-            PWD Integrated Surveillance and Control Platform (PWD-ISCP) |
-            Designed for High Efficiency Operations
-          </p>
-        </div>
-      </footer>
     </div>
   );
 }
