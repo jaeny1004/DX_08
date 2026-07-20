@@ -693,6 +693,7 @@ export default function App() {
                     dispatchAssignments={dispatchAssignments}
                     onAssignWorker={handleAssignWorker}
                     onGridSelect={setSelectedGrid}
+                    authUser={authUser}
                   />
                 )}
 

@@ -1,44 +1,68 @@
 import os
+import sqlite3
 from collections.abc import Generator
+from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.engine import URL
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 load_dotenv()
 
-
-def _required_env(name: str) -> str:
-    value = os.environ.get(name, "").strip()
-    if not value:
-        raise RuntimeError(f"필수 환경변수 {name}가 설정되지 않았습니다.")
-    return value
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_SQLITE_PATH = BACKEND_ROOT / "data" / "pine_wilt.db"
 
 
-DB_HOST = _required_env("DB_HOST")
-DB_PORT = int(os.environ.get("DB_PORT", "3306"))
-DB_NAME = _required_env("DB_NAME")
-DB_USER = _required_env("DB_USER")
-DB_PASSWORD = _required_env("DB_PASSWORD")
+def _resolve_database_url() -> str:
+    configured = os.environ.get("DATABASE_URL", "").strip()
+    if configured:
+        return configured
 
-DATABASE_URL = URL.create(
-    drivername="mysql+pymysql",
-    username=DB_USER,
-    password=DB_PASSWORD,
-    host=DB_HOST,
-    port=DB_PORT,
-    database=DB_NAME,
-    query={"charset": "utf8mb4"},
-)
+    sqlite_path = os.environ.get("SQLITE_PATH", "").strip()
+    path = Path(sqlite_path).expanduser() if sqlite_path else DEFAULT_SQLITE_PATH
+    if not path.is_absolute():
+        path = (BACKEND_ROOT / path).resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{path.as_posix()}"
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=280,
-    pool_size=5,
-    max_overflow=10,
-)
+
+DATABASE_URL = _resolve_database_url()
+IS_SQLITE = DATABASE_URL.startswith("sqlite")
+
+engine_options: dict = {
+    "pool_pre_ping": True,
+}
+
+if IS_SQLITE:
+    engine_options["connect_args"] = {
+        "check_same_thread": False,
+        "timeout": 30,
+    }
+else:
+    engine_options.update(
+        {
+            "pool_recycle": 280,
+            "pool_size": 5,
+            "max_overflow": 10,
+        }
+    )
+
+engine = create_engine(DATABASE_URL, **engine_options)
+
+
+if IS_SQLITE:
+    @event.listens_for(Engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, connection_record) -> None:
+        if not isinstance(dbapi_connection, sqlite3.Connection):
+            return
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.close()
+
 
 SessionLocal = sessionmaker(
     bind=engine,
@@ -61,7 +85,7 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    # 모델 import가 먼저 되어야 Base.metadata에 users 테이블이 등록됩니다.
+    from app.models.email_verification import EmailVerification  # noqa: F401
     from app.models.user import User  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

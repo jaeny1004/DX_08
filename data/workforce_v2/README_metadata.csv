@@ -1,0 +1,2 @@
+﻿dataset_version,data_source,is_sample,import_batch_id,region_count,worker_count,generated_at,note
+3.0,SYNTHETIC,1,WF_V3_ALL_REGIONS_20260718,149,914,2026-07-18T12:18:26,시연용 합성 데이터. 실제 기관·인력 현황이 아님.

@@ -124,6 +124,10 @@ def signup(
         password_hash=hash_password(request.password),
         name=request.name.strip(),
         organization=request.organization.strip(),
+        sido_code=request.sido_code.strip() if request.sido_code else None,
+        sido_name=request.sido_name.strip() if request.sido_name else None,
+        sigungu_code=request.sigungu_code.strip() if request.sigungu_code else None,
+        sigungu_name=request.sigungu_name.strip() if request.sigungu_name else None,
         role="manager",
         is_active=True,
     )

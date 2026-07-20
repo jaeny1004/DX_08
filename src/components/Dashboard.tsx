@@ -17,6 +17,8 @@ import {
   DispatchAssignment,
 } from "../types/dispatch";
 
+import { AuthUser } from "../types/auth";
+
 import DashboardRiskMapCard from "./DashboardRiskMapCard";
 
 interface DashboardProps {
@@ -27,6 +29,7 @@ interface DashboardProps {
   dispatchAssignments: DispatchAssignment[];
   onAssignWorker: (assignment: DispatchAssignment) => void;
   onGridSelect?: (grid: any) => void;
+  authUser: AuthUser;
 }
 
 export default function Dashboard({
@@ -37,6 +40,7 @@ export default function Dashboard({
   dispatchAssignments,
   onAssignWorker,
   onGridSelect,
+  authUser,
 }: DashboardProps) {
   const activeWorkers = workers.filter(
     (worker) => worker.status !== "대기",
@@ -158,6 +162,8 @@ export default function Dashboard({
         dispatchAssignments={dispatchAssignments}
         onAssignWorker={onAssignWorker}
         onGridSelect={onGridSelect}
+        initialSigunguCode={authUser.sigunguCode}
+        initialSigunguName={authUser.sigunguName}
       />
     </div>
   );

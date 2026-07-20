@@ -1,13 +1,15 @@
+// FINAL_INFECTION_SQUARE_TOP10_FIX_20260718
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 import {
   DispatchAssignment,
-  DispatchWorkerType,
+  DispatchTaskType,
 } from "../types/dispatch";
 
 type BaseMapMode = "base" | "satellite";
+type MapDisplayMode = "priority" | "risk";
 type TileStatus = "loading" | "success" | "error" | "fallback";
 
 type AdminSummary = {
@@ -31,62 +33,62 @@ type AdminSummary = {
   avgAccessScore: number;
 };
 
-type WorkforceSummary = {
+type TaskCapability = {
+  taskType: DispatchTaskType;
+  skillLevel: number;
+  canWorkSolo: boolean;
+  isPrimarySkill: boolean;
+};
+
+type ServiceArea = {
+  sidoCode: string;
+  sigunguCode: string;
+  sigunguName: string;
+  assignmentPriority: number;
+  supportType: "PRIMARY" | "NEIGHBOR_SUPPORT" | "WIDE_AREA_SUPPORT";
+  maxTravelKm: number;
+};
+
+type RegionWorkforceCapacity = {
   sigungu_code: string;
   sido_name: string;
   sigungu_name: string;
-  all_grid_count: number;
-  target_grid_count: number;
-  very_high_count: number;
-  high_count: number;
-  top_priority_count: number;
-  priority_count: number;
-  low_access_target_count: number;
-  environment_caution_count: number;
-  avg_risk_score: number;
-  avg_infection_pressure: number;
-  avg_access_score: number;
-  estimated_minutes: number;
-  required_person_days: number;
-  required_field_workers: number;
-  available_field_workers: number;
-  field_worker_gap: number;
-  field_shortage_count: number;
-  required_drone_workers: number;
-  available_drone_workers: number;
-  drone_worker_gap: number;
-  drone_shortage_count: number;
-  required_control_standby: number;
-  available_control_workers: number;
-  control_worker_gap: number;
-  control_shortage_count: number;
-  assigned_grid_count: number;
-  assigned_worker_count: number;
-  assigned_minutes: number;
-  unassigned_grid_count: number;
-  unassigned_minutes: number;
-  assignment_rate: number;
+  registered_worker_count: number;
+  available_worker_count: number;
+  survey_available_count: number;
+  drone_available_count: number;
+  control_available_count: number;
+  remaining_minutes: number;
+  open_task_count: number;
+  shortage_worker_count: number;
+  support_required: number;
 };
 
 type WorkerMasterRow = {
   worker_id: string;
   worker_name: string;
-  worker_type: "현장요원" | "드론요원" | "방제요원";
+  home_sido_code: string;
+  home_sido_name: string;
   home_sigungu_code: string;
-  sido_name: string;
-  sigungu_name: string;
-  status: string;
+  home_sigungu_name: string;
+  base_lat: number;
+  base_lon: number;
+  experience_years: number;
+  capabilities: TaskCapability[];
+  serviceAreas: ServiceArea[];
   availability_status: string;
-  travel_distance_km: number | null;
-  travel_time_hour: number | null;
+  remaining_minutes: number;
+  status: string;
   battery_percent: number | null;
-  battery_context: string;
 };
 
 type Recommendation = {
   worker: WorkerMasterRow;
-  assignmentType: "지역 내 배정" | "동일 시도 지원" | "권역 지원";
+  assignmentType: "지역 내 배정" | "인접지역 지원" | "광역 지원";
   recommendationScore: number;
+  distanceKm: number | null;
+  skillLevel: number;
+  reason: string;
 };
 
 const VWORLD_KEY = String(import.meta.env.VITE_VWORLD_API_KEY ?? "").trim();
@@ -100,8 +102,13 @@ const ESRI_SATELLITE_URL =
 
 const GEOJSON_PATH = "/data/final_ui_candidate_v4.geojson";
 const SIGUNGU_BOUNDARY_PATH = "/data/sigungu_boundary.geojson";
-const WORKFORCE_SUMMARY_PATH = "/data/workforce/admin_workforce_ui_summary.json";
-const WORKER_MASTER_PATH = "/data/workforce/worker_master.json";
+const INFECTION_HISTORY_PATH = "/data/infection_history_2016_2021.geojson";
+const WORKERS_PATH = "/data/workforce_v2/workers.json";
+const WORKER_CAPABILITIES_PATH = "/data/workforce_v2/worker_capabilities.json";
+const WORKER_SERVICE_AREAS_PATH = "/data/workforce_v2/worker_service_areas.json";
+const WORKER_AVAILABILITY_PATH = "/data/workforce_v2/worker_availability.json";
+const WORKER_CURRENT_STATUS_PATH = "/data/workforce_v2/worker_current_status.json";
+const REGION_WORKFORCE_CAPACITY_PATH = "/data/workforce_v2/region_workforce_capacity.json";
 
 const KOREA_BOUNDS = L.latLngBounds(L.latLng(32.5, 124.0), L.latLng(39.8, 132.2));
 const GRID_RENDERER = L.canvas({ padding: 0.25, tolerance: 4 });
@@ -113,6 +120,17 @@ const priorityColors: Record<string, string> = {
   "정기 관찰": "#1fc16b",
   "일반 관리": "#d9d9d9",
 };
+
+const riskColors: Record<string, string> = {
+  // 예찰 우선순위와 단계별 색상을 동일하게 맞춤
+  "매우 높음": "#ff2b57",
+  "높음": "#ff9f0a",
+  "주의": "#ffcc00",
+  "관찰": "#1fc16b",
+  "낮음": "#d9d9d9",
+};
+
+const INFECTION_HISTORY_COLOR = "#5b21b6";
 
 function formatNumber(value: unknown, digit = 1) {
   const numberValue = Number(value);
@@ -130,6 +148,24 @@ function normalizeCode(value: unknown) {
   const text = String(value).trim();
   if (!text || text === "nan") return "";
   return text.endsWith(".0") ? text.slice(0, -2) : text;
+}
+
+function calculateDistanceKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+) {
+  const radiusKm = 6371;
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
+  return radiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function escapeHtml(value: unknown) {
@@ -180,21 +216,218 @@ function normalizePriorityGrade(props: any) {
   }
 }
 
-function getGridStyle(props: any, baseMapMode: BaseMapMode): L.PathOptions {
-  const grade = normalizePriorityGrade(props);
-  const color = priorityColors[grade] ?? "#cccccc";
-  const isGeneral = grade === "일반 관리";
+function hasValue(value: unknown) {
+  return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
+function isEnabledFlag(value: unknown) {
+  if (typeof value === "boolean") return value;
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return ["1", "true", "y", "yes"].includes(normalized);
+}
+
+function isTop10Candidate(props: any, mode: MapDisplayMode) {
+  const flagValue =
+    mode === "priority"
+      ? props?.priority_candidate_flag
+      : props?.risk_candidate_flag;
+
+  if (hasValue(flagValue)) {
+    return isEnabledFlag(flagValue);
+  }
+
+  const topPercentValue =
+    mode === "priority"
+      ? props?.priority_top_percent
+      : props?.risk_top_percent;
+
+  if (hasValue(topPercentValue) && Number.isFinite(Number(topPercentValue))) {
+    return Number(topPercentValue) <= 10;
+  }
+
+  if (mode === "priority") {
+    return normalizePriorityGrade(props) !== "일반 관리";
+  }
+
+  return ["매우 높음", "높음", "주의", "관찰"].includes(
+    normalizeRiskGrade(props),
+  );
+}
+
+type SpatialBounds = {
+  minLat: number;
+  minLng: number;
+  maxLat: number;
+  maxLng: number;
+};
+
+function extendBoundsFromCoordinates(
+  coordinates: any,
+  bounds: SpatialBounds,
+) {
+  if (!Array.isArray(coordinates)) return;
+
+  if (
+    coordinates.length >= 2 &&
+    Number.isFinite(Number(coordinates[0])) &&
+    Number.isFinite(Number(coordinates[1]))
+  ) {
+    const lng = Number(coordinates[0]);
+    const lat = Number(coordinates[1]);
+    bounds.minLat = Math.min(bounds.minLat, lat);
+    bounds.minLng = Math.min(bounds.minLng, lng);
+    bounds.maxLat = Math.max(bounds.maxLat, lat);
+    bounds.maxLng = Math.max(bounds.maxLng, lng);
+    return;
+  }
+
+  for (const child of coordinates) {
+    extendBoundsFromCoordinates(child, bounds);
+  }
+}
+
+function getFeaturesBounds(features: any[]): SpatialBounds | null {
+  const bounds: SpatialBounds = {
+    minLat: Number.POSITIVE_INFINITY,
+    minLng: Number.POSITIVE_INFINITY,
+    maxLat: Number.NEGATIVE_INFINITY,
+    maxLng: Number.NEGATIVE_INFINITY,
+  };
+
+  for (const feature of features) {
+    extendBoundsFromCoordinates(feature?.geometry?.coordinates, bounds);
+  }
+
+  if (
+    !Number.isFinite(bounds.minLat) ||
+    !Number.isFinite(bounds.minLng) ||
+    !Number.isFinite(bounds.maxLat) ||
+    !Number.isFinite(bounds.maxLng)
+  ) {
+    return null;
+  }
+
+  return bounds;
+}
+
+function getFeatureCenter(feature: any): [number, number] | null {
+  const bounds = getFeaturesBounds([feature]);
+  if (!bounds) return null;
+  return [
+    (bounds.minLng + bounds.maxLng) / 2,
+    (bounds.minLat + bounds.maxLat) / 2,
+  ];
+}
+
+function isPointInsideBounds(
+  lng: number,
+  lat: number,
+  bounds: SpatialBounds,
+  padding = 0,
+) {
+  return (
+    lng >= bounds.minLng - padding &&
+    lng <= bounds.maxLng + padding &&
+    lat >= bounds.minLat - padding &&
+    lat <= bounds.maxLat + padding
+  );
+}
+
+function isPointInRing(lng: number, lat: number, ring: any[]) {
+  let inside = false;
+
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = Number(ring[i]?.[0]);
+    const yi = Number(ring[i]?.[1]);
+    const xj = Number(ring[j]?.[0]);
+    const yj = Number(ring[j]?.[1]);
+
+    if (![xi, yi, xj, yj].every(Number.isFinite)) continue;
+
+    const intersects =
+      yi > lat !== yj > lat &&
+      lng < ((xj - xi) * (lat - yi)) / (yj - yi || Number.EPSILON) + xi;
+
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
+}
+
+function isPointInPolygonCoordinates(
+  lng: number,
+  lat: number,
+  polygonCoordinates: any[],
+) {
+  if (!polygonCoordinates.length) return false;
+  if (!isPointInRing(lng, lat, polygonCoordinates[0])) return false;
+
+  for (let index = 1; index < polygonCoordinates.length; index += 1) {
+    if (isPointInRing(lng, lat, polygonCoordinates[index])) return false;
+  }
+
+  return true;
+}
+
+function isPointInGeometry(lng: number, lat: number, geometry: any) {
+  if (!geometry) return false;
+
+  if (geometry.type === "Polygon") {
+    return isPointInPolygonCoordinates(lng, lat, geometry.coordinates ?? []);
+  }
+
+  if (geometry.type === "MultiPolygon") {
+    return (geometry.coordinates ?? []).some((polygon: any[]) =>
+      isPointInPolygonCoordinates(lng, lat, polygon),
+    );
+  }
+
+  return false;
+}
+
+function getGridStyle(
+  props: any,
+  baseMapMode: BaseMapMode,
+  mapDisplayMode: MapDisplayMode,
+): L.PathOptions {
+  const grade =
+    mapDisplayMode === "priority"
+      ? normalizePriorityGrade(props)
+      : normalizeRiskGrade(props);
+  const color =
+    mapDisplayMode === "priority"
+      ? priorityColors[grade] ?? "#cccccc"
+      : riskColors[grade] ?? "#cccccc";
+  const isLow =
+    mapDisplayMode === "priority"
+      ? grade === "일반 관리"
+      : grade === "낮음";
+
   return {
-    color: isGeneral ? "transparent" : color,
-    weight: isGeneral ? 0 : baseMapMode === "satellite" ? 0.7 : 0.55,
+    color: isLow ? "transparent" : color,
+    weight: isLow ? 0 : baseMapMode === "satellite" ? 0.7 : 0.55,
     fillColor: color,
-    fillOpacity: isGeneral
+    fillOpacity: isLow
       ? baseMapMode === "satellite"
         ? 0.02
         : 0.05
       : baseMapMode === "satellite"
         ? 0.42
         : 0.72,
+    interactive: true,
+  };
+}
+
+function getInfectionHistoryStyle(
+  baseMapMode: BaseMapMode,
+): L.PathOptions {
+  return {
+    color: INFECTION_HISTORY_COLOR,
+    weight: baseMapMode === "satellite" ? 1.35 : 1.15,
+    opacity: 1,
+    fill: true,
+    fillColor: INFECTION_HISTORY_COLOR,
+    fillOpacity: baseMapMode === "satellite" ? 0.48 : 0.56,
     interactive: true,
   };
 }
@@ -267,10 +500,6 @@ function getHighRiskCount(summary: AdminSummary) {
   return summary.veryHighGridCount + summary.highGridCount;
 }
 
-function getPriorityTargetCount(summary: AdminSummary) {
-  return summary.topPriorityGridCount + summary.priorityGridCount;
-}
-
 function getShortageText(gap: number) {
   if (gap < 0) return `부족 ${formatNumber(Math.abs(gap), 0)}명`;
   if (gap > 0) return `여유 ${formatNumber(gap, 0)}명`;
@@ -283,7 +512,7 @@ function getShortageClass(gap: number) {
   return "text-slate-600";
 }
 
-function createAdminPopupHtml(summary: AdminSummary, workforce: WorkforceSummary | null) {
+function createAdminPopupHtml(summary: AdminSummary, workforce: RegionWorkforceCapacity | null) {
   const regionName = [summary.sidoName, summary.sigunguName, summary.emdName]
     .filter(Boolean)
     .join(" ");
@@ -295,32 +524,51 @@ function createAdminPopupHtml(summary: AdminSummary, workforce: WorkforceSummary
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <tr><td style="padding:5px 0;color:#64748b">전체 후보</td><td style="text-align:right;font-weight:700">${formatNumber(summary.totalGridCount, 0)}개</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">고위험 후보</td><td style="text-align:right;font-weight:700;color:#e11d48">${formatNumber(getHighRiskCount(summary), 0)}개</td></tr>
-        <tr><td style="padding:5px 0;color:#64748b">우선 예찰</td><td style="text-align:right;font-weight:700;color:#c2410c">${formatNumber(getPriorityTargetCount(summary), 0)}개</td></tr>
+        <tr><td style="padding:5px 0;color:#64748b">최우선 예찰</td><td style="text-align:right;font-weight:700;color:#c2410c">${formatNumber(summary.topPriorityGridCount, 0)}개</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">평균 위험도</td><td style="text-align:right;font-weight:700">${formatNumber(summary.avgRiskScore, 1)}점</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">평균 접근성</td><td style="text-align:right;font-weight:700">${formatNumber(summary.avgAccessScore, 1)}점</td></tr>
-        ${workforce ? `<tr><td style="padding:5px 0;color:#64748b">인력 배정률</td><td style="text-align:right;font-weight:700">${formatNumber(workforce.assignment_rate, 1)}%</td></tr>` : ""}
+        ${workforce ? `<tr><td style="padding:5px 0;color:#64748b">현재 가용요원</td><td style="text-align:right;font-weight:700">${formatNumber(workforce.available_worker_count, 0)}명</td></tr>` : ""}
       </table>
       <div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:#eff6ff;color:#1e3a8a;font-size:11px;line-height:1.5">감염 확정이 아닌 신규 확산위험 후보 및 우선 예찰 검토지역입니다.</div>
     </div>`;
 }
 
-function createGridPopupHtml(props: any) {
+function createGridPopupHtml(
+  props: any,
+  infectionHistory: any | null,
+) {
   const riskGrade = normalizeRiskGrade(props);
   const priorityGrade = normalizePriorityGrade(props);
+  const hasInfectionHistory =
+    safeNumber(infectionHistory?.infection_history_flag_2021) === 1 ||
+    safeNumber(infectionHistory?.infection_count_2016_2021) > 0;
+  const infectionCount = safeNumber(
+    infectionHistory?.infection_count_2016_2021,
+  );
+
   return `
-    <div style="min-width:230px;font-family:Pretendard,Arial,sans-serif;color:#0f172a">
-      <div style="font-size:16px;font-weight:800;margin-bottom:9px">AI 위험도 상세</div>
+    <div style="min-width:250px;font-family:Pretendard,Arial,sans-serif;color:#0f172a">
+      <div style="font-size:16px;font-weight:800;margin-bottom:9px">격자 분석 상세</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <tr><td style="padding:5px 0;color:#64748b">격자 ID</td><td style="text-align:right;font-weight:700">${escapeHtml(props.grid_id ?? props.id ?? "-")}</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">AI 위험도</td><td style="text-align:right;font-weight:700">${formatNumber(props.risk_score, 2)}점 / ${escapeHtml(riskGrade)}</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">예찰 우선순위</td><td style="text-align:right;font-weight:700">${formatNumber(props.field_priority_score_v3, 2)}점 / ${escapeHtml(priorityGrade)}</td></tr>
+        <tr><td style="padding:5px 0;color:#64748b">2016~2021년 감염 발생 이력</td><td style="text-align:right;font-weight:800;color:${hasInfectionHistory ? INFECTION_HISTORY_COLOR : "#64748b"}">${hasInfectionHistory ? "있음" : "없음"}</td></tr>
+        <tr><td style="padding:5px 0;color:#64748b">누적 발생 건수</td><td style="text-align:right;font-weight:700">${formatNumber(infectionCount, 0)}건</td></tr>
+        ${
+          hasInfectionHistory
+            ? `<tr><td style="padding:5px 0;color:#64748b">최초 발생 이력 연도</td><td style="text-align:right;font-weight:700">${formatNumber(infectionHistory?.infection_first_year, 0)}년</td></tr>
+               <tr><td style="padding:5px 0;color:#64748b">최근 발생 이력 연도</td><td style="text-align:right;font-weight:700">${formatNumber(infectionHistory?.infection_last_year, 0)}년</td></tr>`
+            : ""
+        }
         <tr><td style="padding:5px 0;color:#64748b">소나무류 비율</td><td style="text-align:right;font-weight:700">${formatNumber(safeNumber(props.pine_ratio) * 100, 1)}%</td></tr>
-        <tr><td style="padding:5px 0;color:#64748b">최근 감염압력</td><td style="text-align:right;font-weight:700">${formatNumber(props.recent_pressure_score ?? props.infection_pressure, 1)}점</td></tr>
+        <tr><td style="padding:5px 0;color:#64748b">주변 발생 이력 기반 확산압력</td><td style="text-align:right;font-weight:700">${formatNumber(props.recent_pressure_score ?? props.infection_pressure, 1)}점</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">접근성</td><td style="text-align:right;font-weight:700">${formatNumber(props.access_score_v3, 1)}점</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">가장 가까운 도로</td><td style="text-align:right;font-weight:700">${escapeHtml(props.nearest_road_type ?? props.road_class_near ?? "-")}</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">도로까지 거리</td><td style="text-align:right;font-weight:700">${formatNumber(props.distance_to_nearest_road_m_v3 ?? props.road_dist_m, 1)}m</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">환경주의</td><td style="text-align:right;font-weight:700">${safeNumber(props.environment_caution_flag_v3 ?? props.env_flag) === 1 ? "현장 확인 필요" : "해당 없음"}</td></tr>
       </table>
+      <div style="margin-top:9px;padding:7px 9px;border-radius:8px;background:#f5f3ff;color:#4c1d95;font-size:10px;line-height:1.5">감염 발생 이력은 2016~2021년 조사자료 기준이며, 2022년 이후는 예측·검증·평가 구간으로 별도 관리합니다.</div>
     </div>`;
 }
 
@@ -328,16 +576,21 @@ interface DashboardRiskMapCardProps {
   dispatchAssignments: DispatchAssignment[];
   onAssignWorker: (assignment: DispatchAssignment) => void;
   onGridSelect?: (grid: any) => void;
+  initialSigunguCode?: string;
+  initialSigunguName?: string;
 }
 
 export default function DashboardRiskMapCard({
   dispatchAssignments,
   onAssignWorker,
   onGridSelect,
+  initialSigunguCode,
+  initialSigunguName,
 }: DashboardRiskMapCardProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const leafletMapRef = useRef<L.Map | null>(null);
   const gridLayerRef = useRef<L.GeoJSON | null>(null);
+  const infectionHistoryLayerRef = useRef<L.GeoJSON | null>(null);
   const sigunguLayerRef = useRef<L.GeoJSON | null>(null);
   const popupRef = useRef<L.Popup | null>(null);
   const vworldBaseLayerRef = useRef<L.TileLayer | null>(null);
@@ -346,22 +599,32 @@ export default function DashboardRiskMapCard({
   const tileErrorCountRef = useRef(0);
   const onGridSelectRef = useRef(onGridSelect);
   const selectedAdminSummaryRef = useRef<AdminSummary | null>(null);
-  const selectedWorkforceSummaryRef = useRef<WorkforceSummary | null>(null);
+  const selectedRegionCapacityRef = useRef<RegionWorkforceCapacity | null>(null);
+  const infectionHistoryIndexRef = useRef<Map<string, any>>(new Map());
+  const initialRegionAppliedRef = useRef(false);
 
   const [geojson, setGeojson] = useState<any>(null);
+  const [infectionHistory, setInfectionHistory] = useState<any>(null);
   const [sigunguBoundary, setSigunguBoundary] = useState<any>(null);
-  const [workforceSummaries, setWorkforceSummaries] = useState<WorkforceSummary[]>([]);
+  const [regionCapacities, setRegionCapacities] = useState<RegionWorkforceCapacity[]>([]);
   const [workerMaster, setWorkerMaster] = useState<WorkerMasterRow[]>([]);
   const [geojsonError, setGeojsonError] = useState("");
   const [boundaryError, setBoundaryError] = useState("");
+  const [infectionHistoryError, setInfectionHistoryError] = useState("");
+  const [infectionHistoryLoading, setInfectionHistoryLoading] = useState(true);
+  const [visibleInfectionHistoryFeatures, setVisibleInfectionHistoryFeatures] =
+    useState<any[]>([]);
   const [workforceError, setWorkforceError] = useState("");
   const [workerMasterError, setWorkerMasterError] = useState("");
   const [baseMapMode, setBaseMapMode] = useState<BaseMapMode>("base");
+  const [mapDisplayMode, setMapDisplayMode] =
+    useState<MapDisplayMode>("priority");
+  const [showInfectionHistory, setShowInfectionHistory] = useState(true);
   const [selectedSigunguCode, setSelectedSigunguCode] = useState("");
   const [selectedEmdCode, setSelectedEmdCode] = useState("");
   const [selected, setSelected] = useState<any>(null);
-  const [recommendationTab, setRecommendationTab] =
-    useState<DispatchWorkerType>("현장요원");
+  const [selectedTaskType, setSelectedTaskType] =
+    useState<DispatchTaskType>("SURVEY");
   const [assignmentMessage, setAssignmentMessage] = useState("");
   const [tileStatus, setTileStatus] = useState<TileStatus>(
     HAS_VWORLD_KEY ? "loading" : "fallback",
@@ -374,10 +637,73 @@ export default function DashboardRiskMapCard({
     onGridSelectRef.current = onGridSelect;
   }, [onGridSelect]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setInfectionHistoryLoading(true);
+    setInfectionHistoryError("");
+
+    fetch(INFECTION_HISTORY_PATH, {
+      cache: "no-cache",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`감염 발생 이력 데이터 로드 ${response.status}`);
+        }
+        const data = await response.json();
+        if (!Array.isArray(data?.features)) {
+          throw new Error("감염 발생 이력 GeoJSON 형식 오류");
+        }
+        setInfectionHistory(data);
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        console.error("감염 발생 이력 데이터 로드 오류:", error);
+        setInfectionHistoryError(
+          error instanceof Error
+            ? error.message
+            : "감염 발생 이력 데이터를 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setInfectionHistoryLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, []);
+
   const features = useMemo(
     () => (Array.isArray(geojson?.features) ? geojson.features : []),
     [geojson],
   );
+
+  const infectionHistoryFeatures = useMemo(
+    () =>
+      Array.isArray(infectionHistory?.features)
+        ? infectionHistory.features
+        : [],
+    [infectionHistory],
+  );
+
+  const infectionHistoryIndex = useMemo(() => {
+    const index = new Map<string, any>();
+    for (const feature of infectionHistoryFeatures) {
+      const props = feature?.properties ?? {};
+      const id = normalizeCode(props.id ?? props.grid_id);
+      if (id) index.set(id, feature);
+    }
+    return index;
+  }, [infectionHistoryFeatures]);
+
+  useEffect(() => {
+    const propertyIndex = new Map<string, any>();
+    for (const [id, feature] of infectionHistoryIndex.entries()) {
+      propertyIndex.set(id, feature?.properties ?? {});
+    }
+    infectionHistoryIndexRef.current = propertyIndex;
+  }, [infectionHistoryIndex]);
 
   const featureIndex = useMemo(() => {
     const sigungu = new Map<string, any[]>();
@@ -420,6 +746,32 @@ export default function DashboardRiskMapCard({
     );
   }, [features]);
 
+  useEffect(() => {
+    if (initialRegionAppliedRef.current || !sigunguOptions.length) return;
+
+    const requestedCode = normalizeCode(initialSigunguCode);
+    const requestedName = String(initialSigunguName ?? "").trim();
+
+    const matched =
+      sigunguOptions.find((option) => option.code === requestedCode) ??
+      sigunguOptions.find((option) =>
+        requestedName && option.sigunguName === requestedName,
+      );
+
+    initialRegionAppliedRef.current = true;
+
+    if (!matched) {
+      console.warn("로그인 계정 지역을 지도 데이터에서 찾지 못했습니다.", {
+        initialSigunguCode,
+        initialSigunguName,
+      });
+      return;
+    }
+
+    setSelectedSigunguCode(matched.code);
+    setSelectedEmdCode("");
+  }, [sigunguOptions, initialSigunguCode, initialSigunguName]);
+
   const emdOptions = useMemo(() => {
     if (!selectedSigunguCode) return [];
     const options = new Map<string, { code: string; name: string }>();
@@ -438,75 +790,242 @@ export default function DashboardRiskMapCard({
     return [];
   }, [featureIndex, selectedSigunguCode, selectedEmdCode]);
 
+  const selectedDisplayFeatures = useMemo(
+    () =>
+      selectedAdminFeatures.filter((feature) =>
+        isTop10Candidate(feature?.properties ?? {}, mapDisplayMode),
+      ),
+    [selectedAdminFeatures, mapDisplayMode],
+  );
+
+  const infectionSpatialFeatures = useMemo(
+    () =>
+      infectionHistoryFeatures
+        .map((feature) => ({
+          feature,
+          center: getFeatureCenter(feature),
+        }))
+        .filter(
+          (item): item is { feature: any; center: [number, number] } =>
+            item.center !== null,
+        ),
+    [infectionHistoryFeatures],
+  );
+
+  const selectedSigunguBoundaryFeature = useMemo(() => {
+    if (!selectedSigunguCode || !Array.isArray(sigunguBoundary?.features)) {
+      return null;
+    }
+
+    return (
+      sigunguBoundary.features.find((feature: any) =>
+        normalizeCode(feature?.properties?.sigungu_code) === selectedSigunguCode,
+      ) ?? null
+    );
+  }, [sigunguBoundary, selectedSigunguCode]);
+
+  useEffect(() => {
+    if (
+      !showInfectionHistory ||
+      !selectedSigunguCode ||
+      !infectionSpatialFeatures.length
+    ) {
+      setVisibleInfectionHistoryFeatures([]);
+      return;
+    }
+
+    const emdBounds = selectedEmdCode
+      ? getFeaturesBounds(selectedAdminFeatures)
+      : null;
+
+    const visible = infectionSpatialFeatures
+      .filter(({ center }) => {
+        const [lng, lat] = center;
+
+        if (selectedEmdCode && emdBounds) {
+          return isPointInsideBounds(lng, lat, emdBounds, 0.0001);
+        }
+
+        if (selectedSigunguBoundaryFeature?.geometry) {
+          return isPointInGeometry(
+            lng,
+            lat,
+            selectedSigunguBoundaryFeature.geometry,
+          );
+        }
+
+        const fallbackBounds = getFeaturesBounds(selectedAdminFeatures);
+        return fallbackBounds
+          ? isPointInsideBounds(lng, lat, fallbackBounds, 0.0001)
+          : false;
+      })
+      .map(({ feature }) => feature);
+
+    setVisibleInfectionHistoryFeatures(visible);
+  }, [
+    infectionSpatialFeatures,
+    showInfectionHistory,
+    selectedSigunguCode,
+    selectedEmdCode,
+    selectedSigunguBoundaryFeature,
+    selectedAdminFeatures,
+  ]);
+
   const selectedAdminSummary = useMemo(() => {
     if (selectedEmdCode) return buildSummary(selectedAdminFeatures, "emd");
     if (selectedSigunguCode) return buildSummary(selectedAdminFeatures, "sigungu");
     return null;
   }, [selectedAdminFeatures, selectedSigunguCode, selectedEmdCode]);
 
-  const workforceSummaryMap = useMemo(() => {
-    const map = new Map<string, WorkforceSummary>();
-    for (const row of workforceSummaries) {
+  const regionCapacityMap = useMemo(() => {
+    const map = new Map<string, RegionWorkforceCapacity>();
+    for (const row of regionCapacities) {
       const code = normalizeCode(row.sigungu_code);
       if (code) map.set(code, row);
     }
     return map;
-  }, [workforceSummaries]);
+  }, [regionCapacities]);
 
-  const selectedWorkforceSummary = useMemo(() => {
+  const selectedRegionCapacity = useMemo(() => {
     if (!selectedSigunguCode) return null;
-    return workforceSummaryMap.get(selectedSigunguCode) ?? null;
-  }, [workforceSummaryMap, selectedSigunguCode]);
+    return regionCapacityMap.get(selectedSigunguCode) ?? null;
+  }, [regionCapacityMap, selectedSigunguCode]);
 
   useEffect(() => {
     selectedAdminSummaryRef.current = selectedAdminSummary;
   }, [selectedAdminSummary]);
   useEffect(() => {
-    selectedWorkforceSummaryRef.current = selectedWorkforceSummary;
-  }, [selectedWorkforceSummary]);
+    selectedRegionCapacityRef.current = selectedRegionCapacity;
+  }, [selectedRegionCapacity]);
+
+  const selectedTaskLabel =
+    selectedTaskType === "SURVEY"
+      ? "예찰"
+      : selectedTaskType === "DRONE"
+        ? "드론"
+        : "방제";
 
   const recommendedWorkers = useMemo<Recommendation[]>(() => {
     if (!selectedSigunguCode) return [];
-    const alreadyAssignedIds = new Set(dispatchAssignments.map((item) => item.workerId));
+    const alreadyAssignedIds = new Set(
+      dispatchAssignments
+        .filter((item) => item.status !== "복귀 완료")
+        .map((item) => item.workerId),
+    );
+    const targetLat = selected ? safeNumber(selected.__lat) : null;
+    const targetLon = selected ? safeNumber(selected.__lon) : null;
+
     return workerMaster
-      .filter(
-        (worker) =>
-          worker.worker_type === recommendationTab &&
-          worker.status === "대기" &&
-          !alreadyAssignedIds.has(worker.worker_id),
-      )
+      .filter((worker) => {
+        const capability = worker.capabilities.find(
+          (item) => item.taskType === selectedTaskType,
+        );
+        if (!capability) return false;
+        const availabilityOk = [
+          "AVAILABLE",
+          "PARTIAL",
+          "대기",
+          "가능",
+        ].includes(worker.availability_status);
+        const statusOk = [
+          "AVAILABLE",
+          "대기",
+          "복귀",
+        ].includes(worker.status);
+        if (!availabilityOk || !statusOk) return false;
+        if (worker.remaining_minutes <= 0) return false;
+        if (alreadyAssignedIds.has(worker.worker_id)) return false;
+
+        const homeRegionMatch =
+          worker.home_sigungu_code === selectedSigunguCode;
+        const serviceAreaMatch = worker.serviceAreas.some(
+          (area) =>
+            area.sigunguCode === selectedSigunguCode ||
+            (area.supportType === "WIDE_AREA_SUPPORT" &&
+              area.sidoCode === selectedAdminSummary?.sidoCode),
+        );
+
+        return homeRegionMatch || serviceAreaMatch;
+      })
       .map((worker) => {
-        let recommendationScore = 0;
-        let assignmentType: Recommendation["assignmentType"];
-        if (worker.home_sigungu_code === selectedSigunguCode) {
-          recommendationScore += 100;
-          assignmentType = "지역 내 배정";
-        } else if (worker.sido_name === selectedAdminSummary?.sidoName) {
-          recommendationScore += 60;
-          assignmentType = "동일 시도 지원";
-        } else {
-          recommendationScore += 20;
-          assignmentType = "권역 지원";
-        }
-        recommendationScore += (worker.battery_percent ?? 0) * 0.2;
-        recommendationScore -= Math.min(worker.travel_distance_km ?? 999, 100) * 0.3;
-        if (
-          recommendationTab === "드론요원" &&
-          selectedAdminSummary &&
-          selectedAdminSummary.avgAccessScore < 50
-        ) {
-          recommendationScore += 20;
-        }
-        return { worker, assignmentType, recommendationScore };
+        const capability = worker.capabilities.find(
+          (item) => item.taskType === selectedTaskType,
+        )!;
+        const serviceArea =
+          worker.serviceAreas.find(
+            (area) =>
+              area.sigunguCode === selectedSigunguCode && area.supportType === "PRIMARY",
+          ) ??
+          worker.serviceAreas.find(
+            (area) =>
+              area.sigunguCode === selectedSigunguCode &&
+              area.supportType === "NEIGHBOR_SUPPORT",
+          ) ??
+          worker.serviceAreas.find(
+            (area) =>
+              area.supportType === "WIDE_AREA_SUPPORT" &&
+              area.sidoCode === selectedAdminSummary?.sidoCode,
+          ) ??
+          (worker.home_sigungu_code === selectedSigunguCode
+            ? {
+                sidoCode: worker.home_sido_code,
+                sigunguCode: worker.home_sigungu_code,
+                sigunguName: worker.home_sigungu_name,
+                assignmentPriority: 1,
+                supportType: "PRIMARY" as const,
+                maxTravelKm: 35,
+              }
+            : undefined);
+
+        const assignmentType: Recommendation["assignmentType"] =
+          serviceArea?.supportType === "PRIMARY"
+            ? "지역 내 배정"
+            : serviceArea?.supportType === "NEIGHBOR_SUPPORT"
+              ? "인접지역 지원"
+              : "광역 지원";
+
+        const distanceKm =
+          targetLat !== null && targetLon !== null
+            ? calculateDistanceKm(
+                worker.base_lat,
+                worker.base_lon,
+                targetLat,
+                targetLon,
+              )
+            : null;
+
+        let recommendationScore =
+          assignmentType === "지역 내 배정"
+            ? 40
+            : assignmentType === "인접지역 지원"
+              ? 25
+              : 12;
+        recommendationScore += capability.skillLevel * 12;
+        recommendationScore += Math.min(worker.remaining_minutes / 30, 14);
+        recommendationScore += capability.canWorkSolo ? 6 : 0;
+        recommendationScore += Math.min(worker.experience_years, 10) * 0.8;
+        if (distanceKm !== null) recommendationScore -= Math.min(distanceKm, 100) * 0.25;
+
+        const reason = `${assignmentType} · ${selectedTaskLabel} ${capability.skillLevel}단계 · 잔여 ${formatNumber(worker.remaining_minutes, 0)}분`;
+        return {
+          worker,
+          assignmentType,
+          recommendationScore,
+          distanceKm,
+          skillLevel: capability.skillLevel,
+          reason,
+        };
       })
       .sort((a, b) => b.recommendationScore - a.recommendationScore)
-      .slice(0, 8);
+      .slice(0, 12);
   }, [
     workerMaster,
     dispatchAssignments,
-    recommendationTab,
+    selectedTaskType,
     selectedSigunguCode,
     selectedAdminSummary,
+    selected,
+    selectedTaskLabel,
   ]);
 
   useEffect(() => {
@@ -514,83 +1033,123 @@ export default function DashboardRiskMapCard({
     Promise.all([
       fetch(GEOJSON_PATH, { cache: "force-cache", signal: controller.signal }),
       fetch(SIGUNGU_BOUNDARY_PATH, { cache: "force-cache", signal: controller.signal }),
-      fetch(WORKFORCE_SUMMARY_PATH, { cache: "force-cache", signal: controller.signal }),
-      fetch(WORKER_MASTER_PATH, { cache: "force-cache", signal: controller.signal }),
+      fetch(WORKERS_PATH, { cache: "no-cache", signal: controller.signal }),
+      fetch(WORKER_CAPABILITIES_PATH, { cache: "no-cache", signal: controller.signal }),
+      fetch(WORKER_SERVICE_AREAS_PATH, { cache: "no-cache", signal: controller.signal }),
+      fetch(WORKER_AVAILABILITY_PATH, { cache: "no-cache", signal: controller.signal }),
+      fetch(WORKER_CURRENT_STATUS_PATH, { cache: "no-cache", signal: controller.signal }),
+      fetch(REGION_WORKFORCE_CAPACITY_PATH, { cache: "no-cache", signal: controller.signal }),
     ])
-      .then(async ([gridResponse, boundaryResponse, workforceResponse, workerResponse]) => {
-        if (!gridResponse.ok) throw new Error(`격자 GeoJSON ${gridResponse.status}`);
-        if (!boundaryResponse.ok) throw new Error(`시군구 경계 ${boundaryResponse.status}`);
-        if (!workforceResponse.ok) throw new Error(`인력 요약 ${workforceResponse.status}`);
-        if (!workerResponse.ok) throw new Error(`요원 마스터 ${workerResponse.status}`);
-        const [gridData, boundaryData, workforceData, workerData] = await Promise.all([
-          gridResponse.json(),
-          boundaryResponse.json(),
-          workforceResponse.json(),
-          workerResponse.json(),
-        ]);
+      .then(async (responses) => {
+        for (const response of responses) {
+          if (!response.ok) throw new Error(`데이터 로드 ${response.status}`);
+        }
+        const [
+          gridData,
+          boundaryData,
+          workersData,
+          capabilitiesData,
+          serviceAreasData,
+          availabilityData,
+          currentStatusData,
+          capacityData,
+        ] = await Promise.all(responses.map((response) => response.json()));
+
         if (!Array.isArray(gridData?.features)) throw new Error("격자 GeoJSON 형식 오류");
         if (!Array.isArray(boundaryData?.features)) throw new Error("시군구 경계 형식 오류");
-        if (!Array.isArray(workforceData)) throw new Error("인력 요약 형식 오류");
-        if (!Array.isArray(workerData)) throw new Error("요원 마스터 형식 오류");
+        for (const data of [
+          workersData,
+          capabilitiesData,
+          serviceAreasData,
+          availabilityData,
+          currentStatusData,
+          capacityData,
+        ]) {
+          if (!Array.isArray(data)) throw new Error("현장요원 v2 데이터 형식 오류");
+        }
+
+        const capabilityMap = new Map<string, TaskCapability[]>();
+        for (const row of capabilitiesData) {
+          const workerId = String(row.worker_id ?? "");
+          const taskType = String(row.task_type ?? "") as DispatchTaskType;
+          if (!workerId || !["SURVEY", "DRONE", "CONTROL"].includes(taskType)) continue;
+          const list = capabilityMap.get(workerId) ?? [];
+          list.push({
+            taskType,
+            skillLevel: safeNumber(row.skill_level),
+            canWorkSolo: safeNumber(row.can_work_solo) === 1,
+            isPrimarySkill: safeNumber(row.is_primary_skill) === 1,
+          });
+          capabilityMap.set(workerId, list);
+        }
+
+        const serviceAreaMap = new Map<string, ServiceArea[]>();
+        for (const row of serviceAreasData) {
+          const workerId = String(row.worker_id ?? "");
+          if (!workerId) continue;
+          const list = serviceAreaMap.get(workerId) ?? [];
+          list.push({
+            sidoCode: normalizeCode(row.sido_code),
+            sigunguCode: normalizeCode(row.sigungu_code),
+            sigunguName: String(row.sigungu_name ?? ""),
+            assignmentPriority: safeNumber(row.assignment_priority),
+            supportType: String(row.support_type ?? "PRIMARY") as ServiceArea["supportType"],
+            maxTravelKm: safeNumber(row.max_travel_km),
+          });
+          serviceAreaMap.set(workerId, list);
+        }
+
+        const availabilityMap = new Map(
+          availabilityData.map((row: any) => [String(row.worker_id ?? ""), row]),
+        );
+        const currentStatusMap = new Map(
+          currentStatusData.map((row: any) => [String(row.worker_id ?? ""), row]),
+        );
+
         setGeojson(gridData);
         setSigunguBoundary(boundaryData);
-        setWorkforceSummaries(
-          workforceData.map((row: any) => ({
-            ...row,
+        setRegionCapacities(
+          capacityData.map((row: any) => ({
             sigungu_code: normalizeCode(row.sigungu_code),
             sido_name: String(row.sido_name ?? ""),
             sigungu_name: String(row.sigungu_name ?? ""),
-            all_grid_count: safeNumber(row.all_grid_count),
-            target_grid_count: safeNumber(row.target_grid_count),
-            very_high_count: safeNumber(row.very_high_count),
-            high_count: safeNumber(row.high_count),
-            top_priority_count: safeNumber(row.top_priority_count),
-            priority_count: safeNumber(row.priority_count),
-            low_access_target_count: safeNumber(row.low_access_target_count),
-            environment_caution_count: safeNumber(row.environment_caution_count),
-            avg_risk_score: safeNumber(row.avg_risk_score),
-            avg_infection_pressure: safeNumber(row.avg_infection_pressure),
-            avg_access_score: safeNumber(row.avg_access_score),
-            estimated_minutes: safeNumber(row.estimated_minutes),
-            required_person_days: safeNumber(row.required_person_days),
-            required_field_workers: safeNumber(row.required_field_workers),
-            available_field_workers: safeNumber(row.available_field_workers),
-            field_worker_gap: safeNumber(row.field_worker_gap),
-            field_shortage_count: safeNumber(row.field_shortage_count),
-            required_drone_workers: safeNumber(row.required_drone_workers),
-            available_drone_workers: safeNumber(row.available_drone_workers),
-            drone_worker_gap: safeNumber(row.drone_worker_gap),
-            drone_shortage_count: safeNumber(row.drone_shortage_count),
-            required_control_standby: safeNumber(row.required_control_standby),
-            available_control_workers: safeNumber(row.available_control_workers),
-            control_worker_gap: safeNumber(row.control_worker_gap),
-            control_shortage_count: safeNumber(row.control_shortage_count),
-            assigned_grid_count: safeNumber(row.assigned_grid_count),
-            assigned_worker_count: safeNumber(row.assigned_worker_count),
-            assigned_minutes: safeNumber(row.assigned_minutes),
-            unassigned_grid_count: safeNumber(row.unassigned_grid_count),
-            unassigned_minutes: safeNumber(row.unassigned_minutes),
-            assignment_rate: safeNumber(row.assignment_rate),
+            registered_worker_count: safeNumber(row.registered_worker_count),
+            available_worker_count: safeNumber(row.available_worker_count),
+            survey_available_count: safeNumber(row.survey_available_count),
+            drone_available_count: safeNumber(row.drone_available_count),
+            control_available_count: safeNumber(row.control_available_count),
+            remaining_minutes: safeNumber(row.remaining_minutes),
+            open_task_count: safeNumber(row.open_task_count),
+            shortage_worker_count: safeNumber(row.shortage_worker_count),
+            support_required: safeNumber(row.support_required),
           })),
         );
         setWorkerMaster(
-          workerData.map((row: any) => ({
-            worker_id: String(row.worker_id ?? ""),
-            worker_name: String(row.worker_name ?? ""),
-            worker_type: String(row.worker_type ?? "현장요원") as WorkerMasterRow["worker_type"],
-            home_sigungu_code: normalizeCode(row.home_sigungu_code),
-            sido_name: String(row.sido_name ?? ""),
-            sigungu_name: String(row.sigungu_name ?? ""),
-            status: String(row.status ?? ""),
-            availability_status: String(row.availability_status ?? ""),
-            travel_distance_km:
-              row.travel_distance_km == null ? null : safeNumber(row.travel_distance_km),
-            travel_time_hour:
-              row.travel_time_hour == null ? null : safeNumber(row.travel_time_hour),
-            battery_percent:
-              row.battery_percent == null ? null : safeNumber(row.battery_percent),
-            battery_context: String(row.battery_context ?? ""),
-          })),
+          workersData.map((row: any) => {
+            const workerId = String(row.worker_id ?? "");
+            const availability = availabilityMap.get(workerId) ?? {};
+            const currentStatus = currentStatusMap.get(workerId) ?? {};
+            return {
+              worker_id: workerId,
+              worker_name: String(row.worker_name ?? ""),
+              home_sido_code: normalizeCode(row.home_sido_code),
+              home_sido_name: String(row.home_sido_name ?? ""),
+              home_sigungu_code: normalizeCode(row.home_sigungu_code),
+              home_sigungu_name: String(row.home_sigungu_name ?? ""),
+              base_lat: safeNumber(row.base_lat),
+              base_lon: safeNumber(row.base_lon),
+              experience_years: safeNumber(row.experience_years),
+              capabilities: capabilityMap.get(workerId) ?? [],
+              serviceAreas: serviceAreaMap.get(workerId) ?? [],
+              availability_status: String(availability.availability_status ?? "UNAVAILABLE"),
+              remaining_minutes: safeNumber(availability.remaining_minutes),
+              status: String(currentStatus.status ?? "UNAVAILABLE"),
+              battery_percent:
+                currentStatus.battery_level == null
+                  ? null
+                  : safeNumber(currentStatus.battery_level),
+            };
+          }),
         );
       })
       .catch((error) => {
@@ -599,8 +1158,7 @@ export default function DashboardRiskMapCard({
         const message = error instanceof Error ? error.message : "알 수 없는 오류";
         if (message.includes("격자")) setGeojsonError(message);
         else if (message.includes("경계")) setBoundaryError(message);
-        else if (message.includes("요원 마스터")) setWorkerMasterError(message);
-        else setWorkforceError(message);
+        else setWorkerMasterError(message);
       });
     return () => controller.abort();
   }, []);
@@ -685,6 +1243,7 @@ export default function DashboardRiskMapCard({
       map.remove();
       leafletMapRef.current = null;
       gridLayerRef.current = null;
+      infectionHistoryLayerRef.current = null;
       sigunguLayerRef.current = null;
       popupRef.current = null;
     };
@@ -708,11 +1267,15 @@ export default function DashboardRiskMapCard({
       if (HAS_VWORLD_KEY && !map.hasLayer(hybrid)) hybrid.addTo(map);
     }
     gridLayerRef.current?.setStyle((feature) =>
-      getGridStyle(feature?.properties ?? {}, baseMapMode),
+      getGridStyle(feature?.properties ?? {}, baseMapMode, mapDisplayMode),
+    );
+    infectionHistoryLayerRef.current?.setStyle(
+      getInfectionHistoryStyle(baseMapMode),
     );
     gridLayerRef.current?.bringToFront();
+    infectionHistoryLayerRef.current?.bringToFront();
     sigunguLayerRef.current?.bringToFront();
-  }, [baseMapMode]);
+  }, [baseMapMode, mapDisplayMode]);
 
   useEffect(() => {
     const map = leafletMapRef.current;
@@ -768,24 +1331,42 @@ export default function DashboardRiskMapCard({
     setAssignmentMessage("");
     onGridSelectRef.current?.(null);
 
-    if (!selectedAdminFeatures.length || !selectedAdminSummary) {
+    if (!selectedAdminSummary) {
       map.fitBounds(KOREA_BOUNDS, { padding: [20, 20], animate: false, maxZoom: 7 });
+      return;
+    }
+
+    if (!selectedDisplayFeatures.length) {
+      const adminCollection = {
+        type: "FeatureCollection",
+        features: selectedAdminFeatures,
+      } as any;
+      const adminLayer = L.geoJSON(adminCollection);
+      const adminBounds = adminLayer.getBounds();
+      if (adminBounds.isValid()) {
+        map.fitBounds(adminBounds, {
+          padding: [28, 28],
+          animate: false,
+          maxZoom: selectedEmdCode ? 13 : 11,
+        });
+      }
       return;
     }
 
     const selectedCollection = {
       type: "FeatureCollection",
-      features: selectedAdminFeatures,
+      features: selectedDisplayFeatures,
     } as any;
     const layer = L.geoJSON(selectedCollection, {
       renderer: GRID_RENDERER,
-      style: (feature) => getGridStyle(feature?.properties ?? {}, baseMapMode),
+      style: (feature) =>
+        getGridStyle(feature?.properties ?? {}, baseMapMode, mapDisplayMode),
       onEachFeature: (feature, featureLayer) => {
         const path = featureLayer as L.Path;
         const props = feature?.properties ?? {};
         path.on("click", (event: L.LeafletMouseEvent) => {
           L.DomEvent.stopPropagation(event);
-          setSelected(props);
+          setSelected({ ...props, __lat: event.latlng.lat, __lon: event.latlng.lng });
           setAssignmentMessage("");
           onGridSelectRef.current?.(props);
           popupRef.current?.remove();
@@ -798,7 +1379,14 @@ export default function DashboardRiskMapCard({
             className: "pine-risk-popup",
           })
             .setLatLng(event.latlng)
-            .setContent(createGridPopupHtml(props))
+            .setContent(
+              createGridPopupHtml(
+                props,
+                infectionHistoryIndexRef.current.get(
+                  normalizeCode(props.grid_id ?? props.id),
+                ) ?? null,
+              ),
+            )
             .openOn(map);
         });
       },
@@ -827,7 +1415,7 @@ export default function DashboardRiskMapCard({
         })
           .setLatLng(map.getCenter())
           .setContent(
-            createAdminPopupHtml(currentSummary, selectedWorkforceSummaryRef.current),
+            createAdminPopupHtml(currentSummary, selectedRegionCapacityRef.current),
           )
           .openOn(map);
       }, 80);
@@ -836,45 +1424,135 @@ export default function DashboardRiskMapCard({
       layer.removeFrom(map);
       if (gridLayerRef.current === layer) gridLayerRef.current = null;
     };
-  }, [selectedAdminFeatures, selectedAdminSummary, selectedEmdCode]);
+  }, [selectedDisplayFeatures, selectedAdminFeatures, selectedAdminSummary, selectedEmdCode]);
+
+  useEffect(() => {
+    const map = leafletMapRef.current;
+    if (!map) return;
+
+    infectionHistoryLayerRef.current?.removeFrom(map);
+    infectionHistoryLayerRef.current = null;
+
+    if (
+      !showInfectionHistory ||
+      !selectedSigunguCode ||
+      !visibleInfectionHistoryFeatures.length
+    ) {
+      return;
+    }
+
+    const infectionCollection = {
+      type: "FeatureCollection",
+      features: visibleInfectionHistoryFeatures,
+    } as any;
+
+    const layer = L.geoJSON(infectionCollection, {
+      renderer: GRID_RENDERER,
+      style: getInfectionHistoryStyle(baseMapMode),
+      onEachFeature: (feature, featureLayer) => {
+        const props = feature?.properties ?? {};
+        const path = featureLayer as L.Path;
+
+        path.bindTooltip(
+          `2016~2021년 감염 발생 이력 · 누적 ${formatNumber(
+            props.infection_count_2016_2021,
+            0,
+          )}건`,
+          { sticky: true, direction: "top" },
+        );
+
+        path.on("click", (event: L.LeafletMouseEvent) => {
+          L.DomEvent.stopPropagation(event);
+          popupRef.current?.remove();
+          popupRef.current = L.popup({
+            maxWidth: 300,
+            minWidth: 230,
+            closeButton: true,
+            autoPan: true,
+            offset: L.point(12, -8),
+            className: "pine-infection-history-popup",
+          })
+            .setLatLng(event.latlng)
+            .setContent(`
+              <div style="min-width:220px;font-family:Pretendard,Arial,sans-serif;color:#0f172a">
+                <div style="font-size:15px;font-weight:800;color:${INFECTION_HISTORY_COLOR};margin-bottom:9px">2016~2021년 감염 발생 이력</div>
+                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                  <tr><td style="padding:5px 0;color:#64748b">격자 ID</td><td style="text-align:right;font-weight:700">${escapeHtml(props.id ?? props.grid_id ?? "-")}</td></tr>
+                  <tr><td style="padding:5px 0;color:#64748b">누적 발생 건수</td><td style="text-align:right;font-weight:800;color:${INFECTION_HISTORY_COLOR}">${formatNumber(props.infection_count_2016_2021, 0)}건</td></tr>
+                  <tr><td style="padding:5px 0;color:#64748b">최초 발생 이력</td><td style="text-align:right;font-weight:700">${formatNumber(props.infection_first_year, 0)}년</td></tr>
+                  <tr><td style="padding:5px 0;color:#64748b">최근 발생 이력</td><td style="text-align:right;font-weight:700">${formatNumber(props.infection_last_year, 0)}년</td></tr>
+                </table>
+                <div style="margin-top:9px;padding:8px;border-radius:8px;background:#f5f3ff;color:#5b21b6;font-size:11px;line-height:1.5">학습 기준기간인 2016~2021년 감염 발생 이력 격자입니다.</div>
+              </div>
+            `)
+            .openOn(map);
+        });
+      },
+    }).addTo(map);
+
+    infectionHistoryLayerRef.current = layer;
+    layer.bringToFront();
+
+    return () => {
+      layer.removeFrom(map);
+      if (infectionHistoryLayerRef.current === layer) {
+        infectionHistoryLayerRef.current = null;
+      }
+    };
+  }, [
+    visibleInfectionHistoryFeatures,
+    showInfectionHistory,
+    selectedSigunguCode,
+    baseMapMode,
+  ]);
 
   function handleAssignRecommendedWorker(
-    worker: WorkerMasterRow,
-    assignmentType: Recommendation["assignmentType"],
+    recommendation: Recommendation,
   ) {
     if (!selected) {
       setAssignmentMessage("먼저 지도에서 배정할 격자를 선택하세요.");
       return;
     }
+    const { worker, assignmentType, distanceKm, skillLevel } = recommendation;
     const gridId = String(selected.grid_id ?? selected.id ?? "");
     if (!gridId) {
       setAssignmentMessage("선택한 격자의 ID를 확인할 수 없습니다.");
       return;
     }
     const duplicated = dispatchAssignments.some(
-      (assignment) => assignment.workerId === worker.worker_id && assignment.gridId === gridId,
+      (assignment) =>
+        assignment.workerId === worker.worker_id &&
+        assignment.gridId === gridId &&
+        assignment.status !== "복귀 완료",
     );
     if (duplicated) {
       setAssignmentMessage("이미 해당 격자에 배정된 요원입니다.");
       return;
     }
-    let recommendationReason =
-      "현재 대기 상태이며 선택 격자의 우선예찰 업무에 투입 가능한 추천 요원입니다.";
-    if (recommendationTab === "드론요원") {
-      recommendationReason = "접근성이 낮은 격자의 사전 항공예찰을 위한 추천입니다.";
-    }
-    if (recommendationTab === "방제요원") {
-      recommendationReason =
-        "현장 확인 이후 신속한 방제 대응을 준비하기 위한 대기 배정입니다.";
-    }
+
+    const taskLabel =
+      selectedTaskType === "SURVEY"
+        ? "현장요원"
+        : selectedTaskType === "DRONE"
+          ? "드론요원"
+          : "방제요원";
+    const travelTimeHour = distanceKm === null ? null : distanceKm / 35;
+    const recommendationReason = `${assignmentType} · ${selectedTaskLabel} ${skillLevel}단계 · 잔여 ${formatNumber(worker.remaining_minutes, 0)}분`;
+
     const assignment: DispatchAssignment = {
       assignmentId: `DISPATCH-${Date.now()}-${worker.worker_id}`,
       workerId: worker.worker_id,
       workerName: worker.worker_name,
-      workerType: worker.worker_type,
-      homeSidoName: worker.sido_name,
+      workerType: taskLabel,
+      taskType: selectedTaskType,
+      workerCapabilities: worker.capabilities.map((item) => ({
+        taskType: item.taskType,
+        skillLevel: item.skillLevel,
+      })),
+      assignedSkillLevel: skillLevel,
+      homeSidoName: worker.home_sido_name,
       homeSigunguCode: worker.home_sigungu_code,
-      homeSigunguName: worker.sigungu_name,
+      homeSigunguName: worker.home_sigungu_name,
       targetSidoName: String(selected.sido_name ?? selectedAdminSummary?.sidoName ?? ""),
       targetSigunguCode: normalizeCode(selected.sigungu_code ?? selectedSigunguCode),
       targetSigunguName: String(
@@ -887,9 +1565,10 @@ export default function DashboardRiskMapCard({
       riskGrade: normalizeRiskGrade(selected),
       riskScore: safeNumber(selected.risk_score),
       accessScore: safeNumber(selected.access_score_v3),
-      distanceKm: worker.travel_distance_km,
-      travelTimeHour: worker.travel_time_hour,
+      distanceKm,
+      travelTimeHour,
       batteryPercent: worker.battery_percent,
+      remainingMinutesAtAssignment: worker.remaining_minutes,
       recommendationReason,
       assignmentType,
       status: "배정 대기",
@@ -897,7 +1576,7 @@ export default function DashboardRiskMapCard({
     };
     onAssignWorker(assignment);
     setAssignmentMessage(
-      `${worker.worker_name} ${worker.worker_type}을(를) GRID-${gridId}에 배정했습니다.`,
+      `${worker.worker_name} 요원을 GRID-${gridId} ${selectedTaskLabel} 업무에 배정했습니다.`,
     );
   }
 
@@ -913,12 +1592,6 @@ export default function DashboardRiskMapCard({
 
 
 
-  const assignedGridCount =
-    selectedWorkforceSummary?.assigned_grid_count ?? 0;
-
-  const unassignedGridCount =
-    selectedWorkforceSummary?.unassigned_grid_count ?? 0;
-
   const regionName = selectedAdminSummary
     ? [
         selectedAdminSummary.sidoName,
@@ -928,14 +1601,6 @@ export default function DashboardRiskMapCard({
         .filter(Boolean)
         .join(" ")
     : "전국";
-
-  const highRiskCount = selectedAdminSummary
-    ? getHighRiskCount(selectedAdminSummary)
-    : 0;
-
-  const priorityTargetCount = selectedAdminSummary
-    ? getPriorityTargetCount(selectedAdminSummary)
-    : 0;
 
   const weeklyTrend = useMemo(() => {
     const base = Math.max(
@@ -960,61 +1625,71 @@ export default function DashboardRiskMapCard({
   );
 
   const controlRows = useMemo(() => {
-    if (!selectedAdminSummary) {
-      return [
-        { label: "경상북도", candidate: 1240, priority: 420, status: "집중 관찰", tone: "danger" as const },
-        { label: "경상남도", candidate: 865, priority: 278, status: "우선 검토", tone: "warning" as const },
-        { label: "강원특별자치도", candidate: 510, priority: 164, status: "현장 확인", tone: "warning" as const },
-        { label: "전라남도", candidate: 340, priority: 92, status: "정기 관찰", tone: "success" as const },
-      ];
-    }
+    const sourceFeatures = selectedAdminFeatures.length
+      ? selectedAdminFeatures
+      : features;
+    const riskCandidateFeatures = sourceFeatures.filter((feature) =>
+      isTop10Candidate(feature?.properties ?? {}, "risk"),
+    );
+
+    const buildRiskRow = (
+      grade: "매우 높음" | "높음" | "주의",
+      status: string,
+      tone: "danger" | "warning" | "success",
+    ) => {
+      const gradeFeatures = riskCandidateFeatures.filter(
+        (feature) => normalizeRiskGrade(feature?.properties ?? {}) === grade,
+      );
+      const topPriorityCount = gradeFeatures.filter(
+        (feature) =>
+          normalizePriorityGrade(feature?.properties ?? {}) === "최우선 예찰",
+      ).length;
+
+      return {
+        label: `위험도 ${grade}`,
+        candidate: gradeFeatures.length,
+        priority: topPriorityCount,
+        status,
+        tone,
+      };
+    };
 
     return [
-      {
-        label: "전체 후보",
-        candidate: selectedAdminSummary.totalGridCount,
-        priority: priorityTargetCount,
-        status: "실시간 집계",
-        tone: "neutral" as const,
-      },
-      {
-        label: "고위험 후보",
-        candidate: highRiskCount,
-        priority: selectedAdminSummary.veryHighGridCount,
-        status: "현장 확인",
-        tone: "danger" as const,
-      },
-      {
-        label: "최우선 예찰",
-        candidate: selectedAdminSummary.topPriorityGridCount,
-        priority: selectedAdminSummary.topPriorityGridCount,
-        status: "우선 검토",
-        tone: "warning" as const,
-      },
-      {
-        label: "우선 예찰",
-        candidate: selectedAdminSummary.priorityGridCount,
-        priority: selectedAdminSummary.priorityGridCount,
-        status: "일정 편성",
-        tone: "success" as const,
-      },
+      buildRiskRow("매우 높음", "즉시 검토", "danger"),
+      buildRiskRow("높음", "우선 확인", "warning"),
+      buildRiskRow("주의", "집중 관찰", "success"),
     ];
-  }, [selectedAdminSummary, highRiskCount, priorityTargetCount]);
+  }, [selectedAdminFeatures, features]);
 
   const selectedGridId = selected
     ? String(selected.grid_id ?? selected.id ?? "-")
     : "";
+
+  const mapLegendItems =
+    mapDisplayMode === "priority"
+      ? [
+          { color: priorityColors["최우선 예찰"], label: "최우선 예찰" },
+          { color: priorityColors["우선 예찰"], label: "우선 예찰" },
+          { color: priorityColors["집중 관찰"], label: "집중 관찰" },
+          { color: priorityColors["정기 관찰"], label: "정기 관찰" },
+        ]
+      : [
+          { color: riskColors["매우 높음"], label: "매우 높음" },
+          { color: riskColors["높음"], label: "높음" },
+          { color: riskColors["주의"], label: "주의" },
+          { color: riskColors["관찰"], label: "관찰" },
+        ];
 
   return (
     <div className="h-full min-h-0">
       <div
         className="grid h-full min-h-0 gap-4"
         style={{
-          gridTemplateColumns: "minmax(0, 1.42fr) minmax(410px, 0.88fr)",
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
           gridTemplateRows: "auto minmax(0, 1fr)",
         }}
       >
-        <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <div className="col-span-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <select
               value={selectedSigunguCode}
@@ -1067,34 +1742,90 @@ export default function DashboardRiskMapCard({
             </div>
           </div>
 
-          <div className="flex shrink-0 gap-1 rounded-xl bg-slate-100 p-1">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setMapDisplayMode("priority")}
+                className={
+                  mapDisplayMode === "priority"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-emerald-700 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                예찰 우선순위
+              </button>
+              <button
+                type="button"
+                onClick={() => setMapDisplayMode("risk")}
+                className={
+                  mapDisplayMode === "risk"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-rose-700 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                AI 위험도
+              </button>
+            </div>
+
             <button
               type="button"
-              onClick={() => setBaseMapMode("base")}
+              onClick={() => setShowInfectionHistory((value) => !value)}
+              disabled={infectionHistoryLoading || Boolean(infectionHistoryError)}
               className={
-                baseMapMode === "base"
-                  ? "rounded-lg bg-white px-4 py-2 text-sm font-extrabold text-slate-900 shadow-sm"
-                  : "rounded-lg px-4 py-2 text-sm font-bold text-slate-500"
+                showInfectionHistory
+                  ? "rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-extrabold text-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  : "rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+              }
+              title={
+                infectionHistoryLoading
+                  ? "감염 발생 이력 데이터를 불러오는 중입니다."
+                  : infectionHistoryError ||
+                    "2016~2021년 감염 발생 이력 레이어를 켜거나 끕니다."
               }
             >
-              일반지도
+              {infectionHistoryLoading
+                ? "감염 이력 로딩 중"
+                : showInfectionHistory
+                  ? `감염 발생 이력 ON (${formatNumber(visibleInfectionHistoryFeatures.length, 0)}개)`
+                  : "감염 발생 이력 OFF"}
             </button>
-            <button
-              type="button"
-              onClick={() => setBaseMapMode("satellite")}
-              className={
-                baseMapMode === "satellite"
-                  ? "rounded-lg bg-white px-4 py-2 text-sm font-extrabold text-slate-900 shadow-sm"
-                  : "rounded-lg px-4 py-2 text-sm font-bold text-slate-500"
-              }
-            >
-              위성지도
-            </button>
+
+            <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setBaseMapMode("base")}
+                className={
+                  baseMapMode === "base"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                일반지도
+              </button>
+              <button
+                type="button"
+                onClick={() => setBaseMapMode("satellite")}
+                className={
+                  baseMapMode === "satellite"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                위성지도
+              </button>
+            </div>
           </div>
         </div>
 
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-          {[geojsonError, boundaryError, workforceError, workerMasterError]
+          {[
+            geojsonError,
+            boundaryError,
+            infectionHistoryError,
+            workforceError,
+            workerMasterError,
+          ]
             .filter(Boolean)
             .map((message) => (
               <div
@@ -1128,18 +1859,38 @@ export default function DashboardRiskMapCard({
                 지도에서 시군구를 클릭하거나 상단 목록에서 선택하세요.
               </div>
             )}
+
+            {showInfectionHistory && selectedSigunguCode && !infectionHistoryError && (
+              <div className="absolute bottom-3 right-3 z-[1000] rounded-lg border border-violet-200 bg-white/95 px-3 py-2 text-xs font-extrabold text-violet-800 shadow">
+                감염 발생 이력 {formatNumber(visibleInfectionHistoryFeatures.length, 0)}개 표시
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-2.5">
             <div className="flex flex-wrap gap-3 text-xs font-bold text-slate-600">
-              <Legend color="#ff2b57" label="최우선 예찰" />
-              <Legend color="#ff9f0a" label="우선 예찰" />
-              <Legend color="#ffcc00" label="집중 관찰" />
-              <Legend color="#1fc16b" label="정기 관찰" />
+              {mapLegendItems.map((item) => (
+                <Legend
+                  key={item.label}
+                  color={item.color}
+                  label={item.label}
+                />
+              ))}
+              {showInfectionHistory && !infectionHistoryError && (
+                <FilledSquareLegend
+                  color={INFECTION_HISTORY_COLOR}
+                  label="2016~2021년 감염 발생 이력"
+                />
+              )}
             </div>
 
             <div className="text-[11px] font-semibold text-slate-400">
-              감염 확정이 아닌 신규 확산위험 후보 및 우선 예찰 검토지역
+              {mapDisplayMode === "priority"
+                ? "상위 10% 우선 예찰 검토지역 표시"
+                : "상위 10% AI 신규 확산위험 후보 표시"}
+              {showInfectionHistory && !infectionHistoryError
+                ? " · 보라색 사각형은 2016~2021년 감염 발생 이력"
+                : ""}
             </div>
           </div>
         </section>
@@ -1147,8 +1898,7 @@ export default function DashboardRiskMapCard({
         <aside
           className="grid min-h-0 min-w-0 gap-3"
           style={{
-            gridTemplateRows:
-              "minmax(175px, 0.92fr) minmax(190px, 1fr) minmax(150px, 0.82fr)",
+            gridTemplateRows: "minmax(0, 1fr) minmax(0, 1fr)",
           }}
         >
           <section className="min-h-0 overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
@@ -1216,7 +1966,7 @@ export default function DashboardRiskMapCard({
                   <tr>
                     <th className="px-3 py-2.5 text-left">구분</th>
                     <th className="px-3 py-2.5 text-right">후보 격자</th>
-                    <th className="px-3 py-2.5 text-right">우선 예찰</th>
+                    <th className="px-3 py-2.5 text-right">최우선 예찰</th>
                     <th className="px-3 py-2.5 text-right">상태</th>
                   </tr>
                 </thead>
@@ -1236,56 +1986,162 @@ export default function DashboardRiskMapCard({
             </div>
           </section>
 
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+
+        </aside>
+
+        <aside className="min-h-0 min-w-0">
+          <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
             <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-slate-900">
-                👥 시민 제보·현장 확인 관제
+                👥 지역 인력풀 및 출동 배정
               </h3>
               <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
-                실시간
+                복수 역량
               </span>
             </div>
 
-            <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-              <ControlNotice
-                tone="danger"
-                title={
-                  selectedGridId
-                    ? `GRID-${selectedGridId} 현장 확인 검토`
-                    : "고위험 후보 현장 확인 필요"
-                }
-                description={
-                  selectedGridId
-                    ? `${normalizePriorityGrade(selected)} · 위험도 ${formatNumber(
-                        selected?.risk_score,
-                        1,
-                      )}점`
-                    : `${formatNumber(highRiskCount, 0)}개 후보지역 우선 검토`
-                }
-              />
-              <ControlNotice
-                tone="warning"
-                title="접근 취약지역 드론 예찰 검토"
-                description={
-                  selectedAdminSummary
-                    ? `평균 접근성 ${formatNumber(
-                        selectedAdminSummary.avgAccessScore,
-                        1,
-                      )}점`
-                    : "시군구 선택 후 접근성 기반 우선지역 표시"
-                }
-              />
-              <ControlNotice
-                tone="info"
-                title="행정구역별 예찰 일정 연계"
-                description={`${formatNumber(
-                  priorityTargetCount,
-                  0,
-                )}개 최우선·우선 예찰 검토지역`}
-              />
-            </div>
+            {!selectedSigunguCode ? (
+              <div className="flex flex-1 items-center justify-center px-4 text-center text-xs font-semibold text-slate-400">
+                시군구를 선택하면 지역별 등록요원과 업무별 가용인원을 표시합니다.
+              </div>
+            ) : !selected ? (
+              <div className="mt-3 grid flex-1 grid-cols-2 gap-2 overflow-y-auto">
+                <WorkforceMetric
+                  label="등록요원"
+                  value={selectedRegionCapacity?.registered_worker_count ?? 0}
+                />
+                <WorkforceMetric
+                  label="현재 가용"
+                  value={selectedRegionCapacity?.available_worker_count ?? 0}
+                />
+                <WorkforceMetric
+                  label="예찰 가능"
+                  value={selectedRegionCapacity?.survey_available_count ?? 0}
+                />
+                <WorkforceMetric
+                  label="드론 가능"
+                  value={selectedRegionCapacity?.drone_available_count ?? 0}
+                />
+                <WorkforceMetric
+                  label="방제 가능"
+                  value={selectedRegionCapacity?.control_available_count ?? 0}
+                />
+                <WorkforceMetric
+                  label="추가 필요"
+                  value={selectedRegionCapacity?.shortage_worker_count ?? 0}
+                  danger={(selectedRegionCapacity?.shortage_worker_count ?? 0) > 0}
+                />
+                <div className="col-span-2 rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-semibold leading-5 text-slate-500">
+                  지도에서 격자를 클릭하면 예찰·드론·방제 업무별 추천요원을 확인하고 출동 배정할 수 있습니다.
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 flex min-h-0 flex-1 flex-col gap-2">
+                <div className="flex shrink-0 items-center justify-between gap-2">
+                  <div className="text-xs font-extrabold text-slate-700">
+                    GRID-{selectedGridId}
+                  </div>
+                  <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+                    {([
+                      ["SURVEY", "예찰"],
+                      ["DRONE", "드론"],
+                      ["CONTROL", "방제"],
+                    ] as const).map(([taskType, label]) => (
+                      <button
+                        key={taskType}
+                        type="button"
+                        onClick={() => setSelectedTaskType(taskType)}
+                        className={
+                          selectedTaskType === taskType
+                            ? "rounded-md bg-white px-2.5 py-1.5 text-[10px] font-extrabold text-emerald-700 shadow-sm"
+                            : "rounded-md px-2.5 py-1.5 text-[10px] font-bold text-slate-500"
+                        }
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {assignmentMessage && (
+                  <div className="shrink-0 rounded-lg bg-emerald-50 px-3 py-2 text-[10px] font-bold text-emerald-700">
+                    {assignmentMessage}
+                  </div>
+                )}
+
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                  {recommendedWorkers.length ? (
+                    recommendedWorkers.map((item) => {
+                      const capabilityText = item.worker.capabilities
+                        .map((capability) =>
+                          `${capability.taskType === "SURVEY" ? "예찰" : capability.taskType === "DRONE" ? "드론" : "방제"} ${capability.skillLevel}`,
+                        )
+                        .join(" · ");
+                      return (
+                        <div
+                          key={item.worker.worker_id}
+                          className="rounded-xl border border-slate-100 bg-white px-3 py-2 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate text-xs font-extrabold text-slate-800">
+                                {item.worker.worker_name}
+                                <span className="ml-1 text-[9px] font-bold text-slate-400">
+                                  {item.worker.worker_id}
+                                </span>
+                              </div>
+                              <div className="mt-1 truncate text-[9px] font-semibold text-slate-500">
+                                {capabilityText}
+                              </div>
+                              <div className="mt-1 text-[9px] font-semibold text-emerald-700">
+                                {item.assignmentType} · 잔여 {formatNumber(item.worker.remaining_minutes, 0)}분
+                                {item.distanceKm !== null
+                                  ? ` · 약 ${formatNumber(item.distanceKm, 1)}km`
+                                  : ""}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleAssignRecommendedWorker(item)}
+                              className="shrink-0 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-[10px] font-extrabold text-white hover:bg-emerald-800"
+                            >
+                              배정
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-xl bg-amber-50 px-3 py-3 text-center text-[10px] font-semibold text-amber-700">
+                      선택 업무에 배정 가능한 요원이 없습니다. 인접지역 또는 광역 지원 인력을 확인하세요.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </section>
         </aside>
+      </div>
+    </div>
+  );
+}
+
+function WorkforceMetric({
+  label,
+  value,
+  danger = false,
+}: {
+  label: string;
+  value: number;
+  danger?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+      <div className="text-[9px] font-bold text-slate-400">{label}</div>
+      <div
+        className={`mt-1 text-lg font-black ${danger ? "text-rose-600" : "text-slate-800"}`}
+      >
+        {formatNumber(value, 0)}명
       </div>
     </div>
   );
@@ -1363,6 +2219,28 @@ function Legend({ color, label }: { color: string; label: string }) {
       <span
         className="h-2.5 w-2.5 rounded-full"
         style={{ backgroundColor: color }}
+      />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function FilledSquareLegend({
+  color,
+  label,
+}: {
+  color: string;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span
+        className="h-3 w-3 rounded-[2px] border"
+        style={{
+          borderColor: color,
+          backgroundColor: color,
+          opacity: 0.72,
+        }}
       />
       <span>{label}</span>
     </div>

@@ -34,7 +34,7 @@ def create_app() -> FastAPI:
         title="소나무재선충병 통합 예찰·방제지원 API",
         version="1.1.0",
         description=(
-            "백서 RAG 질의응답과 Cloud DB 기반 "
+            "백서 RAG 질의응답과 서버 SQLite 기반 "
             "로그인·회원가입 기능을 제공하는 API"
         ),
     )

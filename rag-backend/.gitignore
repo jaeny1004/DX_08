@@ -1,0 +1,19 @@
+# secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Runtime SQLite DB (운영 데이터는 Git으로 관리하지 않음)
+data/pine_wilt.db
+data/pine_wilt.db-wal
+data/pine_wilt.db-shm
+
+# Chroma runtime data
+data/chroma/
+
+# 중요: 아래 GeoJSON은 GitHub 업로드 대상이므로 제외하지 않음
+# data/final_ui_candidate_v4.geojson
