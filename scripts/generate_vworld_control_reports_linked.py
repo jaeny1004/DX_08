@@ -36,7 +36,7 @@ from PIL import Image, ImageDraw, ImageFont
 from docx import Document
 
 
-SCRIPT_VERSION = "2026.07.20-control-linked-complete-v2"
+SCRIPT_VERSION = "2026.07.20-control-linked-complete-v3"
 
 PAGE_SIZE = (832, 1272)
 MEDIA_NAMES = ("image1.png", "image2.png", "image3.png", "image4.png")
@@ -359,6 +359,7 @@ def plan_values(record: Record) -> dict[str, Any]:
         "shred": shred,
         "fumigate": fumigate,
         "preventive": preventive,
+        "sample_count": record.sample_count,
         "total": total,
         "tarpaulin": f"검경 결과에 따라 발급 예정 ({plan_id})",
         "after_score": after_score,
@@ -963,6 +964,18 @@ def main() -> None:
             f"격자 {record.center_grid_id}"
         )
         v = plan_values(record)
+
+        required_plan_keys = {
+            "start_date", "end_date", "days", "surveyor", "team", "address",
+            "area_ha", "range", "confirmed", "concern", "planned", "shred",
+            "fumigate", "preventive", "sample_count", "after_score",
+            "after_grade", "plan_id", "tarpaulin",
+        }
+        missing_plan_keys = required_plan_keys - set(v)
+        if missing_plan_keys:
+            raise RuntimeError(
+                "방제 계획 값 누락: " + ", ".join(sorted(missing_plan_keys))
+            )
 
         stem = safe_name(
             f"{record.document_no:02d}_{record.year}_"
