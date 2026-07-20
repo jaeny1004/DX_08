@@ -36,7 +36,7 @@ from PIL import Image, ImageDraw, ImageFont
 from docx import Document
 
 
-SCRIPT_VERSION = "2026.07.20-control-linked-complete-v3"
+SCRIPT_VERSION = "2026.07.20-control-linked-complete-v4"
 
 PAGE_SIZE = (832, 1272)
 MEDIA_NAMES = ("image1.png", "image2.png", "image3.png", "image4.png")
@@ -524,6 +524,69 @@ def walk_table_paragraphs(table):
                 yield from walk_table_paragraphs(nested)
 
 
+def replace_remaining_placeholders(
+    paragraph,
+    record: Record,
+    v: dict[str, Any],
+) -> bool:
+    """
+    특정 문장 치환 후에도 양식 내부에 독립적으로 남은 플레이스홀더를 치환한다.
+    [방법], [일자]처럼 문장 전체 패턴에 걸리지 않는 짧은 토큰을 처리한다.
+    """
+    original = paragraph.text
+    if not original:
+        return False
+
+    replacements = {
+        "[일자]": f"{v['start_date']:%Y. %m. %d.}",
+        "[방법]": "검경 결과에 따라 파쇄·훈증 등 적정 방제방법 결정",
+        "[시작일]": f"{v['start_date']:%Y. %m. %d.}",
+        "[종료일]": f"{v['end_date']:%Y. %m. %d.}",
+        "[일수]": str(v["days"]),
+        "[소속·조]": v["team"],
+        "[성명]": v["surveyor"],
+        "[주소]": v["address"],
+        "[격자 ID]": str(record.center_grid_id),
+        "[면적]": f"{v['area_ha']:.1f}",
+        "[포함 범위]": v["range"],
+        "[수량]": str(v["planned"]),
+        "[처리 방법 및 규격]": "검경 결과에 따라 현장 파쇄 또는 지정 장소 반출",
+        "[처리 사유 및 방법]": "파쇄 곤란 대상목에 한해 밀봉 훈증 검토",
+        "[번호]": v["tarpaulin"],
+        "[범위 및 대상]": f"중심 격자 {record.center_grid_id} 인접 우량 소나무림",
+        "[수종]": "소나무류",
+        "[약제 및 처리 내용]": "등록 약제 기준 예방나무주사 적용",
+        "[직경]": "10",
+        "[깊이]": "5",
+        "[작업 방법]": "수간주입 기준과 현장 여건에 따라 조정",
+        "[현장 상태 입력]": (
+            f"현장 이상징후 {record.suspicious_count}본, "
+            f"시료 {record.sample_count}점 확인"
+        ),
+        "[조치 결과 입력]": "검경 결과 확인 후 대상목 처리 및 인접 격자 재예찰",
+        "[점수]": f"{record.risk_score:.1f}",
+        "[등급]": record.risk_grade,
+        "[개소]": str(v["fumigate"]),
+        "[주기]": "월 1회",
+        "[입력]": "현장 사진·좌표·처리 이력을 시스템에 등록",
+        "[보고 대상·승인 절차 입력]": (
+            f"{record.sigungu_name} 산림보호 담당부서 검토 후 작업 승인"
+        ),
+        "[후속 사업 및 행정 연계 계획]": (
+            "검경·방제 이력을 차기 예찰 우선순위 산정에 반영"
+        ),
+    }
+
+    updated = original
+    for token, replacement in replacements.items():
+        updated = updated.replace(token, replacement)
+
+    if updated != original:
+        set_paragraph_text(paragraph, updated)
+        return True
+    return False
+
+
 def fill_document_text(
     template: Path,
     output: Path,
@@ -533,21 +596,22 @@ def fill_document_text(
     doc = Document(template)
 
     for paragraph in doc.paragraphs:
-        if replace_cover_text(paragraph, record, values):
-            continue
+        replace_cover_text(paragraph, record, values)
         replace_body_paragraph(paragraph, record, values)
+        replace_remaining_placeholders(paragraph, record, values)
 
     for table in doc.tables:
         for paragraph in walk_table_paragraphs(table):
-            if replace_cover_text(paragraph, record, values):
-                continue
+            replace_cover_text(paragraph, record, values)
             replace_body_paragraph(paragraph, record, values)
+            replace_remaining_placeholders(paragraph, record, values)
 
     for section in doc.sections:
         for container in (section.header, section.footer):
             for paragraph in container.paragraphs:
                 replace_cover_text(paragraph, record, values)
                 replace_body_paragraph(paragraph, record, values)
+                replace_remaining_placeholders(paragraph, record, values)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     doc.save(output)
