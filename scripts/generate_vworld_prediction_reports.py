@@ -37,6 +37,7 @@ import json
 import math
 import os
 import re
+import random
 import shutil
 import subprocess
 import sys
@@ -63,9 +64,10 @@ from docx import Document
 
 YEAR_RANGE = range(2016, 2022)
 GRID_SIZE_M = 500.0
-MAP_WIDTH = 1280
-MAP_HEIGHT = 880
+MAP_WIDTH = 1024
+MAP_HEIGHT = 704
 DEFAULT_ZOOM = 11
+SCRIPT_VERSION = "2026.07.20-appendix-v2-verified"
 
 RISK_COLORS = {
     "매우 높음": (255, 59, 91, 200),
@@ -704,32 +706,269 @@ def set_paragraph(doc: Document, prefix: str, text: str) -> None:
     raise RuntimeError(f"템플릿에서 문단을 찾지 못했습니다: {prefix}")
 
 
-def replace_docx_media_image(docx_path: Path, image_path: Path, media_name: str = "word/media/image1.png") -> None:
-    """원본 DOCX에 포함된 지도 placeholder 이미지를 동일 media 경로로 교체한다.
+def replace_docx_media_images(docx_path: Path, replacements: dict[str, Path]) -> None:
+    """DOCX 내부 media 파일을 일괄 교체한다.
 
-    이 방식은 원본 문서의 이미지 위치·크기·줄바꿈을 보존한다.
+    원본 문서의 이미지 위치, 크기, 줄바꿈은 유지하고 이미지 내용만 바꾼다.
     """
     temp_path = docx_path.with_suffix(".tmp.docx")
-    replaced = False
+    replaced: set[str] = set()
     with zipfile.ZipFile(docx_path, "r") as source, zipfile.ZipFile(
         temp_path, "w", zipfile.ZIP_DEFLATED
     ) as target:
         for item in source.infolist():
-            if item.filename == media_name:
-                target.writestr(item, image_path.read_bytes())
-                replaced = True
+            replacement = replacements.get(item.filename)
+            if replacement is not None:
+                target.writestr(item, replacement.read_bytes())
+                replaced.add(item.filename)
             else:
                 target.writestr(item, source.read(item.filename))
-    if not replaced:
+
+    missing = set(replacements) - replaced
+    if missing:
         temp_path.unlink(missing_ok=True)
-        raise RuntimeError(f"DOCX 안에서 {media_name}을 찾지 못했습니다.")
+        raise RuntimeError(f"DOCX 안에서 교체할 media를 찾지 못했습니다: {sorted(missing)}")
     temp_path.replace(docx_path)
+
+
+def extract_template_media(template_path: Path, media_name: str) -> Image.Image:
+    with zipfile.ZipFile(template_path, "r") as archive:
+        try:
+            data = archive.read(media_name)
+        except KeyError as exc:
+            raise RuntimeError(f"템플릿 안에서 {media_name}을 찾지 못했습니다.") from exc
+    return Image.open(io.BytesIO(data)).convert("RGB")
+
+
+def draw_text_in_box(
+    draw: ImageDraw.ImageDraw,
+    box_xy: tuple[int, int, int, int],
+    text: str,
+    font: ImageFont.ImageFont,
+    fill: tuple[int, int, int] = (25, 25, 25),
+    max_lines: int = 3,
+) -> None:
+    """셀 안에 맞도록 줄바꿈 후 가운데 정렬한다."""
+    left, top, right, bottom = box_xy
+    max_width = max(8, right - left - 6)
+    words = str(text).replace("\n", " \n ").split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        if word == "\n":
+            if current:
+                lines.append(current)
+                current = ""
+            continue
+        candidate = word if not current else f"{current} {word}"
+        bbox = draw.textbbox((0, 0), candidate, font=font)
+        if bbox[2] - bbox[0] <= max_width:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    if not lines:
+        lines = [""]
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        last = lines[-1]
+        while last:
+            candidate = last + "…"
+            bbox = draw.textbbox((0, 0), candidate, font=font)
+            if bbox[2] - bbox[0] <= max_width:
+                lines[-1] = candidate
+                break
+            last = last[:-1]
+
+    line_heights = []
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_heights.append(max(1, bbox[3] - bbox[1]))
+    spacing = 2
+    total_h = sum(line_heights) + spacing * (len(lines) - 1)
+    y = top + max(0, (bottom - top - total_h) / 2)
+    for line, line_h in zip(lines, line_heights):
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_w = bbox[2] - bbox[0]
+        x = left + max(0, (right - left - line_w) / 2)
+        draw.text((x, y), line, font=font, fill=fill)
+        y += line_h + spacing
+
+
+def validate_prediction_template(template_path: Path) -> None:
+    """현재 스크립트가 검증된 발생 예측 보고서 양식인지 확인한다."""
+    expected = {
+        "word/media/image1.png": (1200, 1240),
+        "word/media/image2.png": (826, 1264),
+        "word/media/image3.png": (826, 1264),
+    }
+    with zipfile.ZipFile(template_path, "r") as archive:
+        names = set(archive.namelist())
+        missing = set(expected) - names
+        if missing:
+            raise RuntimeError(
+                "발생 예측 보고서 양식의 이미지 구성이 예상과 다릅니다. "
+                f"누락 media: {sorted(missing)}"
+            )
+        for media_name, expected_size in expected.items():
+            image = Image.open(io.BytesIO(archive.read(media_name)))
+            if image.size != expected_size:
+                raise RuntimeError(
+                    f"양식 media 크기가 다릅니다: {media_name} "
+                    f"예상 {expected_size}, 실제 {image.size}"
+                )
+
+
+def verify_appendix_was_filled(original: Image.Image, filled: Image.Image, name: str) -> None:
+    """별지 데이터 영역에 실제 픽셀 변화가 생겼는지 검증한다."""
+    if original.size != filled.size:
+        raise RuntimeError(f"{name} 이미지 크기가 원본과 달라졌습니다.")
+    a = np.asarray(original.convert("RGB"), dtype=np.int16)
+    b = np.asarray(filled.convert("RGB"), dtype=np.int16)
+    changed = np.any(np.abs(a - b) > 8, axis=2)
+    # 글자가 정상 입력되면 수천 픽셀 이상 변한다.
+    if int(changed.sum()) < 800:
+        raise RuntimeError(f"{name} 별지에 입력 내용이 그려지지 않았습니다.")
+
+
+def build_appendix_entries(
+    record: ReportRecord,
+    metrics: dict[str, Any],
+) -> tuple[list[list[str]], list[list[str]]]:
+    """신고 접수대장과 유인항공예찰 계획의 입력 행을 결정론적으로 만든다."""
+    rng = random.Random(record.year * 1_000_003 + record.center_grid_id)
+    names = ["김도윤", "박서준", "이현우", "최민재", "정하늘", "윤지호", "한예린", "송민수"]
+    reporter_types = ["주민신고", "순찰확인", "드론예찰", "산림관계자"]
+    contents = [
+        "소나무 수관 변색 및 잎 마름 관찰",
+        "도로변 고사목과 부분 갈변목 확인",
+        "산림 가장자리 고사 의심목 발견",
+        "드론 영상에서 수관 이상 후보 확인",
+    ]
+    results = [
+        "현장 확인 예정",
+        "목편 시료 채취 후 검경 의뢰",
+        "주변 격자 추가 예찰",
+        "담당부서 전달 및 재방문 예정",
+    ]
+    report_rows: list[list[str]] = []
+    row_count = 4 if metrics["risk_score"] >= 70 else 3
+    adjacent = [gid for gid in metrics["block_grid_ids"] if gid != record.center_grid_id]
+    all_grids = [record.center_grid_id] + adjacent
+    for idx in range(row_count):
+        month = 4 + ((record.report_no + idx) % 5)
+        day = 7 + ((record.center_grid_id + idx * 5) % 20)
+        grid_id = all_grids[idx % len(all_grids)]
+        report_rows.append(
+            [
+                reporter_types[idx % len(reporter_types)],
+                f"{record.year}.{month:02d}.{day:02d}",
+                names[(record.report_no + idx) % len(names)],
+                f"{record.sigungu_name}\n격자 {grid_id}",
+                contents[(record.center_grid_id + idx) % len(contents)],
+                results[(record.report_no + idx) % len(results)],
+                f"010-****-{1000 + ((record.center_grid_id + idx * 137) % 9000):04d}",
+            ]
+        )
+
+    planned_area = min(225, max(100, int(metrics["block_count"] * 25 - rng.randint(0, 35))))
+    plan_rows = [
+        [
+            f"{record.sido_name}\n{record.sigungu_name}",
+            f"중심격자\n{record.center_grid_id}\n3x3 권역",
+            str(planned_area),
+            f"{record.year}.{5 + record.report_no % 4:02d}.{10 + record.report_no % 15:02d}",
+            f"{record.sigungu_name}\n임시 이착륙장",
+            f"{record.sigungu_name}\n산림부서",
+            "산림주사",
+            names[(record.report_no + 2) % len(names)],
+            "산림청\n지원헬기",
+        ],
+        [
+            f"{record.sido_name}\n{record.sigungu_name}",
+            "인접 고위험\n격자권역",
+            str(max(75, planned_area - rng.randint(20, 55))),
+            f"{record.year}.{6 + record.report_no % 3:02d}.{12 + record.report_no % 13:02d}",
+            f"{record.sigungu_name}\n공공시설 인근",
+            f"{record.sigungu_name}\n산림부서",
+            "주무관",
+            names[(record.report_no + 5) % len(names)],
+            "임차\n중형헬기",
+        ],
+    ]
+    return report_rows, plan_rows
+
+
+def create_filled_appendix_images(
+    template_path: Path,
+    output_dir: Path,
+    record: ReportRecord,
+    metrics: dict[str, Any],
+) -> tuple[Path, Path]:
+    """별지 1·2 원본 이미지를 유지한 채 빈 표의 앞부분을 채운다."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_rows, plan_rows = build_appendix_entries(record, metrics)
+
+    # 별지 1: 감염의심목 등 신고 접수·처리 대장
+    report_original = extract_template_media(template_path, "word/media/image2.png")
+    report_image = report_original.copy()
+    report_draw = ImageDraw.Draw(report_image)
+    report_font = find_font(13, bold=False)
+    report_x = [29, 141, 253, 364, 476, 592, 704, 815]
+    report_y_top = 220
+    report_row_h = 45
+    for row_idx, values in enumerate(report_rows):
+        top = report_y_top + row_idx * report_row_h
+        bottom = top + report_row_h
+        for col_idx, value in enumerate(values):
+            cell_box = (report_x[col_idx] + 1, top + 1, report_x[col_idx + 1] - 1, bottom - 1)
+            report_draw.rectangle(cell_box, fill=(255, 255, 255))
+            draw_text_in_box(
+                report_draw,
+                (report_x[col_idx] + 2, top + 2, report_x[col_idx + 1] - 2, bottom - 2),
+                value,
+                report_font,
+                max_lines=3,
+            )
+    verify_appendix_was_filled(report_original, report_image, "신고 접수·처리 대장")
+    report_path = output_dir / f"{record.report_no:02d}_{record.year}_{record.center_grid_id}_신고접수대장.png"
+    report_image.save(report_path, quality=95)
+
+    # 별지 2: 유인항공예찰 계획
+    plan_original = extract_template_media(template_path, "word/media/image3.png")
+    plan_image = plan_original.copy()
+    plan_draw = ImageDraw.Draw(plan_image)
+    plan_font = find_font(12, bold=False)
+    plan_x = [24, 130, 210, 295, 375, 471, 554, 637, 721, 814]
+    plan_y_top = 240
+    plan_row_h = 48
+    for row_idx, values in enumerate(plan_rows):
+        top = plan_y_top + row_idx * plan_row_h
+        bottom = top + plan_row_h
+        for col_idx, value in enumerate(values):
+            cell_box = (plan_x[col_idx] + 1, top + 1, plan_x[col_idx + 1] - 1, bottom - 1)
+            plan_draw.rectangle(cell_box, fill=(255, 255, 255))
+            draw_text_in_box(
+                plan_draw,
+                (plan_x[col_idx] + 2, top + 2, plan_x[col_idx + 1] - 2, bottom - 2),
+                value,
+                plan_font,
+                max_lines=3,
+            )
+    verify_appendix_was_filled(plan_original, plan_image, "유인항공예찰 계획")
+    plan_path = output_dir / f"{record.report_no:02d}_{record.year}_{record.center_grid_id}_유인항공예찰계획.png"
+    plan_image.save(plan_path, quality=95)
+    return report_path, plan_path
 
 
 def create_docx(
     template_path: Path,
     output_path: Path,
     map_path: Path,
+    appendix_dir: Path,
     record: ReportRecord,
     cells: list[TerrainCell],
     metrics: dict[str, Any],
@@ -857,7 +1096,20 @@ def create_docx(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(output_path)
-    replace_docx_media_image(output_path, map_path)
+    report_appendix_path, aerial_plan_path = create_filled_appendix_images(
+        template_path=template_path,
+        output_dir=appendix_dir,
+        record=record,
+        metrics=metrics,
+    )
+    replace_docx_media_images(
+        output_path,
+        {
+            "word/media/image1.png": map_path,
+            "word/media/image2.png": report_appendix_path,
+            "word/media/image3.png": aerial_plan_path,
+        },
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -914,7 +1166,7 @@ def verify_pdf_count(pdf_dir: Path, expected: int) -> None:
 # -----------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="기존 양식 기반 VWorld 발생 예측 PDF 30건 생성")
+    parser = argparse.ArgumentParser(description="기존 양식·별지 입력 포함 VWorld 발생 예측 PDF 30건 생성")
     parser.add_argument("--terrain", type=Path, required=True)
     parser.add_argument("--infection", type=Path, required=True)
     parser.add_argument("--sigungu", type=Path, required=True)
@@ -941,18 +1193,22 @@ def main() -> int:
     if not domain:
         raise RuntimeError(".env에 VWORLD_API_DOMAIN이 없습니다. VWorld에 등록한 서버 도메인 또는 IP를 입력하세요.")
 
+    log(f"스크립트 버전: {SCRIPT_VERSION}")
     for path in (args.terrain, args.infection, args.sigungu, args.template):
         if not path.exists():
             raise FileNotFoundError(path)
+    validate_prediction_template(args.template)
 
     output_root = args.output.resolve()
     docx_dir = output_root / "docx"
     pdf_dir = output_root / "pdf"
     map_dir = output_root / "maps"
+    appendix_dir = output_root / "appendices"
     output_root.mkdir(parents=True, exist_ok=True)
     docx_dir.mkdir(exist_ok=True)
     pdf_dir.mkdir(exist_ok=True)
     map_dir.mkdir(exist_ok=True)
+    appendix_dir.mkdir(exist_ok=True)
 
     terrain_by_id, terrain_by_corner = load_terrain_index(args.terrain)
     infection = load_infection_history(args.infection)
@@ -990,6 +1246,7 @@ def main() -> int:
             template_path=args.template,
             output_path=docx_path,
             map_path=map_path,
+            appendix_dir=appendix_dir,
             record=record,
             cells=cells,
             metrics=metrics,
@@ -1023,7 +1280,7 @@ def main() -> int:
     pd.DataFrame(manifest).to_csv(manifest_path, index=False, encoding="utf-8-sig")
 
     log("[6/8] PDF ZIP 생성")
-    zip_path = output_root / "발생예측보고서_30건_VWorld_기존양식_PDF.zip"
+    zip_path = output_root / "발생예측보고서_30건_VWorld_별지입력_기존양식_PDF.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for pdf in sorted(pdf_dir.glob("*.pdf")):
             archive.write(pdf, arcname=pdf.name)
@@ -1035,7 +1292,7 @@ def main() -> int:
     log("[7/8] 완료")
     log(f"PDF 폴더: {pdf_dir}")
     log(f"ZIP 파일: {zip_path}")
-    log("[8/8] 처음에는 PDF 1~2개를 열어 지도 위치와 양식 줄바꿈을 확인하세요.")
+    log("[8/8] 처음에는 PDF 1~2개를 열어 지도와 별지 표의 글자 크기·줄바꿈을 확인하세요.")
     return 0
 
 
