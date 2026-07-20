@@ -82,7 +82,7 @@ GRID_SIZE_M = COMMON.GRID_SIZE_M
 MAP_WIDTH = 1024
 MAP_HEIGHT = 704
 DEFAULT_ZOOM = 10
-SCRIPT_VERSION = "2026.07.20-linked-to-prediction-manifest-v1"
+SCRIPT_VERSION = "2026.07.20-linked-field-appendices-v2"
 
 TerrainCell = COMMON.TerrainCell
 ReportRecord = COMMON.ReportRecord
@@ -629,6 +629,283 @@ def build_field_survey_map(
     result.save(output_path, quality=95)
 
 
+
+# -----------------------------------------------------------------------------
+# 7~8페이지 별지 이미지 생성 및 DOCX 내부 이미지 교체
+# -----------------------------------------------------------------------------
+
+def draw_text_fit(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    text: str,
+    *,
+    max_size: int = 22,
+    min_size: int = 11,
+    bold: bool = False,
+    align: str = "center",
+    line_spacing: int = 3,
+    fill: tuple[int, int, int, int] | tuple[int, int, int] = (20, 20, 20),
+) -> None:
+    """지정 셀 안에서 자동 줄바꿈/축소해 텍스트를 그린다."""
+    x1, y1, x2, y2 = box
+    width = max(1, x2 - x1 - 8)
+    height = max(1, y2 - y1 - 6)
+    raw = str(text).strip()
+    if not raw:
+        return
+
+    def wrap_text(font: ImageFont.ImageFont) -> list[str]:
+        lines: list[str] = []
+        for source_line in raw.splitlines() or [""]:
+            if not source_line:
+                lines.append("")
+                continue
+            current = ""
+            for ch in source_line:
+                trial = current + ch
+                bbox = draw.textbbox((0, 0), trial, font=font)
+                if bbox[2] - bbox[0] <= width or not current:
+                    current = trial
+                else:
+                    lines.append(current)
+                    current = ch
+            if current:
+                lines.append(current)
+        return lines or [""]
+
+    chosen_font = find_font(min_size, bold=bold)
+    chosen_lines = [raw]
+    for size in range(max_size, min_size - 1, -1):
+        font = find_font(size, bold=bold)
+        lines = wrap_text(font)
+        line_heights = []
+        for line in lines:
+            bbox = draw.textbbox((0, 0), line or "가", font=font)
+            line_heights.append(max(1, bbox[3] - bbox[1]))
+        total_h = sum(line_heights) + line_spacing * max(0, len(lines) - 1)
+        if total_h <= height:
+            chosen_font = font
+            chosen_lines = lines
+            break
+
+    line_metrics = []
+    for line in chosen_lines:
+        bbox = draw.textbbox((0, 0), line or "가", font=chosen_font)
+        line_metrics.append((bbox[2] - bbox[0], max(1, bbox[3] - bbox[1])))
+    total_h = sum(h for _, h in line_metrics) + line_spacing * max(0, len(chosen_lines) - 1)
+    y = y1 + max(0, (height - total_h) / 2) + 2
+
+    for line, (line_w, line_h) in zip(chosen_lines, line_metrics):
+        if align == "left":
+            x = x1 + 5
+        elif align == "right":
+            x = x2 - line_w - 5
+        else:
+            x = x1 + max(0, ((x2 - x1) - line_w) / 2)
+        draw.text((x, y), line, font=chosen_font, fill=fill)
+        y += line_h + line_spacing
+
+
+def extract_template_media(template_path: Path, media_name: str) -> Image.Image:
+    """DOCX 템플릿의 word/media 이미지를 읽는다."""
+    internal = f"word/media/{media_name}"
+    with zipfile.ZipFile(template_path, "r") as archive:
+        if internal not in archive.namelist():
+            raise RuntimeError(f"템플릿에서 별지 이미지를 찾지 못했습니다: {internal}")
+        raw = archive.read(internal)
+    return Image.open(io.BytesIO(raw)).convert("RGB")
+
+
+def build_air_survey_plan_appendix(
+    template_path: Path,
+    output_path: Path,
+    record: ReportRecord,
+    survey: FieldSurveyData,
+    metrics: dict[str, Any],
+) -> None:
+    """7페이지: 유인항공예찰 계획 별지 작성."""
+    image = extract_template_media(template_path, "image1.png")
+    if image.size != (826, 1264):
+        raise RuntimeError(
+            f"유인항공예찰 계획 이미지 크기가 예상과 다릅니다: {image.size}, 예상=(826, 1264)"
+        )
+    draw = ImageDraw.Draw(image)
+
+    # 첫 번째 데이터 행 좌표(원본 826×1264 기준)
+    boxes = {
+        "sigungu": (24, 239, 130, 286),
+        "region": (130, 239, 210, 286),
+        "area": (210, 239, 295, 286),
+        "date": (295, 239, 374, 286),
+        "landing": (374, 239, 470, 286),
+        "org": (470, 239, 553, 286),
+        "rank": (553, 239, 637, 286),
+        "name": (637, 239, 722, 286),
+        "helicopter": (722, 239, 814, 286),
+        "attachment": (24, 1115, 814, 1193),
+    }
+
+    # 원본 양식에 들어 있던 파란 안내문 및 기본 문구를 지운 뒤 셀 내부만 다시 작성
+    for box in boxes.values():
+        x1, y1, x2, y2 = box
+        draw.rectangle((x1 + 2, y1 + 2, x2 - 2, y2 - 2), fill=(255, 255, 255))
+
+    survey_date = survey.survey_datetime.split(". 09:")[0].strip()
+    area_ha = 9 * (GRID_SIZE_M * GRID_SIZE_M) / 10_000
+    primary_name = survey.surveyors.split(",")[0].strip()
+    org_name = "산림보호과"
+    risk_note = (
+        f"중심 격자 {record.center_grid_id}\n"
+        f"주변 8개 포함"
+    )
+
+    draw_text_fit(draw, boxes["sigungu"], record.sigungu_name, max_size=18, min_size=12, bold=True)
+    draw_text_fit(draw, boxes["region"], risk_note, max_size=15, min_size=10)
+    draw_text_fit(draw, boxes["area"], f"{area_ha:.0f}", max_size=18, min_size=12)
+    draw_text_fit(draw, boxes["date"], survey_date, max_size=15, min_size=10)
+    draw_text_fit(draw, boxes["landing"], f"{record.sigungu_name}\n임시착륙장", max_size=14, min_size=10)
+    draw_text_fit(draw, boxes["org"], org_name, max_size=14, min_size=10)
+    draw_text_fit(draw, boxes["rank"], "주무관", max_size=16, min_size=11)
+    draw_text_fit(draw, boxes["name"], primary_name, max_size=16, min_size=11)
+    draw_text_fit(draw, boxes["helicopter"], "산림청\n중형헬기", max_size=14, min_size=10)
+    draw_text_fit(
+        draw,
+        boxes["attachment"],
+        (
+            f"중심 격자 {record.center_grid_id} 포함 3×3 예찰권역, "
+            f"계획면적 {area_ha:.0f}ha. 본문 현장 예찰 조사도 및 이동경로 참조."
+        ),
+        max_size=17,
+        min_size=12,
+        align="left",
+    )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output_path, format="PNG")
+
+
+def build_air_survey_result_appendix(
+    template_path: Path,
+    output_path: Path,
+    record: ReportRecord,
+    survey: FieldSurveyData,
+    metrics: dict[str, Any],
+) -> None:
+    """8페이지: 유인항공예찰 조사결과 별지 작성."""
+    image = extract_template_media(template_path, "image2.png")
+    if image.size != (832, 1228):
+        raise RuntimeError(
+            f"유인항공예찰 조사결과 이미지 크기가 예상과 다릅니다: {image.size}, 예상=(832, 1228)"
+        )
+    draw = ImageDraw.Draw(image)
+
+    # 상단 기본정보
+    # 상단 빈칸에 남아 있는 원본 예시문을 먼저 제거
+    draw.rectangle((145, 143, 810, 190), fill=(255, 255, 255))
+    draw.rectangle((150, 198, 810, 245), fill=(255, 255, 255))
+    draw.rectangle((300, 250, 810, 296), fill=(255, 255, 255))
+
+    draw_text_fit(
+        draw,
+        (145, 145, 785, 188),
+        f"{record.sido_name} {record.sigungu_name} 산림보호 담당부서",
+        max_size=21,
+        min_size=14,
+        align="left",
+        bold=True,
+    )
+    survey_date = survey.survey_datetime.split(" 09:")[0].strip()
+    draw_text_fit(
+        draw,
+        (150, 201, 790, 242),
+        f"{survey_date} ~ {survey_date} (1일)",
+        max_size=20,
+        min_size=13,
+        align="left",
+    )
+    draw_text_fit(
+        draw,
+        (300, 253, 790, 293),
+        "1대(산림청 중형헬기)",
+        max_size=20,
+        min_size=13,
+        align="left",
+    )
+
+    # 첫 번째 결과 행
+    boxes = {
+        "sigungu": (20, 507, 121, 584),
+        "region": (121, 507, 296, 584),
+        "area": (296, 507, 402, 584),
+        "total": (402, 507, 495, 584),
+        "pine": (495, 507, 603, 584),
+        "oak": (603, 507, 710, 584),
+        "note": (710, 507, 809, 584),
+    }
+    area_ha = 9 * (GRID_SIZE_M * GRID_SIZE_M) / 10_000
+    detected = int(survey.suspicious_count)
+    draw_text_fit(draw, boxes["sigungu"], record.sigungu_name, max_size=18, min_size=12, bold=True)
+    draw_text_fit(
+        draw,
+        boxes["region"],
+        f"격자 {record.center_grid_id}\n3×3 예찰권역",
+        max_size=16,
+        min_size=10,
+    )
+    draw_text_fit(draw, boxes["area"], f"{area_ha:.0f}", max_size=18, min_size=12)
+    draw_text_fit(draw, boxes["total"], str(detected), max_size=20, min_size=13, bold=True)
+    draw_text_fit(draw, boxes["pine"], str(detected), max_size=20, min_size=13)
+    draw_text_fit(draw, boxes["oak"], "0", max_size=20, min_size=13)
+    note = (
+        f"시료 {survey.sample_count}점\n현장 확인 필요"
+        if survey.sample_count > 0
+        else "이상징후 미미\n정기 관찰"
+    )
+    draw_text_fit(draw, boxes["note"], note, max_size=14, min_size=10)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output_path, format="PNG")
+
+
+def verify_appendix_image_changed(template_path: Path, output_path: Path, media_name: str) -> None:
+    original = extract_template_media(template_path, media_name)
+    filled = Image.open(output_path).convert("RGB")
+    if original.size != filled.size:
+        raise RuntimeError(f"별지 이미지 크기가 바뀌었습니다: {media_name}")
+    original_arr = np.asarray(original, dtype=np.int16)
+    filled_arr = np.asarray(filled, dtype=np.int16)
+    changed = np.mean(np.abs(original_arr - filled_arr))
+    if changed < 0.15:
+        raise RuntimeError(f"별지 이미지에 입력 내용이 충분히 그려지지 않았습니다: {output_path}")
+
+
+def replace_docx_media(docx_path: Path, replacements: dict[str, Path]) -> None:
+    """DOCX ZIP 안의 지정 media 파일을 새 PNG로 안전하게 교체한다."""
+    temp_path = docx_path.with_suffix(".media-patched.docx")
+    internal_replacements = {
+        f"word/media/{name}": path for name, path in replacements.items()
+    }
+
+    with zipfile.ZipFile(docx_path, "r") as src, zipfile.ZipFile(
+        temp_path, "w", zipfile.ZIP_DEFLATED
+    ) as dst:
+        names = set(src.namelist())
+        missing = set(internal_replacements) - names
+        if missing:
+            raise RuntimeError(
+                "DOCX에서 교체 대상 이미지를 찾지 못했습니다: " + ", ".join(sorted(missing))
+            )
+        for item in src.infolist():
+            if item.filename in internal_replacements:
+                dst.writestr(item, internal_replacements[item.filename].read_bytes())
+            else:
+                dst.writestr(item, src.read(item.filename))
+
+    if not temp_path.exists() or temp_path.stat().st_size == 0:
+        raise RuntimeError("별지 이미지 교체 후 DOCX 생성에 실패했습니다.")
+    temp_path.replace(docx_path)
+
+
 # -----------------------------------------------------------------------------
 # DOCX 양식 채우기
 # -----------------------------------------------------------------------------
@@ -702,6 +979,8 @@ def create_docx(
     template_path: Path,
     output_path: Path,
     map_path: Path,
+    plan_appendix_path: Path,
+    result_appendix_path: Path,
     record: ReportRecord,
     cells: list[TerrainCell],
     metrics: dict[str, Any],
@@ -753,6 +1032,15 @@ def create_docx(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(output_path)
+
+    # 템플릿의 7~8페이지 별지 이미지(image1, image2)를 채워진 이미지로 교체
+    replace_docx_media(
+        output_path,
+        {
+            "image1.png": plan_appendix_path,
+            "image2.png": result_appendix_path,
+        },
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -844,10 +1132,12 @@ def main() -> int:
     docx_dir = output_root / "docx"
     pdf_dir = output_root / "pdf"
     map_dir = output_root / "maps"
+    appendix_dir = output_root / "appendices"
     output_root.mkdir(parents=True, exist_ok=True)
     docx_dir.mkdir(exist_ok=True)
     pdf_dir.mkdir(exist_ok=True)
     map_dir.mkdir(exist_ok=True)
+    appendix_dir.mkdir(exist_ok=True)
 
     terrain_by_id, terrain_by_corner = COMMON.load_terrain_index(args.terrain)
     infection = COMMON.load_infection_history(args.infection)
@@ -875,6 +1165,8 @@ def main() -> int:
             f"{record.sido_name}_{record.sigungu_name}_격자{record.center_grid_id}"
         )
         map_path = map_dir / f"{base_name}.png"
+        plan_appendix_path = appendix_dir / f"{base_name}_07_유인항공예찰계획.png"
+        result_appendix_path = appendix_dir / f"{base_name}_08_유인항공예찰조사결과.png"
         docx_path = docx_dir / f"{base_name}.docx"
 
         build_field_survey_map(
@@ -888,10 +1180,29 @@ def main() -> int:
             zoom=zoom,
             basemap=basemap,
         )
+        build_air_survey_plan_appendix(
+            template_path=args.template,
+            output_path=plan_appendix_path,
+            record=record,
+            survey=survey,
+            metrics=metrics,
+        )
+        build_air_survey_result_appendix(
+            template_path=args.template,
+            output_path=result_appendix_path,
+            record=record,
+            survey=survey,
+            metrics=metrics,
+        )
+        verify_appendix_image_changed(args.template, plan_appendix_path, "image1.png")
+        verify_appendix_image_changed(args.template, result_appendix_path, "image2.png")
+
         create_docx(
             template_path=args.template,
             output_path=docx_path,
             map_path=map_path,
+            plan_appendix_path=plan_appendix_path,
+            result_appendix_path=result_appendix_path,
             record=record,
             cells=cells,
             metrics=metrics,
@@ -922,6 +1233,9 @@ def main() -> int:
             "suspicious_count": survey.suspicious_count,
             "sample_count": survey.sample_count,
             "qr_code": survey.qr_code,
+            "air_survey_plan_appendix": plan_appendix_path.name,
+            "air_survey_result_appendix": result_appendix_path.name,
+            "appendix_status": "FILLED",
             "data_origin": "historical_grid_and_rule_based_field_record",
         }
         manifest.append(row)
