@@ -10,7 +10,12 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    email: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     organization: Mapped[str] = mapped_column(String(150), nullable=False)
@@ -28,3 +33,12 @@ class User(Base):
         server_default=func.now(),
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    @property
+    def email_verified(self) -> bool:
+        """
+        현재 users 테이블에는 별도 email_verified 컬럼이 없다.
+        신규 가입은 이메일 인증 토큰을 통과해야만 생성되므로 저장된 사용자는
+        인증 완료 사용자로 응답한다. 기존 MySQL 이전 사용자와도 호환된다.
+        """
+        return True
