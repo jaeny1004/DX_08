@@ -66,7 +66,6 @@ def _load_batch_module() -> Any:
         "generate_vworld_prediction_reports",
         BATCH_SCRIPT_PATH,
     )
-
     if spec is None or spec.loader is None:
         raise RuntimeError(
             "기존 발생 예측 생성 스크립트를 불러올 수 없습니다."
@@ -75,7 +74,6 @@ def _load_batch_module() -> Any:
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-
     return module
 
 
@@ -93,7 +91,6 @@ def _validate_input_paths() -> None:
         for label, path in paths.items()
         if not path.is_file()
     ]
-
     if missing:
         raise FileNotFoundError(
             "필수 파일이 없습니다.\n" + "\n".join(missing)
@@ -108,9 +105,13 @@ def generate_single_prediction_report(
     report_no: int = 1,
     zoom: int | None = None,
 ) -> dict[str, Any]:
-    if year < 2016 or year > 2100:
+    """
+    기존 30건 배치 생성기의 검증된 함수를 그대로 재사용해
+    중심 격자 1개에 대한 기존 양식 DOCX·PDF를 생성한다.
+    """
+    if year < 2016 or year > 2021:
         raise ValueError(
-            "보고서 연도는 2016~2100 범위여야 합니다."
+            "현재 감염 발생 이력 파일 기준 연도는 2016~2021입니다."
         )
 
     _validate_input_paths()
@@ -131,14 +132,12 @@ def generate_single_prediction_report(
         raise RuntimeError(
             "rag-backend/.env에 VWORLD_API_KEY가 없습니다."
         )
-
     if not domain:
         raise RuntimeError(
             "rag-backend/.env에 VWORLD_API_DOMAIN이 없습니다."
         )
 
     batch = _load_batch_module()
-
     selected_zoom = (
         zoom
         or int(
@@ -158,7 +157,6 @@ def generate_single_prediction_report(
     infection = batch.load_infection_history(
         INFECTION_PATH
     )
-
     infection = batch.attach_admin_names(
         infection,
         SIGUNGU_PATH,
@@ -178,15 +176,9 @@ def generate_single_prediction_report(
     row = matching.iloc[0]
     annual_column = f"infection_count_{year}"
 
-    annual_count = int(
-        row.get(annual_column, 0) or 0
-    )
-
+    annual_count = int(row.get(annual_column, 0) or 0)
     cumulative_count = int(
-        row.get(
-            "infection_count_2016_2021",
-            0,
-        )
+        row.get("infection_count_2016_2021", 0)
         or 0
     )
 
@@ -196,9 +188,7 @@ def generate_single_prediction_report(
         center_grid_id=int(center_grid_id),
         annual_count=annual_count,
         cumulative_count=cumulative_count,
-        sido_name=str(
-            row.get("sido_name") or "미상"
-        ),
+        sido_name=str(row.get("sido_name") or "미상"),
         sigungu_name=str(
             row.get("sigungu_name") or "미상"
         ),
@@ -253,15 +243,8 @@ def generate_single_prediction_report(
         f"격자{record.center_grid_id}"
     )
 
-    map_path = (
-        map_directory
-        / f"{base_name}.png"
-    )
-
-    docx_path = (
-        docx_directory
-        / f"{base_name}.docx"
-    )
+    map_path = map_directory / f"{base_name}.png"
+    docx_path = docx_directory / f"{base_name}.docx"
 
     batch.build_vworld_overlay_map(
         output_path=map_path,
@@ -294,7 +277,6 @@ def generate_single_prediction_report(
             f"DOCX 생성 결과를 찾을 수 없습니다: "
             f"{docx_path}"
         )
-
     if not pdf_path.is_file():
         raise RuntimeError(
             f"PDF 생성 결과를 찾을 수 없습니다: "
@@ -332,37 +314,32 @@ def build_parser() -> argparse.ArgumentParser:
             "중심 격자 1개의 DOCX·PDF를 생성합니다."
         )
     )
-
     parser.add_argument(
         "--center-grid-id",
         type=int,
         required=True,
     )
-
     parser.add_argument(
         "--year",
         type=int,
         required=True,
+        choices=range(2016, 2022),
     )
-
     parser.add_argument(
         "--output",
         type=Path,
         default=DEFAULT_OUTPUT_ROOT,
     )
-
     parser.add_argument(
         "--report-no",
         type=int,
         default=1,
     )
-
     parser.add_argument(
         "--zoom",
         type=int,
         default=None,
     )
-
     return parser
 
 
@@ -377,10 +354,7 @@ def main() -> int:
         zoom=args.zoom,
     )
 
-    print(
-        "\n===== 단일 발생 예측 보고서 생성 완료 ====="
-    )
-
+    print("\n===== 단일 발생 예측 보고서 생성 완료 =====")
     for key, value in result.items():
         print(f"{key}: {value}")
 
