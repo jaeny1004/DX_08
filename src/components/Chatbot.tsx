@@ -54,61 +54,111 @@ const INITIAL_MESSAGE: Message = {
   sources: [],
 };
 
+function getSelectedGridProperties(
+  selectedGrid: any,
+): Record<string, any> | null {
+  if (!selectedGrid || typeof selectedGrid !== "object") {
+    return null;
+  }
+
+  if (
+    selectedGrid.properties &&
+    typeof selectedGrid.properties === "object"
+  ) {
+    return selectedGrid.properties;
+  }
+
+  return selectedGrid;
+}
+
 function buildGridContext(
   selectedGrid: any,
 ): GridContext | null {
-  if (!selectedGrid) {
+  const properties = getSelectedGridProperties(selectedGrid);
+
+  if (!properties) {
+    return null;
+  }
+
+  const gridId =
+    properties.grid_id ??
+    properties.id;
+
+  if (
+    gridId === null ||
+    gridId === undefined ||
+    String(gridId).trim() === ""
+  ) {
     return null;
   }
 
   return {
-    grid_id:
-      selectedGrid.grid_id ??
-      selectedGrid.id,
+    grid_id: String(gridId).trim(),
 
     risk_score:
-      selectedGrid.risk_score,
+      properties.risk_score,
 
     risk_grade:
-      selectedGrid.risk_grade,
+      properties.risk_grade,
 
     risk_stage_label:
-      selectedGrid.risk_stage_label,
+      properties.risk_stage_label,
 
     field_priority_score_v3:
-      selectedGrid.field_priority_score_v3,
+      properties.field_priority_score_v3,
 
     field_priority_grade_v3:
-      selectedGrid.field_priority_grade_v3,
+      properties.field_priority_grade_v3 ??
+      properties.priority_grade_v3,
 
     priority_stage_label:
-      selectedGrid.priority_stage_label,
+      properties.priority_stage_label,
 
     pine_ratio:
-      selectedGrid.pine_ratio,
+      properties.pine_ratio,
 
     infection_pressure:
-      selectedGrid.infection_pressure ??
-      selectedGrid.recent_pressure_score,
+      properties.infection_pressure ??
+      properties.recent_pressure_score,
+
+    recent_pressure_score:
+      properties.recent_pressure_score ??
+      properties.infection_pressure,
 
     access_score_v3:
-      selectedGrid.access_score_v3,
+      properties.access_score_v3,
 
     road_class_near:
-      selectedGrid.road_class_near ??
-      selectedGrid.nearest_road_type,
+      properties.road_class_near ??
+      properties.nearest_road_type,
 
     road_dist_m:
-      selectedGrid.road_dist_m ??
-      selectedGrid.distance_to_nearest_road_m_v3,
+      properties.road_dist_m ??
+      properties.distance_to_nearest_road_m_v3,
 
     river_dist_m:
-      selectedGrid.river_dist_m,
+      properties.river_dist_m,
 
     env_flag:
-      selectedGrid.env_flag ??
-      selectedGrid.environment_caution_flag_v3,
+      properties.env_flag ??
+      properties.environment_caution_flag_v3,
+
+    field_recommended_action_v3:
+      properties.field_recommended_action_v3,
   };
+}
+
+function isGridReferenceQuestion(text: string): boolean {
+  const normalized = text.replace(/\s+/g, " ").trim();
+
+  return [
+    /이\s*격자/,
+    /해당\s*격자/,
+    /선택(?:한|된)?\s*격자/,
+    /현재\s*격자/,
+    /격자.*(?:위험도|우선순위|예찰|조치|분석|설명)/,
+    /격자.*(?:골랐|선택했|클릭했)/,
+  ].some((item) => item.test(normalized));
 }
 
 export default function Chatbot({
@@ -133,6 +183,33 @@ export default function Chatbot({
     () => buildGridContext(selectedGrid),
     [selectedGrid],
   );
+
+  const selectedGridId =
+    gridContext?.grid_id
+      ? String(gridContext.grid_id)
+      : "";
+
+  const hasSelectedGrid =
+    selectedGridId.length > 0;
+
+  const previousGridIdRef =
+    useRef<string | null>(null);
+
+  useEffect(() => {
+    const previousGridId = previousGridIdRef.current;
+
+    if (
+      previousGridId !== null &&
+      previousGridId !== selectedGridId
+    ) {
+      setMessages([INITIAL_MESSAGE]);
+      setInputValue("");
+      setIsPresetOpen(false);
+      setIsLoading(false);
+    }
+
+    previousGridIdRef.current = selectedGridId;
+  }, [selectedGridId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -172,6 +249,30 @@ export default function Chatbot({
     ]);
 
     setInputValue("");
+
+    if (
+      !hasSelectedGrid &&
+      isGridReferenceQuestion(text)
+    ) {
+      const guideMessage: Message = {
+        id: createMessageId(),
+        role: "assistant",
+        text:
+          "현재 지도에서 선택된 격자가 없습니다.\n\n" +
+          "지도에서 분석하려는 500m 격자를 한 번 클릭한 뒤 다시 질문해 주세요. " +
+          "격자가 선택되면 격자 ID·위험도·예찰 우선순위·소나무류 비율·접근성 정보를 함께 분석합니다.\n\n" +
+          "일반적인 소나무재선충병 예찰·방제 기준이나 백서 내용은 격자를 선택하지 않아도 질문할 수 있습니다.",
+        sources: [],
+      };
+
+      setMessages((previous) => [
+        ...previous,
+        guideMessage,
+      ]);
+
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -218,7 +319,7 @@ export default function Chatbot({
     }
   };
 
-  const presetQuestions = selectedGrid
+  const presetQuestions = hasSelectedGrid
     ? [
         "현재 선택한 격자의 위험도를 설명해줘.",
         "이 격자를 우선 예찰해야 하는 이유는?",
@@ -246,7 +347,9 @@ export default function Chatbot({
             </span>
 
             <span className="text-[11px] text-slate-400 font-bold">
-              위험격자·백서 통합 분석
+              {hasSelectedGrid
+                ? `선택 격자 GRID-${selectedGridId} 연계 중`
+                : "격자 미선택 · 백서 중심 분석"}
             </span>
           </div>
         </div>
@@ -335,7 +438,7 @@ export default function Chatbot({
             </div>
 
             <div className="bg-slate-100 text-slate-500 px-4 py-3 rounded-2xl rounded-tl-none border border-slate-200/70">
-              {selectedGrid
+              {hasSelectedGrid
                 ? "선택 격자 정보와 백서 근거를 함께 분석하고 있습니다..."
                 : "등록된 백서와 방제지침에서 근거를 검색하고 있습니다..."}
             </div>
@@ -358,7 +461,7 @@ export default function Chatbot({
         >
           <span className="text-[11px] font-bold flex items-center gap-1.5">
             <HelpCircle size={12} />
-            {selectedGrid
+            {hasSelectedGrid
               ? "선택 격자 추천 질문"
               : "자주 하는 행정·예찰 질의"}
           </span>
@@ -406,7 +509,7 @@ export default function Chatbot({
             }
             disabled={isLoading}
             placeholder={
-              selectedGrid
+              hasSelectedGrid
                 ? "선택 격자의 위험도·예찰 조치를 질문하세요..."
                 : "등록된 백서·방제지침에 대해 질문하세요..."
             }

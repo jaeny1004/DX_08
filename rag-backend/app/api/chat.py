@@ -89,8 +89,13 @@ def normalize_grid_context(
     if not grid_context:
         return None
 
+    grid_id = grid_context.get("grid_id") or grid_context.get("id")
+
+    if grid_id is None or not str(grid_id).strip():
+        return None
+
     return {
-        "grid_id": grid_context.get("grid_id") or grid_context.get("id"),
+        "grid_id": str(grid_id).strip(),
         "risk_score": grid_context.get("risk_score"),
         "risk_grade": grid_context.get("risk_grade"),
         "risk_stage_label": grid_context.get("risk_stage_label"),
@@ -133,6 +138,24 @@ def normalize_grid_context(
             "field_recommended_action_v3"
         ),
     }
+
+
+def is_grid_reference_question(question: str) -> bool:
+    normalized = re.sub(r"\s+", " ", question).strip()
+
+    patterns = [
+        r"이\s*격자",
+        r"해당\s*격자",
+        r"선택(?:한|된)?\s*격자",
+        r"현재\s*격자",
+        r"격자.*(?:위험도|우선순위|예찰|조치|분석|설명)",
+        r"격자.*(?:골랐|선택했|클릭했)",
+    ]
+
+    return any(
+        re.search(pattern, normalized, flags=re.IGNORECASE)
+        for pattern in patterns
+    )
 
 
 def embed_question(embedder: Any, question: str) -> list[float]:
@@ -224,6 +247,29 @@ def chat(
     requested_grid_id = extract_grid_id(question)
     grid_context = normalize_grid_context(payload.grid_context)
 
+    # 프론트에서 선택 격자 ID가 전달되면 서버 원본 격자 데이터로 보강한다.
+    if grid_context and grid_context.get("grid_id"):
+        try:
+            indexed_grid = load_grid_index().get(
+                str(grid_context["grid_id"]).strip()
+            )
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as error:
+            raise HTTPException(
+                status_code=500,
+                detail=str(error),
+            ) from error
+
+        if indexed_grid:
+            merged_grid = {
+                **indexed_grid,
+                **{
+                    key: value
+                    for key, value in grid_context.items()
+                    if value is not None
+                },
+            }
+            grid_context = normalize_grid_context(merged_grid)
+
     # 질문에 격자 ID가 직접 포함되면 그 격자를 우선 조회한다.
     if requested_grid_id:
         try:
@@ -244,6 +290,20 @@ def chat(
             )
 
         grid_context = normalize_grid_context(found_grid)
+
+    if (
+        not grid_context
+        and not requested_grid_id
+        and is_grid_reference_question(question)
+    ):
+        return ChatResponse(
+            answer=(
+                "현재 지도에서 선택된 격자가 없습니다. "
+                "지도에서 분석하려는 500m 격자를 클릭한 뒤 다시 질문해 주세요. "
+                "일반적인 예찰·방제 기준이나 백서 내용은 격자 선택 없이도 질문할 수 있습니다."
+            ),
+            sources=[],
+        )
 
     try:
         search_results = search_documents(

@@ -94,11 +94,34 @@ export type RagHistoryItem = RagChatHistoryItem;
 export type ChatHistoryItem = RagChatHistoryItem;
 
 /**
+ * 지도에서 선택한 위험격자 정보
+ */
+export interface GridContext {
+  grid_id: string | number;
+  risk_score?: number | null;
+  risk_grade?: string | null;
+  risk_stage_label?: string | null;
+  field_priority_score_v3?: number | null;
+  field_priority_grade_v3?: string | null;
+  priority_stage_label?: string | null;
+  pine_ratio?: number | null;
+  infection_pressure?: number | null;
+  recent_pressure_score?: number | null;
+  access_score_v3?: number | null;
+  road_class_near?: string | null;
+  road_dist_m?: number | null;
+  river_dist_m?: number | null;
+  env_flag?: number | boolean | string | null;
+  field_recommended_action_v3?: string | null;
+}
+
+/**
  * FastAPI POST /chat 요청 구조
  */
 export interface RagChatRequest {
   question: string;
   history: RagChatHistoryItem[];
+  grid_context: GridContext | null;
 }
 
 /**
@@ -417,7 +440,8 @@ async function readErrorResponse(
  */
 export async function askRagChat(
   question: string,
-  history: RagChatHistoryItem[] = []
+  history: RagChatHistoryItem[] = [],
+  gridContext: GridContext | null = null
 ): Promise<RagChatResponse> {
   const normalizedQuestion =
     typeof question === "string" ? question.trim() : "";
@@ -429,6 +453,13 @@ export async function askRagChat(
   const payload: RagChatRequest = {
     question: normalizedQuestion,
     history: normalizeHistory(history),
+    grid_context:
+      gridContext &&
+      gridContext.grid_id !== null &&
+      gridContext.grid_id !== undefined &&
+      String(gridContext.grid_id).trim() !== ""
+        ? gridContext
+        : null,
   };
 
   const controller = new AbortController();
