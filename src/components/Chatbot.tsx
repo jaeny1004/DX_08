@@ -21,6 +21,20 @@ interface ChatbotProps {
   selectedGrid?: any;
 }
 
+function createMessageId(): string {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return createMessageId();
+  }
+
+  return [
+    Date.now().toString(36),
+    Math.random().toString(36).slice(2, 10),
+  ].join("-");
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -147,7 +161,7 @@ export default function Chatbot({
         }));
 
     const userMessage: Message = {
-      id: crypto.randomUUID(),
+      id: createMessageId(),
       role: "user",
       text,
     };
@@ -168,7 +182,7 @@ export default function Chatbot({
       );
 
       const assistantMessage: Message = {
-        id: crypto.randomUUID(),
+        id: createMessageId(),
         role: "assistant",
         text: result.answer,
         sources: Array.isArray(result.sources)
@@ -189,7 +203,7 @@ export default function Chatbot({
       setMessages((previous) => [
         ...previous,
         {
-          id: crypto.randomUUID(),
+          id: createMessageId(),
           role: "assistant",
           text:
             "지식엔진에 연결하지 못했습니다.\n\n" +

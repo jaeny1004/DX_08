@@ -477,10 +477,9 @@ export default function App() {
           >
             <button
               type="button"
-              onClick={() => {
-                setActiveModule("dashboard");
-                setIsAlertPanelOpen((previous) => !previous);
-              }}
+              onClick={() =>
+                setIsAlertPanelOpen((previous) => !previous)
+              }
               className={
                 isAlertPanelOpen
                   ? "relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-rose-300 bg-rose-100 text-rose-700 shadow-sm"
@@ -695,11 +694,6 @@ export default function App() {
                     onAssignWorker={handleAssignWorker}
                     onGridSelect={setSelectedGrid}
                     authUser={authUser}
-                    isAlertPanelOpen={isAlertPanelOpen}
-                    onCloseAlertPanel={() =>
-                      setIsAlertPanelOpen(false)
-                    }
-                    liveAlerts={liveAlerts}
                   />
                 )}
 
@@ -761,6 +755,115 @@ export default function App() {
           </main>
         </div>
       </div>
+
+      <AnimatePresence>
+        {isAlertPanelOpen && (
+          <>
+            <motion.button
+              type="button"
+              aria-label="실시간 알림 닫기"
+              onClick={() => setIsAlertPanelOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[1990] bg-slate-950/20"
+            />
+
+            <motion.aside
+              initial={{
+                opacity: 0,
+                x: -18,
+                scale: 0.98,
+              }}
+              animate={{
+                opacity: 1,
+                x: 0,
+                scale: 1,
+              }}
+              exit={{
+                opacity: 0,
+                x: -18,
+                scale: 0.98,
+              }}
+              transition={{
+                duration: 0.18,
+              }}
+              className="fixed left-4 top-4 z-[2000] flex max-h-[calc(100vh-32px)] w-[390px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                <div>
+                  <div className="text-xs font-extrabold text-rose-600">
+                    REAL-TIME ALERT
+                  </div>
+
+                  <h2 className="mt-1 text-xl font-black text-slate-950">
+                    실시간 통합 알림
+                  </h2>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAlertPanelOpen(false)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="실시간 알림 닫기"
+                >
+                  <X size={19} />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+                {liveAlerts.map((alert) => {
+                  const Icon = alert.icon;
+
+                  const toneClass =
+                    alert.tone === "danger"
+                      ? "border-rose-200 bg-rose-50 text-rose-800"
+                      : alert.tone === "warning"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-blue-200 bg-blue-50 text-blue-800";
+
+                  return (
+                    <article
+                      key={alert.id}
+                      className={`rounded-2xl border p-4 ${toneClass}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80">
+                          <Icon size={18} />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <h3 className="text-sm font-extrabold">
+                              {alert.title}
+                            </h3>
+
+                            <span className="shrink-0 text-[10px] font-black opacity-70">
+                              {alert.time}
+                            </span>
+                          </div>
+
+                          <p className="mt-1 text-xs font-semibold leading-5 opacity-80">
+                            {alert.description}
+                          </p>
+
+                          <div className="mt-2 text-[10px] font-black opacity-60">
+                            {alert.id}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <div className="border-t border-slate-100 bg-slate-50 px-5 py-3 text-[11px] font-semibold leading-5 text-slate-500">
+                알림은 감염 확정이 아닌 신규 확산위험 후보와 현장 확인 필요사항을 안내합니다.
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isChatOpen && (
