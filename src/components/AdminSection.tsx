@@ -27,7 +27,7 @@ import {
   type ReportOptions,
   type ReportType,
 } from "../services/reportApi";
-
+import NewReportGenerator from "./NewReportGenerator";
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   prediction: "발생 예측",
@@ -62,7 +62,8 @@ function scoreText(value: number | null | undefined): string {
 
 
 export default function AdminSection() {
-  const [activeTab, setActiveTab] = useState<"reports" | "species">("reports");
+  const [activeTab, setActiveTab] =
+  useState<"new-report" | "reports" | "species">("new-report");
 
   // --------------------------------------------
   // 실제 행정 보고서 조회·미리보기·다운로드 상태
@@ -328,7 +329,19 @@ export default function AdminSection() {
   return (
     <div className="space-y-6">
       {/* 탭 선택 */}
-      <div className="flex max-w-lg rounded-2xl border border-slate-200 bg-slate-100 p-1 text-sm font-bold text-slate-600">
+      <div className="flex max-w-3xl rounded-2xl border border-slate-200 bg-slate-100 p-1 text-sm font-bold text-slate-600">
+        <button
+          type="button"
+          onClick={() => setActiveTab("new-report")}
+          className={`flex-1 rounded-xl py-2.5 transition-all ${
+            activeTab === "new-report"
+              ? "bg-white text-emerald-950 shadow-sm"
+              : "hover:text-slate-900"
+          }`}
+        >
+          ✨ 신규 보고서 생성
+        </button>
+
         <button
           type="button"
           onClick={() => setActiveTab("reports")}
@@ -338,7 +351,7 @@ export default function AdminSection() {
               : "hover:text-slate-900"
           }`}
         >
-          📋 보고서 자동 원클릭 생성
+          📚 과거 보고서 조회
         </button>
 
         <button
@@ -355,6 +368,16 @@ export default function AdminSection() {
       </div>
 
       <AnimatePresence mode="wait">
+        {activeTab === "new-report" && (
+          <motion.div
+            key="new-report-tab"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+          >
+            <NewReportGenerator />
+          </motion.div>
+        )}
         {activeTab === "reports" && (
           <motion.div
             key="reports-tab"
