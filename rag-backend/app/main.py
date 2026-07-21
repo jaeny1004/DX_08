@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 
 from dotenv import load_dotenv
@@ -7,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.embedder import Embedder
 from app.core.store import make_store
 
+
 # 앱 초기화 전에 .env를 읽는다.
 load_dotenv()
+
 
 DEFAULT_ORIGINS = [
     "http://localhost:3000",
@@ -35,10 +39,10 @@ def _allowed_origins() -> list[str]:
 def create_app() -> FastAPI:
     app = FastAPI(
         title="소나무재선충병 통합 예찰·방제지원 API",
-        version="1.2.1",
+        version="1.3.0",
         description=(
-            "백서 RAG 질의응답과 서버 SQLite 기반 "
-            "로그인·회원가입 기능을 제공하는 API"
+            "백서 RAG 질의응답, SQLite 기반 인증, "
+            "예측·현장예찰·방제 보고서 조회·미리보기·다운로드 API"
         ),
     )
 
@@ -119,11 +123,13 @@ def create_app() -> FastAPI:
     from app.api.auth import router as auth_router
     from app.api.chat import router as chat_router
     from app.api.docs import router as docs_router
+    from app.api.reports import router as reports_router
 
     routers = {
         "auth": auth_router,
         "chat": chat_router,
         "docs": docs_router,
+        "reports": reports_router,
     }
 
     for router_name, router in routers.items():
@@ -135,8 +141,6 @@ def create_app() -> FastAPI:
                 f"{router_name} 라우터에 등록된 API 경로가 없습니다."
             )
 
-        # APIRouter 객체 자체를 app.routes에 append/extend하면 안 된다.
-        # 반드시 FastAPI 공식 include_router()로 등록한다.
         app.include_router(router)
 
     # 실제 APIRoute가 앱에 등록됐는지 최종 검증
@@ -151,6 +155,9 @@ def create_app() -> FastAPI:
         "/api/auth/signup",
         "/api/auth/me",
         "/chat",
+        "/api/reports/options",
+        "/api/reports",
+        "/api/reports/export/linked.xlsx",
     }
 
     missing_paths = required_paths - registered_paths
