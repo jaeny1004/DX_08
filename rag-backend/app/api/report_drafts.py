@@ -9,6 +9,10 @@ from pydantic import BaseModel, Field
 
 from app.api.auth import get_current_user
 from app.models.user import User
+from app.services.prediction_template_service import (
+    apply_prediction_template,
+    get_prediction_template_file,
+)
 from app.services.report_draft_service import (
     REPORT_LABELS,
     build_docx,
@@ -19,7 +23,10 @@ from app.services.report_draft_service import (
     update_draft,
 )
 
-router = APIRouter(prefix="/api/report-drafts", tags=["신규 보고서 생성"])
+router = APIRouter(
+    prefix="/api/report-drafts",
+    tags=["신규 보고서 생성"],
+)
 
 
 class IncludeSections(BaseModel):
@@ -31,16 +38,28 @@ class IncludeSections(BaseModel):
 
 
 class DraftCreateRequest(BaseModel):
-    report_type: Literal["prediction", "field_survey_plan", "field_survey_result", "control_plan", "integrated"]
+    report_type: Literal[
+        "prediction",
+        "field_survey_plan",
+        "field_survey_result",
+        "control_plan",
+        "integrated",
+    ]
     title: str = Field(default="", max_length=200)
     year: int = Field(ge=2016, le=2100)
     start_date: str
     end_date: str
     sido_name: str = Field(min_length=1, max_length=50)
     sigungu_name: str = Field(default="", max_length=50)
-    center_grid_ids: list[str] = Field(default_factory=list)
-    reference_document_nos: list[str] = Field(default_factory=list)
-    include_sections: IncludeSections = Field(default_factory=IncludeSections)
+    center_grid_ids: list[str] = Field(
+        default_factory=list
+    )
+    reference_document_nos: list[str] = Field(
+        default_factory=list
+    )
+    include_sections: IncludeSections = Field(
+        default_factory=IncludeSections
+    )
     user_notes: str = Field(default="", max_length=3000)
 
 
@@ -52,57 +71,205 @@ class DraftSectionUpdate(BaseModel):
 
 class DraftUpdateRequest(BaseModel):
     title: str | None = None
-    status: Literal["draft", "reviewed", "approved"] | None = None
+    status: Literal[
+        "draft",
+        "reviewed",
+        "approved",
+    ] | None = None
     sections: list[DraftSectionUpdate] | None = None
 
 
 @router.get("/types")
 def get_types() -> dict:
-    return {"items": [{"value": key, "label": label} for key, label in REPORT_LABELS.items()]}
+    return {
+        "items": [
+            {
+                "value": key,
+                "label": label,
+            }
+            for key, label in REPORT_LABELS.items()
+        ]
+    }
 
 
 @router.post("")
-def create_new_draft(request: DraftCreateRequest, current_user: User = Depends(get_current_user)) -> dict:
+def create_new_draft(
+    request: DraftCreateRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
     try:
-        return create_draft(request.model_dump(), created_by=current_user.email)
+        return create_draft(
+            request.model_dump(),
+            created_by=current_user.email,
+        )
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get("/{draft_id}")
-def get_draft(draft_id: str, current_user: User = Depends(get_current_user)) -> dict:
+def get_draft(
+    draft_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
     try:
         return load_draft(draft_id)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
 
 
 @router.put("/{draft_id}")
-def save_draft_changes(draft_id: str, request: DraftUpdateRequest, current_user: User = Depends(get_current_user)) -> dict:
+def save_draft_changes(
+    draft_id: str,
+    request: DraftUpdateRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
     try:
         payload = request.model_dump()
+
         if payload.get("sections") is not None:
-            payload["sections"] = [section.model_dump() for section in request.sections or []]
-        return update_draft(draft_id, payload)
+            payload["sections"] = [
+                section.model_dump()
+                for section in request.sections or []
+            ]
+
+        return update_draft(
+            draft_id,
+            payload,
+        )
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/{draft_id}/apply-template")
+def apply_template(
+    draft_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    try:
+        template_output = apply_prediction_template(
+            draft_id
+        )
+        return {
+            "draft_id": draft_id,
+            "status": "generated",
+            "template_output": template_output,
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/{draft_id}/preview/pdf")
+def preview_template_pdf(
+    draft_id: str,
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    try:
+        path = get_prediction_template_file(
+            draft_id,
+            "pdf",
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
+
+    return FileResponse(
+        path=path,
+        filename=path.name,
+        media_type="application/pdf",
+        content_disposition_type="inline",
+    )
 
 
 @router.post("/{draft_id}/export/{file_format}")
-def export_draft(draft_id: str, file_format: Literal["docx", "pdf", "xlsx"], current_user: User = Depends(get_current_user)) -> FileResponse:
+def export_draft(
+    draft_id: str,
+    file_format: Literal["docx", "pdf", "xlsx"],
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
     try:
         draft = load_draft(draft_id)
-        path = build_docx(draft) if file_format == "docx" else build_xlsx(draft) if file_format == "xlsx" else build_pdf(draft)
+        template_output = draft.get("template_output")
+
+        if (
+            draft.get("report_type") == "prediction"
+            and isinstance(template_output, dict)
+            and file_format in {"docx", "pdf"}
+        ):
+            path = get_prediction_template_file(
+                draft_id,
+                file_format,
+            )
+        elif file_format == "docx":
+            path = build_docx(draft)
+        elif file_format == "xlsx":
+            path = build_xlsx(draft)
+        else:
+            path = build_pdf(draft)
+
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=501, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=501,
+            detail=str(exc),
+        ) from exc
 
     media_types = {
-        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "docx": (
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
+        ),
         "pdf": "application/pdf",
-        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "xlsx": (
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
     }
-    return FileResponse(path=path, filename=Path(path).name, media_type=media_types[file_format])
+
+    return FileResponse(
+        path=path,
+        filename=Path(path).name,
+        media_type=media_types[file_format],
+    )
