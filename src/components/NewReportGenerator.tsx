@@ -1,16 +1,25 @@
-import React, { useMemo, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   AlertCircle,
   CheckCircle2,
   Download,
+  Eye,
+  FileCheck2,
   FilePlus2,
   Loader2,
   Save,
+  X,
 } from "lucide-react";
 
 import {
+  applyDraftTemplate,
   createDraft,
   downloadDraftFile,
+  fetchDraftPreviewPdf,
   updateDraft,
   type DraftDocument,
   type DraftExportFormat,
@@ -88,6 +97,12 @@ export default function NewReportGenerator() {
     useState<DraftSection[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [applyingTemplate, setApplyingTemplate] =
+    useState(false);
+  const [previewLoading, setPreviewLoading] =
+    useState(false);
+  const [previewUrl, setPreviewUrl] =
+    useState<string | null>(null);
   const [exportingFormat, setExportingFormat] =
     useState<DraftExportFormat | null>(null);
   const [error, setError] =
@@ -99,10 +114,35 @@ export default function NewReportGenerator() {
     [draft],
   );
 
+  const isPrediction =
+    draft?.report_type === "prediction";
+
+  const hasTemplate =
+    Boolean(draft?.template_output);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  const clearPreview = () => {
+    setPreviewUrl((current) => {
+      if (current) {
+        URL.revokeObjectURL(current);
+      }
+
+      return null;
+    });
+  };
+
   const generate = async () => {
     setLoading(true);
     setError(null);
     setSaved("");
+    clearPreview();
 
     try {
       const result = await createDraft({
@@ -170,6 +210,94 @@ export default function NewReportGenerator() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const applyTemplate = async () => {
+    if (!draft) {
+      setError(
+        "먼저 신규 확산위험 보고서 초안을 생성해 주세요.",
+      );
+      return;
+    }
+
+    if (draft.report_type !== "prediction") {
+      setError(
+        "현재 1차 행정양식 적용은 신규 확산위험 분석 보고서만 지원합니다.",
+      );
+      return;
+    }
+
+    if (draft.center_grid_ids.length !== 1) {
+      setError(
+        "행정양식 적용을 위해 중심 격자 ID를 정확히 1개 입력해 주세요.",
+      );
+      return;
+    }
+
+    setApplyingTemplate(true);
+    setError(null);
+    setSaved("");
+    clearPreview();
+
+    try {
+      await updateDraft(draft.draft_id, {
+        title,
+        status: "reviewed",
+        sections,
+      });
+
+      const response = await applyDraftTemplate(
+        draft.draft_id,
+      );
+
+      const updatedDraft: DraftDocument = {
+        ...draft,
+        title,
+        status: "reviewed",
+        sections,
+        template_output:
+          response.template_output,
+      };
+
+      setDraft(updatedDraft);
+      setSaved(
+        "기존 발생 예측 보고서 행정양식이 적용되었습니다.",
+      );
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "행정양식 적용에 실패했습니다.",
+      );
+    } finally {
+      setApplyingTemplate(false);
+    }
+  };
+
+  const openPdfPreview = async () => {
+    if (!draft) {
+      return;
+    }
+
+    setPreviewLoading(true);
+    setError(null);
+
+    try {
+      const blob = await fetchDraftPreviewPdf(
+        draft.draft_id,
+      );
+
+      clearPreview();
+      setPreviewUrl(URL.createObjectURL(blob));
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "PDF 미리보기를 불러오지 못했습니다.",
+      );
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -358,17 +486,22 @@ export default function NewReportGenerator() {
           </div>
 
           <label className="block">
-            중심 격자 ID(선택)
+            중심 격자 ID(1개)
 
             <textarea
               value={gridIds}
               onChange={(event) =>
                 setGridIds(event.target.value)
               }
-              placeholder="922059 | 919652"
+              placeholder="예: 922059"
               rows={2}
               className="mt-1 w-full resize-y rounded-xl border border-slate-200 p-2.5 outline-none focus:border-emerald-400"
             />
+
+            <span className="mt-1 block text-[10px] font-medium text-slate-400">
+              기존 발생 예측 행정양식은 중심 격자
+              1개를 기준으로 생성합니다.
+            </span>
           </label>
 
           <label className="block">
@@ -509,6 +642,46 @@ export default function NewReportGenerator() {
                 저장
               </button>
 
+              {isPrediction && (
+                <button
+                  type="button"
+                  onClick={applyTemplate}
+                  disabled={applyingTemplate}
+                  className="flex items-center gap-1 rounded-xl bg-emerald-800 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {applyingTemplate ? (
+                    <Loader2
+                      size={14}
+                      className="animate-spin"
+                    />
+                  ) : (
+                    <FileCheck2 size={14} />
+                  )}
+                  {hasTemplate
+                    ? "행정양식 다시 적용"
+                    : "행정양식 적용"}
+                </button>
+              )}
+
+              {isPrediction && hasTemplate && (
+                <button
+                  type="button"
+                  onClick={openPdfPreview}
+                  disabled={previewLoading}
+                  className="flex items-center gap-1 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-bold text-sky-900 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {previewLoading ? (
+                    <Loader2
+                      size={14}
+                      className="animate-spin"
+                    />
+                  ) : (
+                    <Eye size={14} />
+                  )}
+                  실제 PDF 미리보기
+                </button>
+              )}
+
               {(
                 [
                   "docx",
@@ -547,6 +720,84 @@ export default function NewReportGenerator() {
           <div className="mb-3 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-xs font-bold text-emerald-800">
             <CheckCircle2 size={15} />
             {saved}
+          </div>
+        )}
+
+        {draft?.template_output && (
+          <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs sm:grid-cols-4">
+            <div>
+              <span className="block text-[10px] font-bold text-emerald-700">
+                중심 격자
+              </span>
+              <strong>
+                {draft.template_output.center_grid_id}
+              </strong>
+            </div>
+
+            <div>
+              <span className="block text-[10px] font-bold text-emerald-700">
+                위험도
+              </span>
+              <strong>
+                {draft.template_output.risk_score ??
+                  "-"}{" "}
+                /{" "}
+                {draft.template_output.risk_grade ??
+                  "-"}
+              </strong>
+            </div>
+
+            <div>
+              <span className="block text-[10px] font-bold text-emerald-700">
+                예찰 우선순위
+              </span>
+              <strong>
+                {draft.template_output.priority_score ??
+                  "-"}{" "}
+                /{" "}
+                {draft.template_output
+                  .priority_grade ?? "-"}
+              </strong>
+            </div>
+
+            <div>
+              <span className="block text-[10px] font-bold text-emerald-700">
+                양식 상태
+              </span>
+              <strong>생성 완료</strong>
+            </div>
+          </div>
+        )}
+
+        {previewUrl && (
+          <div className="mb-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
+              <div>
+                <strong className="text-sm text-slate-900">
+                  실제 행정양식 PDF
+                </strong>
+
+                <p className="text-[10px] text-slate-500">
+                  서버에서 생성한 기존 발생 예측 보고서
+                  양식입니다.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={clearPreview}
+                className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                aria-label="PDF 미리보기 닫기"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <iframe
+              src={previewUrl}
+              title="신규 확산위험 행정양식 PDF 미리보기"
+              className="h-[720px] w-full bg-white"
+            />
           </div>
         )}
 
