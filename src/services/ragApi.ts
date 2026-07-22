@@ -8,70 +8,17 @@
  * 4. 로컬 127.0.0.1 주소로 자동 복귀하지 않음
  */
 
-/* =========================================================
- * API 서버 설정
- * ======================================================= */
+import {
+  API_BASE_URL,
+  buildApiUrl,
+} from "../config/api";
 
-/**
- * 프론트 .env 우선순위
- *
- * 1. VITE_RAG_API_BASE
- * 2. VITE_API_BASE_URL
- * 3. 네이버클라우드 공용 FastAPI 서버
- */
-const DEFAULT_RAG_API_BASE = "http://101.79.24.212:8788";
-
-/**
- * RAG 요청 제한 시간
- * 문서 검색과 OpenAI 답변 생성을 고려해 90초로 설정한다.
- */
+/** RAG 요청 제한 시간 */
 const REQUEST_TIMEOUT_MS = 90_000;
 
-function normalizeBaseUrl(value: unknown): string {
-  if (typeof value !== "string") {
-    return DEFAULT_RAG_API_BASE;
-  }
-
-  const normalized = value.trim().replace(/\/+$/, "");
-
-  if (!normalized) {
-    return DEFAULT_RAG_API_BASE;
-  }
-
-  if (
-    !normalized.startsWith("http://") &&
-    !normalized.startsWith("https://")
-  ) {
-    throw new Error(
-      `RAG API 주소는 http:// 또는 https://로 시작해야 합니다: ${normalized}`
-    );
-  }
-
-  return normalized;
-}
-
-const envRagApiBase = import.meta.env.VITE_RAG_API_BASE;
-const envApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-
-/**
- * 최종적으로 사용하는 RAG API 주소
- */
-export const RAG_API_BASE = normalizeBaseUrl(
-  envRagApiBase || envApiBaseUrl || DEFAULT_RAG_API_BASE
-);
-
-/**
- * API 기본 주소와 경로를 안전하게 결합한다.
- *
- * 예:
- * buildRagApiUrl("/chat")
- * → http://101.79.24.212:8788/chat
- */
-export function buildRagApiUrl(path: string): string {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-
-  return `${RAG_API_BASE}${normalizedPath}`;
-}
+/** 기존 코드 호환용 별칭 */
+export const RAG_API_BASE = API_BASE_URL;
+export const buildRagApiUrl = buildApiUrl;
 
 /* =========================================================
  * 채팅 타입

@@ -49,20 +49,29 @@ export default function ControlSection({
 
   // Recalculating treatment priorities dynamically based on sliding weights (FR-CTR-008)
   const prioritizedGrids = useMemo(() => {
-    return grids.map(g => {
-      // Simulate accessibility index (higher elevation = lower access convenience)
-      const simulatedAccessibility = Math.max(10, 100 - Math.round(g.elevation / 7));
-      
-      const weightedScore = (
-        (g.riskScore * 100 * (weightRisk / 100)) +
-        (simulatedAccessibility * (weightAccess / 100)) +
-        (g.pineDensity * (weightDensity / 100))
-      );
+    return grids.map((g) => {
+      const accessibility =
+        typeof g.accessScore === "number" && Number.isFinite(g.accessScore)
+          ? Math.min(100, Math.max(0, g.accessScore))
+          : null;
+
+      const activeWeightTotal =
+        weightRisk + weightDensity +
+        (accessibility === null ? 0 : weightAccess);
+
+      const weightedScore = activeWeightTotal > 0
+        ? (
+            g.riskScore * 100 * weightRisk +
+            g.pineDensity * weightDensity +
+            (accessibility ?? 0) *
+              (accessibility === null ? 0 : weightAccess)
+          ) / activeWeightTotal
+        : 0;
 
       return {
         ...g,
-        accessibility: simulatedAccessibility,
-        priorityScore: Number(weightedScore.toFixed(1))
+        accessibility,
+        priorityScore: Number(weightedScore.toFixed(1)),
       };
     }).sort((a, b) => b.priorityScore - a.priorityScore);
   }, [grids, weightRisk, weightAccess, weightDensity]);
@@ -461,7 +470,7 @@ export default function ControlSection({
                           {g.region} <span className="text-[10px] text-slate-400 font-normal font-mono block">{g.id}</span>
                         </td>
                         <td className="py-3 px-3 font-mono">{(g.riskScore * 100).toFixed(0)}%</td>
-                        <td className="py-3 px-3 font-mono">{(g as any).accessibility}%</td>
+                        <td className="py-3 px-3 font-mono">{(g as any).accessibility === null ? "데이터 없음" : `${(g as any).accessibility}%`}</td>
                         <td className="py-3 px-3 text-right text-sm font-black text-emerald-900">
                           {(g as any).priorityScore}점
                         </td>

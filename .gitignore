@@ -10,29 +10,53 @@ coverage/
 # Environment variables
 .env
 **/.env
-.env*
+.env.*
+**/.env.*
 !.env.example
+!**/.env.example
 
 # Python / RAG runtime
 .venv/
 **/.venv/
+venv/
+**/venv/
+report-venv/
 __pycache__/
 **/__pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
-rag-backend/.pytest_cache/
+**/.pytest_cache/
 
-# Local vector database
+# Local databases and runtime files
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*.wal
+*.shm
 rag-backend/data/chroma/
+rag-backend/data/generated_drafts/
+rag-backend/data/generated_reports/
+
+# Backups and archives
+*.backup_*
+*.bak
+*.zip
+*.7z
+*.tar
+*.gz
 
 # OS files
 .DS_Store
+Thumbs.db
 __MACOSX/
-@"
 
-# GitHub 업로드 제외 대용량 파일
+# GitHub upload exclusions for very large source artifacts
 /data/admin/BND_ADM_DONG_PG.shp
 /public/data/sigungu_boundary.geojson
 /public/data/simulation_candidate_top30_v4.geojson
 /rag-backend/data/docs/소나무재선충병 바로 알기(국립산림과학원).pdf
-"@ | Add-Content .gitignore
+
+# IMPORTANT: keep this project data file tracked
+!/rag-backend/data/final_ui_candidate_v4.geojson

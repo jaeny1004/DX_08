@@ -889,8 +889,7 @@ export default function AdminSection() {
                     </div>
 
                     <div className="border-t border-slate-100 pt-2 text-right text-[10px] font-bold text-slate-400">
-                      본 분석서는 @google/genai TypeScript SDK에 의거해
-                      실시간 분석을 완료했습니다.
+                      본 결과는 연계된 AI 분석 서비스의 응답을 기반으로 생성되었습니다.
                     </div>
                   </motion.div>
                 ) : (
@@ -902,7 +901,7 @@ export default function AdminSection() {
                     <span>
                       좌측의 고사 피해 수림지 정보를 입력하고
                       <br />
-                      "AI 수종 전환 분석" 버튼을 누르시면 Gemini API가
+                      "AI 수종 전환 분석" 버튼을 누르면 연계된 분석 API가
                       실행됩니다.
                     </span>
                   </div>

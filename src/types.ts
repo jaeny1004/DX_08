@@ -27,6 +27,7 @@ export interface GridCell {
   grade: "상" | "중" | "주의" | "하";
   pineDensity: number;
   elevation: number;
+  accessScore?: number | null;
   temperature: number;
   precipitation: number;
   historyCount: number;

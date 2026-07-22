@@ -88,10 +88,6 @@ type ParsedAiResult = {
 };
 
 
-const ROBOFLOW_API_KEY = import.meta.env.VITE_ROBOFLOW_API_KEY as string | undefined;
-const ROBOFLOW_MODEL_ID =
-  (import.meta.env.VITE_ROBOFLOW_MODEL_ID as string | undefined) ||
-  "pine-disease-classification-qmgil/1";
 
 
 /**
@@ -841,12 +837,9 @@ export default function FieldSection({
                         </div>
 
                         <span
-                          className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black ${ROBOFLOW_API_KEY
-                            ? "bg-emerald-400 text-emerald-950"
-                            : "bg-rose-400 text-white"
-                            }`}
+                          className="shrink-0 rounded-full bg-emerald-400 px-2.5 py-1 text-[10px] font-black text-emerald-950"
                         >
-                          {ROBOFLOW_API_KEY ? "API KEY OK" : "API KEY 없음"}
+                          {"서버 연동"}
                         </span>
                       </div>
                     </div>
@@ -951,8 +944,8 @@ export default function FieldSection({
 
                       <button
                         onClick={handleRunAiAnalysis}
-                        disabled={isAiLoading || !selectedImageUrl || !ROBOFLOW_API_KEY}
-                        className={`w-full rounded-2xl py-3 px-4 font-black text-xs flex items-center justify-center gap-2 transition-all ${isAiLoading || !selectedImageUrl || !ROBOFLOW_API_KEY
+                        disabled={isAiLoading || !selectedImageUrl}
+                        className={`w-full rounded-2xl py-3 px-4 font-black text-xs flex items-center justify-center gap-2 transition-all ${isAiLoading || !selectedImageUrl
                           ? "bg-slate-200 text-slate-500 cursor-not-allowed"
                           : "bg-emerald-800 hover:bg-emerald-900 text-white shadow-lg"
                           }`}

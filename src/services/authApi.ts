@@ -10,9 +10,7 @@ import {
   VerifyEmailResponse,
 } from "../types/auth";
 
-const API_BASE_URL = String(
-  import.meta.env.VITE_API_BASE_URL ?? "",
-).replace(/\/$/, "");
+import { buildApiUrl } from "../config/api";
 
 const AUTH_PREVIEW_MODE =
   String(
@@ -23,9 +21,7 @@ const TOKEN_KEY = "pine-wilt-access-token";
 const PREVIEW_USER_KEY = "pine-wilt-preview-user";
 const PREVIEW_VERIFICATION_CODE = "123456";
 
-function buildUrl(path: string) {
-  return `${API_BASE_URL}${path}`;
-}
+const buildUrl = buildApiUrl;
 
 function wait(ms = 450) {
   return new Promise((resolve) =>

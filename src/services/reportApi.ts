@@ -1,3 +1,5 @@
+import { buildApiUrl } from "../config/api";
+
 export type ReportType = "prediction" | "field_survey" | "control";
 export type ReportFormat = "pdf" | "docx" | "xlsx";
 
@@ -72,7 +74,7 @@ export interface ReportQuery {
   document_no?: string;
 }
 
-const API_BASE = "/api/reports";
+const API_BASE = buildApiUrl("/api/reports");
 
 function buildQuery(
   values: Record<string, string | undefined>,

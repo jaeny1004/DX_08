@@ -1,6 +1,7 @@
+import { buildApiUrl } from "../config/api";
 import { getAccessToken } from "./authApi";
 
-const API_BASE = "/api/report-drafts";
+const API_BASE = buildApiUrl("/api/report-drafts");
 
 export type DraftReportType =
   | "prediction"
