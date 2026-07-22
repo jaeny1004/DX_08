@@ -306,132 +306,132 @@ export default function App() {
   }, [dispatchAssignments]);
 
   useEffect(() => {
-  /*
-   * 로그인 전에는 민원 데이터를 조회하지 않습니다.
-   */
-  if (!authUser) {
-    setReports([]);
-    return;
-  }
+    /*
+     * 로그인 전에는 민원 데이터를 조회하지 않습니다.
+     */
+    if (!authUser) {
+      setReports([]);
+      return;
+    }
 
-  let cancelled = false;
+    let cancelled = false;
 
-  const fetchPineRecordsAsReports =
-    async () => {
-      const { data, error } =
-        await supabase
-          .from("pine_records")
-          .select("*")
-          .order("created_at", {
-            ascending: false,
-          });
+    const fetchPineRecordsAsReports =
+      async () => {
+        const { data, error } =
+          await supabase
+            .from("pine_records")
+            .select("*")
+            .order("created_at", {
+              ascending: false,
+            });
 
-      if (error) {
-        console.error(
-          "pine_records 조회 실패:",
-          error
-        );
-
-        return;
-      }
-
-      if (cancelled) {
-        return;
-      }
-
-      const mappedReports =
-        (data || []).map(
-          row =>
-            mapPineRecordToCrowdReport(
-              row as PineRecordRow
-            )
-        );
-
-      setReports(mappedReports);
-    };
-
-  void fetchPineRecordsAsReports();
-
-  /*
-   * 모바일 앱이나 Supabase에서
-   * INSERT·UPDATE·DELETE가 발생하면
-   * 대시보드를 즉시 갱신합니다.
-   */
-  const channel = supabase
-    .channel(
-      `pine-records-dashboard-${authUser.id}`
-    )
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "pine_records",
-      },
-      payload => {
-        if (
-          payload.eventType === "DELETE"
-        ) {
-          const deletedId = String(
-            (
-              payload.old as {
-                id?: string | number;
-              }
-            ).id
-          );
-
-          setReports(previous =>
-            previous.filter(
-              report =>
-                report.id !== deletedId
-            )
+        if (error) {
+          console.error(
+            "pine_records 조회 실패:",
+            error
           );
 
           return;
         }
 
-        const changedReport =
-          mapPineRecordToCrowdReport(
-            payload.new as PineRecordRow
+        if (cancelled) {
+          return;
+        }
+
+        const mappedReports =
+          (data || []).map(
+            row =>
+              mapPineRecordToCrowdReport(
+                row as PineRecordRow
+              )
           );
 
-        setReports(previous => {
-          const exists =
-            previous.some(
-              report =>
-                report.id ===
-                changedReport.id
+        setReports(mappedReports);
+      };
+
+    void fetchPineRecordsAsReports();
+
+    /*
+     * 모바일 앱이나 Supabase에서
+     * INSERT·UPDATE·DELETE가 발생하면
+     * 대시보드를 즉시 갱신합니다.
+     */
+    const channel = supabase
+      .channel(
+        `pine-records-dashboard-${authUser.id}`
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pine_records",
+        },
+        payload => {
+          if (
+            payload.eventType === "DELETE"
+          ) {
+            const deletedId = String(
+              (
+                payload.old as {
+                  id?: string | number;
+                }
+              ).id
             );
 
-          if (!exists) {
-            return [
-              changedReport,
-              ...previous,
-            ];
+            setReports(previous =>
+              previous.filter(
+                report =>
+                  report.id !== deletedId
+              )
+            );
+
+            return;
           }
 
-          return previous.map(
-            report =>
-              report.id ===
-              changedReport.id
-                ? changedReport
-                : report
-          );
-        });
-      }
-    )
-    .subscribe(status => {
-      console.log(
-        "pine_records realtime:",
-        status
-      );
-    });
+          const changedReport =
+            mapPineRecordToCrowdReport(
+              payload.new as PineRecordRow
+            );
 
-  return () => {
-    cancelled = true;
-    void supabase.removeChannel(channel);
-  };
-}, [authUser]);
+          setReports(previous => {
+            const exists =
+              previous.some(
+                report =>
+                  report.id ===
+                  changedReport.id
+              );
+
+            if (!exists) {
+              return [
+                changedReport,
+                ...previous,
+              ];
+            }
+
+            return previous.map(
+              report =>
+                report.id ===
+                  changedReport.id
+                  ? changedReport
+                  : report
+            );
+          });
+        }
+      )
+      .subscribe(status => {
+        console.log(
+          "pine_records realtime:",
+          status
+        );
+      });
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [authUser]);
 
   const handleAddTree = (
     newTree: TreeRecord
@@ -536,58 +536,58 @@ export default function App() {
   };
 
   const handleUpdateReportStatus =
-  async (
-    id: string,
-    status: CrowdReport["status"]
-  ) => {
-    const previousReports = reports;
+    async (
+      id: string,
+      status: CrowdReport["status"]
+    ) => {
+      const previousReports = reports;
 
-    /*
-     * 서버 응답 전에 화면부터 즉시 변경합니다.
-     */
-    setReports(previous =>
-      previous.map(report =>
-        report.id === id
-          ? {
+      /*
+       * 서버 응답 전에 화면부터 즉시 변경합니다.
+       */
+      setReports(previous =>
+        previous.map(report =>
+          report.id === id
+            ? {
               ...report,
               status,
             }
-          : report
-      )
-    );
-
-    const { error } =
-      await supabase
-        .from("pine_records")
-        .update({
-          dashboard_status: status,
-        })
-        .eq("id", id);
-
-    if (error) {
-      console.error(
-        "대시보드 민원 상태 저장 실패:",
-        error
+            : report
+        )
       );
+
+      const { error } =
+        await supabase
+          .from("pine_records")
+          .update({
+            dashboard_status: status,
+          })
+          .eq("id", id);
+
+      if (error) {
+        console.error(
+          "대시보드 민원 상태 저장 실패:",
+          error
+        );
+
+        /*
+         * DB 저장이 실패하면
+         * 화면을 이전 상태로 복구합니다.
+         */
+        setReports(previousReports);
+
+        window.alert(
+          "민원 상태를 저장하지 못했습니다."
+        );
+
+        return;
+      }
 
       /*
-       * DB 저장이 실패하면
-       * 화면을 이전 상태로 복구합니다.
+       * 성공하면 Realtime UPDATE가 들어와서
+       * DB의 최종 데이터로 다시 정리됩니다.
        */
-      setReports(previousReports);
-
-      window.alert(
-        "민원 상태를 저장하지 못했습니다."
-      );
-
-      return;
-    }
-
-    /*
-     * 성공하면 Realtime UPDATE가 들어와서
-     * DB의 최종 데이터로 다시 정리됩니다.
-     */
-  };
+    };
 
 
   const handleAddTask = (
@@ -941,12 +941,20 @@ export default function App() {
           <main className="min-h-0 flex-1 overflow-hidden p-3 xl:p-4">
             <AnimatePresence mode="wait">
               <motion.div
-                key={activeModule}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.18 }}
-                className="h-full min-h-0"
+                key="crowd-view"
+                initial={{
+                  opacity: 0,
+                  y: 10,
+                }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                }}
+                exit={{
+                  opacity: 0,
+                  y: -10,
+                }}
+                className="grid grid-cols-1 items-start gap-4 xl:grid-cols-12"
               >
                 {activeModule === "dashboard" && (
                   <Dashboard
