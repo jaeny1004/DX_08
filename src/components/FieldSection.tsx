@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -22,13 +21,38 @@ import {
 } from "lucide-react";
 import { WorkerStatus, CrowdReport } from "../types";
 
+import {
+  DispatchAssignment,
+  DispatchStatus,
+} from "../types/dispatch";
+
 interface FieldSectionProps {
   workers: WorkerStatus[];
   reports: CrowdReport[];
-  onUpdateWorkerStatus: (id: string, status: WorkerStatus["status"]) => void;
-  onUpdateReportStatus: (id: string, status: CrowdReport["status"]) => void;
-  onConfirmInfection: (report: CrowdReport) => void;
+
+  dispatchAssignments: DispatchAssignment[];
+
+  onUpdateDispatchStatus: (
+    assignmentId: string,
+    status: DispatchStatus
+  ) => void;
+
+  onCancelDispatch: (
+    assignmentId: string
+  ) => void;
+
+  onUpdateWorkerStatus: (
+    id: string,
+    status: WorkerStatus["status"]
+  ) => void;
+
+  onUpdateReportStatus: (
+    id: string,
+    status: CrowdReport["status"]
+  ) => void;
+
 }
+
 
 type RoboflowPrediction = {
   class?: string;
@@ -60,18 +84,6 @@ type ParsedAiResult = {
   predictions: RoboflowPrediction[];
   error?: string;
 };
-
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-const ROBOFLOW_API_KEY = import.meta.env.VITE_ROBOFLOW_API_KEY as string | undefined;
-const ROBOFLOW_MODEL_ID =
-  (import.meta.env.VITE_ROBOFLOW_MODEL_ID as string | undefined) ||
-  "pine-disease-classification-qmgil/1";
-
 
 /**
  * CrowdReport 타입이 현재 image_url을 명시적으로 가지고 있지 않을 수 있으므로,
@@ -171,6 +183,7 @@ function parseRoboflowResult(result: RoboflowRawResult): ParsedAiResult {
     }
   }
 
+
   const normalizedLabel = String(label).toLowerCase();
   const infectedKeywordMatched = [
     "infected",
@@ -202,6 +215,23 @@ function parseRoboflowResult(result: RoboflowRawResult): ParsedAiResult {
     raw: result,
     predictions: normalizedPredictions,
   };
+}
+function getReportStatusClass(
+  status: CrowdReport["status"]
+): string {
+  switch (status) {
+    case "접수 완료":
+      return "bg-sky-100 text-sky-700";
+
+    case "조사 완료":
+      return "bg-amber-100 text-amber-700";
+
+    case "방제 완료":
+      return "bg-emerald-100 text-emerald-700";
+
+    default:
+      return "bg-slate-100 text-slate-600";
+  }
 }
 
 
@@ -272,9 +302,11 @@ function getRiskTheme(level: ParsedAiResult["level"] | undefined) {
 export default function FieldSection({
   workers,
   reports,
+  dispatchAssignments,
+  onUpdateDispatchStatus,
+  onCancelDispatch,
   onUpdateWorkerStatus,
   onUpdateReportStatus,
-  onConfirmInfection,
 }: FieldSectionProps) {
   const [activeTab, setActiveTab] = useState<"tracking" | "crowd" | "mobile">(
     "tracking"
@@ -296,6 +328,38 @@ export default function FieldSection({
     reports[0]?.id || ""
   );
   const selectedReport = reports.find((r) => r.id === selectedReportId) || reports[0];
+
+  useEffect(() => {
+    if (reports.length === 0) {
+      setSelectedReportId("");
+      return;
+    }
+
+    const selectedReportStillExists =
+      reports.some(
+        report =>
+          report.id === selectedReportId
+      );
+
+    if (!selectedReportStillExists) {
+      setSelectedReportId(
+        reports[0].id
+      );
+    }
+  }, [
+    reports,
+    selectedReportId,
+  ]);
+
+  const nextReportStatus:
+    CrowdReport["status"] | null =
+    selectedReport?.status ===
+      "접수 완료"
+      ? "조사 완료"
+      : selectedReport?.status ===
+        "조사 완료"
+        ? "방제 완료"
+        : null;
 
   const selectedImageUrl = useMemo(
     () => getReportImageUrl(selectedReport),
@@ -346,11 +410,6 @@ export default function FieldSection({
     setGeneratedReport(doc);
   };
 
-  const handleConfirmReportToInfection = (rep: CrowdReport) => {
-    onConfirmInfection(rep);
-    onUpdateReportStatus(rep.id, "확진전환");
-  };
-
   const handleRunAiAnalysis = async () => {
     if (!selectedReport) {
       alert("먼저 제보를 선택해 주세요.");
@@ -359,7 +418,7 @@ export default function FieldSection({
 
     if (!selectedImageUrl) {
       alert(
-        "선택된 제보에 image_url이 없습니다. Supabase pine_records 또는 CrowdReport 데이터에 image_url을 연결해야 합니다."
+        "선택된 제보에 이미지 URL이 없습니다. CrowdReport 샘플 데이터에 photoUrl 또는 imageUrl을 연결해 주세요."
       );
       return;
     }
@@ -470,6 +529,103 @@ export default function FieldSection({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                      {dispatchAssignments.map((assignment) => (
+                        <tr
+                          key={assignment.assignmentId}
+                          className="bg-indigo-50/40 hover:bg-indigo-50 transition-colors"
+                        >
+                          <td className="py-3.5 px-3">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 border border-white shrink-0" />
+
+                              <div>
+                                <div className="font-bold text-slate-900">
+                                  {assignment.workerName}
+                                </div>
+
+                                <div className="text-[10px] text-indigo-600">
+                                  {assignment.workerType} · {assignment.assignmentType}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-3 font-medium text-slate-600">
+                            <div>
+                              {assignment.targetSidoName}{" "}
+                              {assignment.targetSigunguName}{" "}
+                              {assignment.targetEmdName}
+                            </div>
+
+                            <div className="mt-0.5 text-[10px] font-mono text-indigo-600">
+                              GRID-{assignment.gridId}
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-3 font-mono text-slate-500">
+                            {assignment.distanceKm === null
+                              ? "-"
+                              : `${assignment.distanceKm.toLocaleString(
+                                "ko-KR",
+                                {
+                                  maximumFractionDigits: 1,
+                                }
+                              )}km`}
+                          </td>
+
+                          <td className="py-3.5 px-3 font-mono">
+                            <div className="flex items-center gap-1.5 text-slate-600">
+                              <Battery
+                                size={14}
+                                className={
+                                  (assignment.batteryPercent ?? 100) <= 50
+                                    ? "text-rose-500"
+                                    : "text-emerald-600"
+                                }
+                              />
+
+                              <span>
+                                {assignment.batteryPercent === null
+                                  ? "-"
+                                  : `${assignment.batteryPercent}%`}
+                              </span>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <select
+                                value={assignment.status}
+                                onChange={(event) =>
+                                  onUpdateDispatchStatus(
+                                    assignment.assignmentId,
+                                    event.target.value as DispatchStatus
+                                  )
+                                }
+                                className="text-[11px] font-bold border border-indigo-200 rounded-lg p-1 outline-none bg-white"
+                              >
+                                <option value="배정 대기">배정 대기</option>
+                                <option value="출동">출동</option>
+                                <option value="현장">현장</option>
+                                <option value="복귀">복귀</option>
+                              </select>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onCancelDispatch(
+                                    assignment.assignmentId
+                                  )
+                                }
+                                className="rounded-lg border border-rose-200 bg-white px-2 py-1 text-[10px] font-bold text-rose-600 hover:bg-rose-50"
+                              >
+                                취소
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+
                       {workers.map((w) => (
                         <tr
                           key={w.id}
@@ -635,12 +791,9 @@ export default function FieldSection({
 
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-black ${rep.status === "접수"
-                            ? "bg-sky-100 text-sky-700"
-                            : rep.status === "검토"
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-emerald-100 text-emerald-700"
-                            }`}
+                          className={`rounded px-2 py-0.5 text-[10px] font-black ${getReportStatusClass(
+                            rep.status
+                          )}`}
                         >
                           {rep.status}
                         </span>
@@ -719,13 +872,8 @@ export default function FieldSection({
                           </p>
                         </div>
 
-                        <span
-                          className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black ${ROBOFLOW_API_KEY
-                            ? "bg-emerald-400 text-emerald-950"
-                            : "bg-rose-400 text-white"
-                            }`}
-                        >
-                          {ROBOFLOW_API_KEY ? "API KEY OK" : "API KEY 없음"}
+                        <span className="shrink-0 rounded-full bg-emerald-400 px-2.5 py-1 text-[10px] font-black text-emerald-950">
+                          SERVER API
                         </span>
                       </div>
                     </div>
@@ -830,8 +978,8 @@ export default function FieldSection({
 
                       <button
                         onClick={handleRunAiAnalysis}
-                        disabled={isAiLoading || !selectedImageUrl || !ROBOFLOW_API_KEY}
-                        className={`w-full rounded-2xl py-3 px-4 font-black text-xs flex items-center justify-center gap-2 transition-all ${isAiLoading || !selectedImageUrl || !ROBOFLOW_API_KEY
+                        disabled={isAiLoading || !selectedImageUrl}
+                        className={`w-full rounded-2xl py-3 px-4 font-black text-xs flex items-center justify-center gap-2 transition-all ${isAiLoading || !selectedImageUrl
                           ? "bg-slate-200 text-slate-500 cursor-not-allowed"
                           : "bg-emerald-800 hover:bg-emerald-900 text-white shadow-lg"
                           }`}
@@ -1000,39 +1148,39 @@ export default function FieldSection({
                       제보 처리 및 대장 연계 (FLD-006)
                     </span>
 
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleConfirmReportToInfection(selectedReport)}
-                        disabled={selectedReport.status === "확진전환"}
-                        className="flex-1 bg-emerald-800 text-white rounded-xl py-3 font-bold hover:bg-emerald-900 disabled:bg-slate-200 disabled:text-slate-400 flex items-center justify-center gap-1.5"
-                      >
-                        <UserCheck size={14} />
-                        <span>확진 대장 전환</span>
-                      </button>
-                      <button
-                        onClick={() => onUpdateReportStatus(selectedReport.id, "반려")}
-                        disabled={
-                          selectedReport.status === "반려" ||
-                          selectedReport.status === "확진전환"
-                        }
-                        className="px-3 border border-slate-200 bg-white hover:bg-slate-50 rounded-xl font-bold text-slate-600 disabled:bg-slate-100 disabled:text-slate-400"
-                      >
-                        반려
-                      </button>
-                    </div>
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <span className="block text-[11px] font-bold tracking-wider text-slate-400">
+                        민원 처리 단계
+                      </span>
 
-                    {selectedReport.status === "확진전환" && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="bg-emerald-50 text-emerald-800 p-3 rounded-xl border border-emerald-100 text-[11px] font-medium leading-relaxed"
-                      >
-                        📬 <b>제보자 알림 자동 발송 완료:</b> 시민{" "}
-                        {selectedReport.reporter}님께 "소나무재선충 확진 확인에
-                        따른 방제 배정" 감사 피드백 SMS가 자동 전송되었습니다.
-                        (FR-FLD-006 연계)
-                      </motion.div>
-                    )}
+                      {nextReportStatus ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void onUpdateReportStatus(
+                              selectedReport.id,
+                              nextReportStatus
+                            )
+                          }
+                          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-800 py-3 font-bold text-white hover:bg-emerald-900"
+                        >
+                          <UserCheck size={14} />
+
+                          <span>
+                            {nextReportStatus} 처리
+                          </span>
+                        </button>
+                      ) : (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center text-xs font-bold text-emerald-800">
+                          <CheckCircle2
+                            size={16}
+                            className="mx-auto mb-1"
+                          />
+
+                          방제 처리가 완료된 민원입니다.
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : (

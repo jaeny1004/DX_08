@@ -1,0 +1,44 @@
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Integer, String, func
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.core.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    organization: Mapped[str] = mapped_column(String(150), nullable=False)
+    role: Mapped[str] = mapped_column(String(30), nullable=False, default="manager")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    sido_code: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
+    sido_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    sigungu_code: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
+    sigungu_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    @property
+    def email_verified(self) -> bool:
+        """
+        현재 users 테이블에는 별도 email_verified 컬럼이 없다.
+        신규 가입은 이메일 인증 토큰을 통과해야만 생성되므로 저장된 사용자는
+        인증 완료 사용자로 응답한다. 기존 MySQL 이전 사용자와도 호환된다.
+        """
+        return True
