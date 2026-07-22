@@ -105,6 +105,33 @@ function MapAutoCenter({
   return null;
 }
 
+function MapResizeHandler() {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+
+    const resizeObserver =
+      new ResizeObserver(() => {
+        map.invalidateSize(false);
+      });
+
+    resizeObserver.observe(container);
+
+    const timeoutId =
+      window.setTimeout(() => {
+        map.invalidateSize(false);
+      }, 100);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.clearTimeout(timeoutId);
+    };
+  }, [map]);
+
+  return null;
+}
+
 export function LeafletMap({
   records,
   selectedRecordId,
@@ -128,9 +155,9 @@ export function LeafletMap({
   const center: [number, number] =
     initialRecord
       ? [
-          initialRecord.latitude,
-          initialRecord.longitude,
-        ]
+        initialRecord.latitude,
+        initialRecord.longitude,
+      ]
       : DEFAULT_CENTER;
 
   return (
@@ -153,6 +180,13 @@ export function LeafletMap({
         <TileLayer
           attribution="&copy; OpenStreetMap contributors"
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+
+        <MapResizeHandler />
+
+        <MapAutoCenter
+          records={validRecords}
+          selectedRecordId={selectedRecordId}
         />
 
         <MapAutoCenter

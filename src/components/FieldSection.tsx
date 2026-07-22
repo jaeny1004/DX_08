@@ -212,18 +212,17 @@ export default function FieldSection({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 space-y-6">
       {/* Category Tabs */}
-      <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 text-sm font-bold text-slate-600 max-w-lg">
-        <button
-          onClick={() => setActiveTab("tracking")}
-          className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "tracking"
-            ? "bg-white text-emerald-950 shadow-sm"
-            : "hover:text-slate-900"
-            }`}
-        >
-          🚶 요원 GPS 및 출동배정
-        </button>
+      <div className="flex w-full max-w-lg rounded-2xl border border-slate-200 bg-slate-100 p-1 text-sm font-bold text-slate-600">        <button
+        onClick={() => setActiveTab("tracking")}
+        className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "tracking"
+          ? "bg-white text-emerald-950 shadow-sm"
+          : "hover:text-slate-900"
+          }`}
+      >
+        🚶 요원 GPS 및 출동배정
+      </button>
         <button
           onClick={() => setActiveTab("crowd")}
           className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "crowd"
@@ -251,7 +250,7 @@ export default function FieldSection({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-6"
+            className="grid w-full min-w-0 grid-cols-1 gap-6 lg:grid-cols-12"
           >
             {/* Real-time Worker Dispatch (FR-FLD-002) */}
             <div className="lg:col-span-7 space-y-4">
@@ -509,10 +508,9 @@ export default function FieldSection({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 items-start gap-4 xl:grid-cols-12"
-          >
+            className="grid w-full min-w-0 grid-cols-1 items-start gap-4 xl:grid-cols-12"          >
             {/* Reports List */}
-            <div className="self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-3">
+            <div className="min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-3">
               <h3 className="mb-4 flex items-center gap-2 text-sm font-black text-slate-900">
                 👥 시민 제보대장 (FLD-004)
               </h3>
@@ -559,7 +557,7 @@ export default function FieldSection({
             </div>
 
             {/* Selected report detail board (FR-FLD-005, FR-FLD-006) */}
-            <div className="self-start rounded-3xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-5">
+            <div className="min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-5">
               <h3 className="text-sm font-extrabold text-slate-800 border-b border-slate-100 pb-3 mb-4 flex items-center gap-1.5">
                 🔎 시민 제보 원문 정밀 검증 (FLD-005)
               </h3>
@@ -730,7 +728,7 @@ export default function FieldSection({
             </div>
 
             {/* 오른쪽 시민 제보 위치 지도 */}
-            <div className="self-start rounded-3xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-4">
+            <div className="min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-4">
               <h3 className="mb-4 flex items-center gap-2 border-b border-slate-100 pb-3 text-sm font-extrabold text-slate-800">
                 <MapPin
                   size={16}
@@ -739,7 +737,7 @@ export default function FieldSection({
                 시민 제보 위치 지도
               </h3>
 
-              <div className="h-[430px]">
+              <div className="h-[430px] w-full min-w-0">
                 <LeafletMap
                   records={reports}
                   selectedRecordId={selectedReport?.id}
@@ -787,7 +785,7 @@ export default function FieldSection({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+            className="grid w-full min-w-0 grid-cols-1 gap-6 lg:grid-cols-2"
           >
             {/* Mobile frame emulator */}
             <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex justify-center">

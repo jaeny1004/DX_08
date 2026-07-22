@@ -938,23 +938,15 @@ export default function App() {
             </div>
           </header>
 
-          <main className="min-h-0 flex-1 overflow-hidden p-3 xl:p-4">
+          <main className="min-h-0 min-w-0 w-full flex-1 overflow-hidden p-3 xl:p-4">
             <AnimatePresence mode="wait">
               <motion.div
-                key="crowd-view"
-                initial={{
-                  opacity: 0,
-                  y: 10,
-                }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                }}
-                exit={{
-                  opacity: 0,
-                  y: -10,
-                }}
-                className="grid grid-cols-1 items-start gap-4 xl:grid-cols-12"
+                key={activeModule}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.18 }}
+                className="h-full w-full min-h-0 min-w-0"
               >
                 {activeModule === "dashboard" && (
                   <Dashboard
@@ -980,25 +972,15 @@ export default function App() {
                 )}
 
                 {activeModule === "field" && (
-                  <div className="h-full overflow-y-auto pr-1">
+                  <div className="h-full w-full min-w-0 overflow-x-hidden overflow-y-auto pr-1">
                     <FieldSection
                       workers={workers}
                       reports={reports}
-                      dispatchAssignments={
-                        dispatchAssignments
-                      }
-                      onUpdateDispatchStatus={
-                        handleUpdateDispatchStatus
-                      }
-                      onCancelDispatch={
-                        handleCancelDispatch
-                      }
-                      onUpdateWorkerStatus={
-                        handleUpdateWorkerStatus
-                      }
-                      onUpdateReportStatus={
-                        handleUpdateReportStatus
-                      }
+                      dispatchAssignments={dispatchAssignments}
+                      onUpdateDispatchStatus={handleUpdateDispatchStatus}
+                      onCancelDispatch={handleCancelDispatch}
+                      onUpdateWorkerStatus={handleUpdateWorkerStatus}
+                      onUpdateReportStatus={handleUpdateReportStatus}
                     />
                   </div>
                 )}
