@@ -1,0 +1,269 @@
+{
+  "version": 1,
+  "crs": "EPSG:4326",
+  "tileSizeDegrees": 1.0,
+  "totalFeatureCount": 375490,
+  "tileCount": 26,
+  "tiles": [
+    {
+      "file": "tile_124_37.geojson",
+      "count": 367,
+      "bounds": [
+        124.0,
+        37.0,
+        125.0,
+        38.0
+      ]
+    },
+    {
+      "file": "tile_125_34.geojson",
+      "count": 1511,
+      "bounds": [
+        125.0,
+        34.0,
+        126.0,
+        35.0
+      ]
+    },
+    {
+      "file": "tile_125_35.geojson",
+      "count": 82,
+      "bounds": [
+        125.0,
+        35.0,
+        126.0,
+        36.0
+      ]
+    },
+    {
+      "file": "tile_125_36.geojson",
+      "count": 96,
+      "bounds": [
+        125.0,
+        36.0,
+        126.0,
+        37.0
+      ]
+    },
+    {
+      "file": "tile_125_37.geojson",
+      "count": 164,
+      "bounds": [
+        125.0,
+        37.0,
+        126.0,
+        38.0
+      ]
+    },
+    {
+      "file": "tile_126_33.geojson",
+      "count": 2412,
+      "bounds": [
+        126.0,
+        33.0,
+        127.0,
+        34.0
+      ]
+    },
+    {
+      "file": "tile_126_34.geojson",
+      "count": 22679,
+      "bounds": [
+        126.0,
+        34.0,
+        127.0,
+        35.0
+      ]
+    },
+    {
+      "file": "tile_126_35.geojson",
+      "count": 22542,
+      "bounds": [
+        126.0,
+        35.0,
+        127.0,
+        36.0
+      ]
+    },
+    {
+      "file": "tile_126_36.geojson",
+      "count": 23973,
+      "bounds": [
+        126.0,
+        36.0,
+        127.0,
+        37.0
+      ]
+    },
+    {
+      "file": "tile_126_37.geojson",
+      "count": 18638,
+      "bounds": [
+        126.0,
+        37.0,
+        127.0,
+        38.0
+      ]
+    },
+    {
+      "file": "tile_126_38.geojson",
+      "count": 928,
+      "bounds": [
+        126.0,
+        38.0,
+        127.0,
+        39.0
+      ]
+    },
+    {
+      "file": "tile_127_34.geojson",
+      "count": 13644,
+      "bounds": [
+        127.0,
+        34.0,
+        128.0,
+        35.0
+      ]
+    },
+    {
+      "file": "tile_127_35.geojson",
+      "count": 38155,
+      "bounds": [
+        127.0,
+        35.0,
+        128.0,
+        36.0
+      ]
+    },
+    {
+      "file": "tile_127_36.geojson",
+      "count": 39637,
+      "bounds": [
+        127.0,
+        36.0,
+        128.0,
+        37.0
+      ]
+    },
+    {
+      "file": "tile_127_37.geojson",
+      "count": 33354,
+      "bounds": [
+        127.0,
+        37.0,
+        128.0,
+        38.0
+      ]
+    },
+    {
+      "file": "tile_127_38.geojson",
+      "count": 12082,
+      "bounds": [
+        127.0,
+        38.0,
+        128.0,
+        39.0
+      ]
+    },
+    {
+      "file": "tile_128_34.geojson",
+      "count": 3417,
+      "bounds": [
+        128.0,
+        34.0,
+        129.0,
+        35.0
+      ]
+    },
+    {
+      "file": "tile_128_35.geojson",
+      "count": 27883,
+      "bounds": [
+        128.0,
+        35.0,
+        129.0,
+        36.0
+      ]
+    },
+    {
+      "file": "tile_128_36.geojson",
+      "count": 35425,
+      "bounds": [
+        128.0,
+        36.0,
+        129.0,
+        37.0
+      ]
+    },
+    {
+      "file": "tile_128_37.geojson",
+      "count": 37684,
+      "bounds": [
+        128.0,
+        37.0,
+        129.0,
+        38.0
+      ]
+    },
+    {
+      "file": "tile_128_38.geojson",
+      "count": 10018,
+      "bounds": [
+        128.0,
+        38.0,
+        129.0,
+        39.0
+      ]
+    },
+    {
+      "file": "tile_129_35.geojson",
+      "count": 8331,
+      "bounds": [
+        129.0,
+        35.0,
+        130.0,
+        36.0
+      ]
+    },
+    {
+      "file": "tile_129_36.geojson",
+      "count": 15146,
+      "bounds": [
+        129.0,
+        36.0,
+        130.0,
+        37.0
+      ]
+    },
+    {
+      "file": "tile_129_37.geojson",
+      "count": 6954,
+      "bounds": [
+        129.0,
+        37.0,
+        130.0,
+        38.0
+      ]
+    },
+    {
+      "file": "tile_130_37.geojson",
+      "count": 361,
+      "bounds": [
+        130.0,
+        37.0,
+        131.0,
+        38.0
+      ]
+    },
+    {
+      "file": "tile_131_37.geojson",
+      "count": 7,
+      "bounds": [
+        131.0,
+        37.0,
+        132.0,
+        38.0
+      ]
+    }
+  ]
+}
