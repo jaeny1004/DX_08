@@ -575,6 +575,22 @@ export default function SimulationSection() {
       preferCanvas: true,
     });
 
+    /*
+     * 배경지도 전환 시에도 위험 격자와 방제 영향권이
+     * 항상 타일 레이어 위에 유지되도록 전용 pane을 사용합니다.
+     */
+    map.createPane("riskGridPane");
+    map.getPane("riskGridPane")!.style.zIndex = "450";
+    map.getPane("riskGridPane")!.style.pointerEvents = "auto";
+
+    map.createPane("sigunguPane");
+    map.getPane("sigunguPane")!.style.zIndex = "460";
+    map.getPane("sigunguPane")!.style.pointerEvents = "auto";
+
+    map.createPane("controlPane");
+    map.getPane("controlPane")!.style.zIndex = "470";
+    map.getPane("controlPane")!.style.pointerEvents = "none";
+
     const base = L.tileLayer(BASE_URL, {
       maxZoom: 19,
       noWrap: true,
@@ -746,8 +762,26 @@ export default function SimulationSection() {
       }
     }
 
-    gridLayerRef.current?.bringToFront();
-    sigunguLayerRef.current?.bringToFront();
+    /*
+     * 타일 전환 직후 Canvas를 다시 그려 위험 격자가
+     * 사라진 것처럼 보이는 Leaflet 렌더링 문제를 방지합니다.
+     */
+    window.requestAnimationFrame(() => {
+      map.invalidateSize({
+        animate: false,
+        pan: false,
+      });
+
+      gridLayerRef.current?.bringToFront();
+      sigunguLayerRef.current?.bringToFront();
+      buffer5LayerRef.current?.bringToFront();
+      buffer2LayerRef.current?.bringToFront();
+      directLayerRef.current?.bringToFront();
+
+      for (const layer of featureLayerByIdRef.current.values()) {
+        layer.redraw();
+      }
+    });
   }, [baseMapMode]);
 
   useEffect(() => {
@@ -769,6 +803,7 @@ export default function SimulationSection() {
         features: sigunguFeaturesRef.current,
       } as GeoJSON.FeatureCollection,
       {
+        pane: "sigunguPane",
         style: (feature: any) => {
           const code = getSigunguCode(feature?.properties || {});
           const selected = Boolean(selectedCode) && code === selectedCode;
@@ -890,7 +925,11 @@ export default function SimulationSection() {
         features,
       } as GeoJSON.FeatureCollection,
       {
-        renderer: L.canvas({ padding: 0.25 }),
+        pane: "riskGridPane",
+        renderer: L.canvas({
+          padding: 0.25,
+          pane: "riskGridPane",
+        }),
         style: () => ({
           color: "transparent",
           weight: 0,
@@ -976,7 +1015,13 @@ export default function SimulationSection() {
         }
       );
     }
-  }, [features, derivedById, month, viewMode]);
+  }, [
+    features,
+    derivedById,
+    month,
+    viewMode,
+    baseMapMode,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -992,6 +1037,7 @@ export default function SimulationSection() {
     const buffer5 = expandBoundsByKm(controlArea.bounds, 5);
 
     buffer5LayerRef.current = L.rectangle(buffer5, {
+      pane: "controlPane",
       color: "#60a5fa",
       weight: 1.4,
       dashArray: "8 6",
@@ -1001,6 +1047,7 @@ export default function SimulationSection() {
     }).addTo(map);
 
     buffer2LayerRef.current = L.rectangle(buffer2, {
+      pane: "controlPane",
       color: "#3b82f6",
       weight: 1.7,
       dashArray: "6 4",
@@ -1010,6 +1057,7 @@ export default function SimulationSection() {
     }).addTo(map);
 
     directLayerRef.current = L.rectangle(controlArea.bounds, {
+      pane: "controlPane",
       color: "#1d4ed8",
       weight: 2.5,
       fillColor: "#2563eb",
