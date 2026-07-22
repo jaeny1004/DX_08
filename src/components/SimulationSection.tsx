@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 
 type ForecastMonth = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 type BaseMapMode = "base" | "satellite";
-type ScenarioMode = "noControl" | "control";
+type MapViewMode = "current" | "noControl" | "control" | "effect";
 
 type SimulationGridProps = {
   grid_id?: string | number;
@@ -19,19 +19,38 @@ type SimulationGridProps = {
   recent_pressure_score?: number;
   access_score_v3?: number;
 
+  sigungu_code?: string | number;
+  sigungu_cd?: string | number;
+  sgg_cd?: string | number;
+  SIG_CD?: string | number;
+
+  sigungu_name?: string;
+  sigungu_nm?: string;
+  sgg_nm?: string;
+  SIG_KOR_NM?: string;
+
   currentRisk?: number;
   futureNoControlRisk?: number;
   futureControlRisk?: number;
   noControlIncrease?: number;
   controlReduction?: number;
-  riskDelta?: number;
-  distanceKmFromSelection?: number | null;
+  effectDifference?: number;
+
+  distanceKmFromControl?: number | null;
+  controlZone?: "direct" | "buffer2" | "buffer5" | "outside";
   isSelectedSource?: boolean;
 };
 
 type SimulationFeature = GeoJSON.Feature<
   GeoJSON.Geometry,
   SimulationGridProps
+>;
+
+type SigunguProps = Record<string, unknown>;
+
+type SigunguFeature = GeoJSON.Feature<
+  GeoJSON.Geometry,
+  SigunguProps
 >;
 
 type TileManifestItem = {
@@ -55,9 +74,25 @@ type TileLayerSet = {
   hybrid: L.TileLayer;
 };
 
+type SelectedControlArea = {
+  bounds: L.LatLngBounds;
+  selectedIds: string[];
+};
+
 const MANIFEST_PATH = "/data/simulation_tiles/manifest.json";
+
+/*
+ * 시군구 경계 GeoJSON을 아래 위치에 둡니다.
+ * 실제 파일명이 다르면 이 상수만 수정하세요.
+ */
+const SIGUNGU_PATH = "/data/sigungu_boundary.geojson";
+
 const TILE_BASE_PATH = "/data/simulation_tiles";
-const MIN_GRID_ZOOM = 10;
+
+const MIN_MAP_ZOOM = 6;
+const SIGUNGU_MAX_ZOOM = 9;
+const GRID_MIN_ZOOM = 10;
+const MAX_MAP_ZOOM = 15;
 
 const VWORLD_KEY = import.meta.env.VITE_VWORLD_API_KEY;
 
@@ -95,13 +130,56 @@ const RISK_DISTRIBUTION = [
   { score: 99.159429, percentile: 100 },
 ] as const;
 
+/*
+ * 월별 시나리오 계수.
+ * 실제 월별 학습모델의 결과가 아니라 의사결정용 상대위험 시나리오입니다.
+ */
+const NO_CONTROL_GROWTH: Record<ForecastMonth, number> = {
+  0: 0,
+  1: 0.25,
+  2: 0.46,
+  3: 0.66,
+  4: 0.84,
+  5: 1.0,
+  6: 1.14,
+};
+
+const DIRECT_CONTROL_REDUCTION: Record<ForecastMonth, number> = {
+  0: 0,
+  1: 11,
+  2: 16,
+  3: 20,
+  4: 23,
+  5: 26,
+  6: 29,
+};
+
+const BUFFER_2KM_REDUCTION: Record<ForecastMonth, number> = {
+  0: 0,
+  1: 6,
+  2: 9,
+  3: 12,
+  4: 14,
+  5: 16,
+  6: 18,
+};
+
+const BUFFER_5KM_REDUCTION: Record<ForecastMonth, number> = {
+  0: 0,
+  1: 2.5,
+  2: 4,
+  3: 5.5,
+  4: 7,
+  5: 8,
+  6: 9,
+};
+
 function clamp(value: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, value));
 }
 
 function formatNumber(value: unknown, digit = 1) {
   const n = Number(value);
-
   if (!Number.isFinite(n)) return "-";
 
   return n.toLocaleString("ko-KR", {
@@ -111,9 +189,7 @@ function formatNumber(value: unknown, digit = 1) {
 
 function normalizeRatio(value: unknown) {
   const n = Number(value ?? 0);
-
   if (!Number.isFinite(n)) return 0;
-
   return n > 1 ? n / 100 : n;
 }
 
@@ -125,8 +201,70 @@ function getFeatureId(feature: SimulationFeature) {
   );
 }
 
+function getGridSigunguCode(props: SimulationGridProps) {
+  return String(
+    props.sigungu_code ??
+      props.sigungu_cd ??
+      props.sgg_cd ??
+      props.SIG_CD ??
+      ""
+  );
+}
+
+function getGridSigunguName(props: SimulationGridProps) {
+  return String(
+    props.sigungu_name ??
+      props.sigungu_nm ??
+      props.sgg_nm ??
+      props.SIG_KOR_NM ??
+      ""
+  );
+}
+
+function getSigunguCode(props: SigunguProps) {
+  const aliases = [
+    "sigungu_code",
+    "sigungu_cd",
+    "sgg_cd",
+    "SIG_CD",
+    "SIGUNGU_CD",
+    "code",
+    "CODE",
+  ];
+
+  for (const key of aliases) {
+    const value = props[key];
+    if (value !== undefined && value !== null && String(value).trim()) {
+      return String(value);
+    }
+  }
+
+  return "";
+}
+
+function getSigunguName(props: SigunguProps) {
+  const aliases = [
+    "sigungu_name",
+    "sigungu_nm",
+    "sgg_nm",
+    "SIG_KOR_NM",
+    "SIGUNGU_NM",
+    "name",
+    "NAME",
+  ];
+
+  for (const key of aliases) {
+    const value = props[key];
+    if (value !== undefined && value !== null && String(value).trim()) {
+      return String(value);
+    }
+  }
+
+  return "시군구";
+}
+
 function getFeatureCenter(
-  feature: SimulationFeature
+  feature: GeoJSON.Feature<GeoJSON.Geometry, any>
 ): [number, number] | null {
   const geometry: any = feature.geometry;
 
@@ -154,15 +292,72 @@ function getFeatureCenter(
   ];
 }
 
-function calculateDistanceKm(
-  a: [number, number],
-  b: [number, number]
+function pointInRing(
+  point: [number, number],
+  ring: [number, number][]
 ) {
-  return (
-    L.latLng(a[0], a[1]).distanceTo(
-      L.latLng(b[0], b[1])
-    ) / 1000
-  );
+  const [lng, lat] = point;
+  let inside = false;
+
+  for (
+    let i = 0, j = ring.length - 1;
+    i < ring.length;
+    j = i++
+  ) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+
+    const intersects =
+      yi > lat !== yj > lat &&
+      lng <
+        ((xj - xi) * (lat - yi)) /
+          ((yj - yi) || Number.EPSILON) +
+          xi;
+
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
+}
+
+function pointInGeometry(
+  point: [number, number],
+  geometry: GeoJSON.Geometry
+) {
+  const anyGeometry: any = geometry;
+
+  if (geometry.type === "Polygon") {
+    const rings = anyGeometry.coordinates as [number, number][][];
+
+    if (!rings.length || !pointInRing(point, rings[0])) {
+      return false;
+    }
+
+    for (let index = 1; index < rings.length; index += 1) {
+      if (pointInRing(point, rings[index])) return false;
+    }
+
+    return true;
+  }
+
+  if (geometry.type === "MultiPolygon") {
+    const polygons =
+      anyGeometry.coordinates as [number, number][][][];
+
+    return polygons.some((rings) => {
+      if (!rings.length || !pointInRing(point, rings[0])) {
+        return false;
+      }
+
+      for (let index = 1; index < rings.length; index += 1) {
+        if (pointInRing(point, rings[index])) return false;
+      }
+
+      return true;
+    });
+  }
+
+  return false;
 }
 
 function intersectsMapBounds(
@@ -171,17 +366,15 @@ function intersectsMapBounds(
 ) {
   const [minLng, minLat, maxLng, maxLat] = tile.bounds;
 
-  const tileBounds = L.latLngBounds(
-    L.latLng(minLat, minLng),
-    L.latLng(maxLat, maxLng)
+  return mapBounds.intersects(
+    L.latLngBounds(
+      L.latLng(minLat, minLng),
+      L.latLng(maxLat, maxLng)
+    )
   );
-
-  return mapBounds.intersects(tileBounds);
 }
 
-function makeFeatureCollection(
-  features: SimulationFeature[]
-) {
+function makeFeatureCollection(features: SimulationFeature[]) {
   return {
     type: "FeatureCollection",
     features,
@@ -210,8 +403,7 @@ function scoreToVisualPercentile(score: number) {
 
       return (
         lower.percentile +
-        (upper.percentile - lower.percentile) *
-          localT
+        (upper.percentile - lower.percentile) * localT
       );
     }
   }
@@ -219,39 +411,23 @@ function scoreToVisualPercentile(score: number) {
   return 100;
 }
 
-function getCurrentVisualPercentile(
-  props: SimulationGridProps
-) {
-  const riskPercentile = Number(
-    props.risk_percentile
-  );
-
-  if (Number.isFinite(riskPercentile)) {
-    return clamp(100 - riskPercentile);
-  }
-
-  return scoreToVisualPercentile(
-    Number(props.risk_score ?? 0)
-  );
-}
-
-function getScenarioVisualPercentile(
+function getVisualPercentile(
   props: SimulationGridProps,
-  month: ForecastMonth,
-  scenario: ScenarioMode
+  score: number,
+  mode: MapViewMode
 ) {
-  if (month === 0) {
-    return getCurrentVisualPercentile(props);
+  if (mode === "current") {
+    const riskPercentile = Number(props.risk_percentile);
+
+    if (Number.isFinite(riskPercentile)) {
+      return clamp(100 - riskPercentile);
+    }
   }
 
-  return scoreToVisualPercentile(
-    getScenarioScore(props, month, scenario)
-  );
+  return scoreToVisualPercentile(score);
 }
 
-function interpolateRiskColor(
-  visualPercentile: number
-) {
+function interpolateRiskColor(visualPercentile: number) {
   const t = clamp(visualPercentile) / 100;
 
   const stops = [
@@ -264,9 +440,7 @@ function interpolateRiskColor(
     { t: 1.0, rgb: [69, 10, 10] },
   ];
 
-  const upperIndex = stops.findIndex(
-    (stop) => stop.t >= t
-  );
+  const upperIndex = stops.findIndex((stop) => stop.t >= t);
 
   if (upperIndex <= 0) {
     const [r, g, b] = stops[0].rgb;
@@ -274,24 +448,36 @@ function interpolateRiskColor(
   }
 
   if (upperIndex === -1) {
-    const [r, g, b] =
-      stops[stops.length - 1].rgb;
-
+    const [r, g, b] = stops[stops.length - 1].rgb;
     return `rgb(${r}, ${g}, ${b})`;
   }
 
   const lower = stops[upperIndex - 1];
   const upper = stops[upperIndex];
-  const localT =
-    (t - lower.t) / (upper.t - lower.t);
+  const localT = (t - lower.t) / (upper.t - lower.t);
 
-  const rgb = lower.rgb.map(
-    (start, index) =>
-      Math.round(
-        start +
-          (upper.rgb[index] - start) *
-            localT
-      )
+  const rgb = lower.rgb.map((start, index) =>
+    Math.round(
+      start +
+        (upper.rgb[index] - start) * localT
+    )
+  );
+
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
+
+function getEffectColor(effectDifference: number) {
+  /*
+   * 양수: 방제로 위험이 감소한 값.
+   * 0에 가까우면 투명, 감소가 클수록 청록색.
+   */
+  const t = clamp(effectDifference, 0, 30) / 30;
+
+  const start = [236, 253, 245];
+  const end = [13, 148, 136];
+
+  const rgb = start.map((value, index) =>
+    Math.round(value + (end[index] - value) * t)
   );
 
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
@@ -302,18 +488,23 @@ function getRiskOpacity(
   baseMapMode: BaseMapMode
 ) {
   const t = clamp(visualPercentile) / 100;
-  const curved = Math.pow(t, 1.25);
+  const curved = Math.pow(t, 1.22);
 
   const minOpacity =
-    baseMapMode === "satellite" ? 0.015 : 0.025;
+    baseMapMode === "satellite" ? 0.02 : 0.035;
 
   const maxOpacity =
-    baseMapMode === "satellite" ? 0.58 : 0.82;
+    baseMapMode === "satellite" ? 0.62 : 0.84;
 
   return (
     minOpacity +
     (maxOpacity - minOpacity) * curved
   );
+}
+
+function getEffectOpacity(effectDifference: number) {
+  if (effectDifference <= 0.25) return 0.03;
+  return 0.18 + clamp(effectDifference, 0, 30) / 30 * 0.7;
 }
 
 function getRiskLabel(score: number) {
@@ -325,128 +516,85 @@ function getRiskLabel(score: number) {
   return "낮음";
 }
 
-function getScenarioScore(
-  props: SimulationGridProps,
-  month: ForecastMonth,
-  scenario: ScenarioMode
+function expandBoundsByKm(
+  bounds: L.LatLngBounds,
+  km: number
 ) {
-  const current = Number(
-    props.currentRisk ??
-      props.risk_score ??
-      0
+  const center = bounds.getCenter();
+
+  const latitudeDegree = km / 111.32;
+  const longitudeDegree =
+    km /
+    Math.max(
+      111.32 *
+        Math.cos((center.lat * Math.PI) / 180),
+      1
+    );
+
+  return L.latLngBounds(
+    L.latLng(
+      bounds.getSouth() - latitudeDegree,
+      bounds.getWest() - longitudeDegree
+    ),
+    L.latLng(
+      bounds.getNorth() + latitudeDegree,
+      bounds.getEast() + longitudeDegree
+    )
+  );
+}
+
+function distanceToBoundsKm(
+  point: [number, number],
+  bounds: L.LatLngBounds
+) {
+  const [lat, lng] = point;
+
+  const clampedLat = Math.max(
+    bounds.getSouth(),
+    Math.min(bounds.getNorth(), lat)
   );
 
-  if (month === 0) return clamp(current);
+  const clampedLng = Math.max(
+    bounds.getWest(),
+    Math.min(bounds.getEast(), lng)
+  );
 
-  if (scenario === "noControl") {
-    return clamp(
-      Number(
-        props.futureNoControlRisk ?? current
-      )
-    );
+  if (
+    lat >= bounds.getSouth() &&
+    lat <= bounds.getNorth() &&
+    lng >= bounds.getWest() &&
+    lng <= bounds.getEast()
+  ) {
+    return 0;
   }
 
-  return clamp(
-    Number(props.futureControlRisk ?? current)
+  return (
+    L.latLng(lat, lng).distanceTo(
+      L.latLng(clampedLat, clampedLng)
+    ) / 1000
   );
 }
 
 function runSimulation(params: {
   features: SimulationFeature[];
-  selectedIds: string[];
+  controlArea: SelectedControlArea | null;
   month: ForecastMonth;
 }) {
-  const { features, selectedIds, month } = params;
-  const selectedSet = new Set(selectedIds);
-
-  const selectedCenters = features
-    .filter((feature) =>
-      selectedSet.has(getFeatureId(feature))
-    )
-    .map((feature) => getFeatureCenter(feature))
-    .filter(Boolean) as [number, number][];
-
-  const noControlGrowthMap: Record<
-    ForecastMonth,
-    number
-  > = {
-    0: 0,
-    1: 0.26,
-    2: 0.48,
-    3: 0.68,
-    4: 0.86,
-    5: 1.02,
-    6: 1.16,
-  };
-
-  const directControlMap: Record<
-    ForecastMonth,
-    number
-  > = {
-    0: 0,
-    1: 12,
-    2: 17,
-    3: 21,
-    4: 24,
-    5: 27,
-    6: 30,
-  };
-
-  const neighborControlMap: Record<
-    ForecastMonth,
-    number
-  > = {
-    0: 0,
-    1: 5,
-    2: 8,
-    3: 11,
-    4: 14,
-    5: 16,
-    6: 18,
-  };
-
-  if (
-    !selectedCenters.length ||
-    month === 0
-  ) {
-    return features.map((feature) => {
-      const props = feature.properties || {};
-      const currentRisk = clamp(
-        Number(props.risk_score ?? 0)
-      );
-
-      return {
-        ...feature,
-        properties: {
-          ...props,
-          currentRisk,
-          futureNoControlRisk: currentRisk,
-          futureControlRisk: currentRisk,
-          noControlIncrease: 0,
-          controlReduction: 0,
-          riskDelta: 0,
-          distanceKmFromSelection: null,
-          isSelectedSource: selectedSet.has(
-            getFeatureId(feature)
-          ),
-        },
-      };
-    });
-  }
+  const { features, controlArea, month } = params;
+  const selectedSet = new Set(
+    controlArea?.selectedIds ?? []
+  );
 
   return features.map((feature) => {
     const props = feature.properties || {};
     const featureId = getFeatureId(feature);
-    const center = getFeatureCenter(feature);
 
-    const baseRisk = clamp(
+    const currentRisk = clamp(
       Number(props.risk_score ?? 0)
     );
 
     const recentPressure = clamp(
-      Number(
-        props.recent_pressure_score ?? 0
-      )
+      Number(props.recent_pressure_score ?? 0)
     );
 
     const pineRatio = clamp(
@@ -459,93 +607,115 @@ function runSimulation(params: {
       Number(props.access_score_v3 ?? 50)
     );
 
-    const isSelectedSource =
-      selectedSet.has(featureId);
+    const center = getFeatureCenter(feature);
 
-    let minDistanceKm =
-      Number.POSITIVE_INFINITY;
+    const distanceKm =
+      controlArea && center
+        ? distanceToBoundsKm(center, controlArea.bounds)
+        : null;
 
-    if (center) {
-      minDistanceKm = Math.min(
-        ...selectedCenters.map(
-          (selectedCenter) =>
-            calculateDistanceKm(
-              center,
-              selectedCenter
-            )
-        )
-      );
+    const isSelectedSource = selectedSet.has(featureId);
+
+    let controlZone:
+      | "direct"
+      | "buffer2"
+      | "buffer5"
+      | "outside" = "outside";
+
+    if (controlArea && distanceKm !== null) {
+      if (isSelectedSource || distanceKm === 0) {
+        controlZone = "direct";
+      } else if (distanceKm <= 2) {
+        controlZone = "buffer2";
+      } else if (distanceKm <= 5) {
+        controlZone = "buffer5";
+      }
     }
 
-    const spreadInfluence =
-      Number.isFinite(minDistanceKm)
-        ? Math.exp(-minDistanceKm / 18)
-        : 0;
+    /*
+     * 선택 여부와 관계없이 해당 월의 기본 미방제 위험변화를 계산합니다.
+     * 선택된 방제구역은 확산 출발점 역할이 강한 것으로 가정합니다.
+     */
+    const baseSpreadPotential =
+      2.5 +
+      recentPressure * 0.09 +
+      pineRatio * 15 +
+      currentRisk * 0.065;
 
-    const controlInfluence =
-      Number.isFinite(minDistanceKm)
-        ? Math.exp(-minDistanceKm / 10)
-        : 0;
-
-    const spreadPotential =
-      4 +
-      recentPressure * 0.11 +
-      pineRatio * 18 +
-      baseRisk * 0.08;
-
-    const rawIncrease =
-      spreadPotential *
-      noControlGrowthMap[month] *
-      spreadInfluence *
-      (isSelectedSource ? 1.2 : 1);
+    const localSpreadBoost =
+      controlZone === "direct"
+        ? 1.14
+        : controlZone === "buffer2"
+        ? 1.07
+        : controlZone === "buffer5"
+        ? 1.03
+        : 1;
 
     const noControlIncrease = Math.min(
-      rawIncrease,
+      baseSpreadPotential *
+        NO_CONTROL_GROWTH[month] *
+        localSpreadBoost,
       20
     );
 
     const futureNoControlRisk = clamp(
-      baseRisk + noControlIncrease
+      currentRisk + noControlIncrease
     );
 
-    const directReduction =
-      isSelectedSource
-        ? directControlMap[month] +
-          recentPressure * 0.05 +
-          (accessScore / 100) * 4
-        : 0;
+    let controlReduction = 0;
 
-    const neighborReduction =
-      neighborControlMap[month] *
-      controlInfluence *
-      (0.8 + recentPressure / 500);
+    if (month > 0 && controlArea) {
+      if (controlZone === "direct") {
+        controlReduction =
+          DIRECT_CONTROL_REDUCTION[month] +
+          recentPressure * 0.045 +
+          (accessScore / 100) * 3.5;
+      } else if (controlZone === "buffer2") {
+        const distanceWeight =
+          1 - Math.min(distanceKm ?? 2, 2) / 2;
 
-    const controlReduction = Math.min(
-      directReduction + neighborReduction,
+        controlReduction =
+          BUFFER_2KM_REDUCTION[month] *
+          (0.72 + distanceWeight * 0.28) *
+          (0.9 + recentPressure / 800);
+      } else if (controlZone === "buffer5") {
+        const bufferDistance = Math.max(
+          0,
+          (distanceKm ?? 5) - 2
+        );
+
+        const distanceWeight =
+          1 - Math.min(bufferDistance, 3) / 3;
+
+        controlReduction =
+          BUFFER_5KM_REDUCTION[month] *
+          (0.65 + distanceWeight * 0.35) *
+          (0.9 + recentPressure / 1000);
+      }
+    }
+
+    controlReduction = Math.min(
+      controlReduction,
       30
     );
 
     const futureControlRisk = clamp(
-      futureNoControlRisk -
-        controlReduction
+      futureNoControlRisk - controlReduction
     );
 
     return {
       ...feature,
       properties: {
         ...props,
-        currentRisk: baseRisk,
+        currentRisk,
         futureNoControlRisk,
         futureControlRisk,
         noControlIncrease,
         controlReduction,
-        riskDelta:
-          futureNoControlRisk -
-          futureControlRisk,
-        distanceKmFromSelection:
-          Number.isFinite(minDistanceKm)
-            ? minDistanceKm
-            : null,
+        effectDifference:
+          futureNoControlRisk - futureControlRisk,
+        distanceKmFromControl: distanceKm,
+        controlZone,
         isSelectedSource,
       },
     };
@@ -554,13 +724,14 @@ function runSimulation(params: {
 
 function summarizeSimulation(
   features: SimulationFeature[],
-  selectedIds: string[]
+  controlArea: SelectedControlArea | null
 ) {
-  const selectedSet = new Set(selectedIds);
+  const selectedSet = new Set(
+    controlArea?.selectedIds ?? []
+  );
 
-  const selectedFeatures = features.filter(
-    (feature) =>
-      selectedSet.has(getFeatureId(feature))
+  const selectedFeatures = features.filter((feature) =>
+    selectedSet.has(getFeatureId(feature))
   );
 
   const targetFeatures =
@@ -570,83 +741,138 @@ function summarizeSimulation(
 
   const total = targetFeatures.length;
 
-  const avg = (
-    key: keyof SimulationGridProps
-  ) =>
+  const avg = (key: keyof SimulationGridProps) =>
     targetFeatures.reduce(
       (sum, feature) =>
         sum +
-        Number(
-          feature.properties?.[key] ?? 0
-        ),
+        Number(feature.properties?.[key] ?? 0),
       0
     ) / Math.max(1, total);
 
   const avgCurrent = avg("currentRisk");
-  const avgNoControl = avg(
-    "futureNoControlRisk"
-  );
-  const avgControl = avg(
-    "futureControlRisk"
-  );
+  const avgNoControl = avg("futureNoControlRisk");
+  const avgControl = avg("futureControlRisk");
 
-  const highNoControl =
-    targetFeatures.filter(
+  const directCount = features.filter(
+    (feature) =>
+      feature.properties?.controlZone === "direct"
+  ).length;
+
+  const buffer2Count = features.filter(
+    (feature) =>
+      feature.properties?.controlZone === "buffer2"
+  ).length;
+
+  const buffer5Count = features.filter(
+    (feature) =>
+      feature.properties?.controlZone === "buffer5"
+  ).length;
+
+  const highNoControl = targetFeatures.filter(
+    (feature) =>
+      Number(
+        feature.properties?.futureNoControlRisk ?? 0
+      ) >= 70
+  ).length;
+
+  const highControl = targetFeatures.filter(
+    (feature) =>
+      Number(
+        feature.properties?.futureControlRisk ?? 0
+      ) >= 70
+  ).length;
+
+  const suppressedAreaKm2 =
+    features.filter(
       (feature) =>
         Number(
-          feature.properties
-            ?.futureNoControlRisk ?? 0
-        ) >= 70
-    ).length;
-
-  const highControl =
-    targetFeatures.filter(
-      (feature) =>
-        Number(
-          feature.properties
-            ?.futureControlRisk ?? 0
-        ) >= 70
-    ).length;
-
-  const affectedNeighborCount =
-    features.filter((feature) => {
-      const distance = Number(
-        feature.properties
-          ?.distanceKmFromSelection ??
-          Number.POSITIVE_INFINITY
-      );
-
-      return distance > 0 && distance <= 5;
-    }).length;
+          feature.properties?.effectDifference ?? 0
+        ) >= 3
+    ).length * 0.25;
 
   return {
-    selectedCount: selectedIds.length,
+    selectedCount: controlArea?.selectedIds.length ?? 0,
     selectedAreaKm2:
-      selectedIds.length * 0.25,
+      (controlArea?.selectedIds.length ?? 0) * 0.25,
     avgCurrent,
     avgNoControl,
     avgControl,
-    avgIncrease:
-      avgNoControl - avgCurrent,
-    avgReduction:
-      avgNoControl - avgControl,
+    avgIncrease: avgNoControl - avgCurrent,
+    avgReduction: avgNoControl - avgControl,
     resolvedHighRisk: Math.max(
       0,
       highNoControl - highControl
     ),
-    affectedNeighborCount,
+    directCount,
+    buffer2Count,
+    buffer5Count,
+    suppressedAreaKm2,
   };
+}
+
+function useAnimatedNumber(
+  target: number,
+  duration = 500
+) {
+  const [display, setDisplay] = useState(target);
+  const previousRef = useRef(target);
+
+  useEffect(() => {
+    const startValue = previousRef.current;
+    const difference = target - startValue;
+    const startTime = performance.now();
+
+    let frameId = 0;
+
+    const animate = (time: number) => {
+      const progress = Math.min(
+        1,
+        (time - startTime) / duration
+      );
+
+      const eased =
+        1 - Math.pow(1 - progress, 3);
+
+      setDisplay(startValue + difference * eased);
+
+      if (progress < 1) {
+        frameId = requestAnimationFrame(animate);
+      } else {
+        previousRef.current = target;
+      }
+    };
+
+    frameId = requestAnimationFrame(animate);
+
+    return () => cancelAnimationFrame(frameId);
+  }, [target, duration]);
+
+  return display;
 }
 
 export default function SimulationSection() {
   const mapContainerRef =
     useRef<HTMLDivElement | null>(null);
 
-  const leafletMapRef =
-    useRef<L.Map | null>(null);
+  const leafletMapRef = useRef<L.Map | null>(null);
 
-  const geoJsonLayerRef =
-    useRef<L.GeoJSON | null>(null);
+  const gridLayerRef = useRef<L.GeoJSON | null>(null);
+  const sigunguLayerRef = useRef<L.GeoJSON | null>(null);
+
+  const directAreaLayerRef =
+    useRef<L.Rectangle | null>(null);
+
+  const buffer2LayerRef =
+    useRef<L.Rectangle | null>(null);
+
+  const buffer5LayerRef =
+    useRef<L.Rectangle | null>(null);
+
+  const pulseLayerRef =
+    useRef<L.Circle | null>(null);
+
+  const selectionPreviewRef =
+    useRef<L.Rectangle | null>(null);
 
   const tileLayersRef =
     useRef<TileLayerSet | null>(null);
@@ -658,40 +884,53 @@ export default function SimulationSection() {
     Map<string, SimulationFeature[]>
   >(new Map());
 
-  const visibleTileFilesRef =
-    useRef<string[]>([]);
+  const sigunguFeaturesRef =
+    useRef<SigunguFeature[]>([]);
+
+  const selectedSigunguRef =
+    useRef<SigunguFeature | null>(null);
 
   const requestSequenceRef = useRef(0);
-
-  const selectionRectangleRef =
-    useRef<L.Rectangle | null>(null);
 
   const selectionStartRef =
     useRef<L.LatLng | null>(null);
 
   const isSelectingRef = useRef(false);
   const selectionModeRef = useRef(false);
-  const featuresRef =
+
+  const visibleFeaturesRef =
     useRef<SimulationFeature[]>([]);
 
-  const [features, setFeatures] = useState<
-    SimulationFeature[]
-  >([]);
+  const [visibleFeatures, setVisibleFeatures] =
+    useState<SimulationFeature[]>([]);
 
-  const [selectedIds, setSelectedIds] =
-    useState<string[]>([]);
+  const [
+    selectedSigungu,
+    setSelectedSigungu,
+  ] = useState<SigunguFeature | null>(null);
+
+  const [
+    selectedControlArea,
+    setSelectedControlArea,
+  ] = useState<SelectedControlArea | null>(null);
 
   const [month, setMonth] =
     useState<ForecastMonth>(0);
 
-  const [scenario, setScenario] =
-    useState<ScenarioMode>("noControl");
+  const [viewMode, setViewMode] =
+    useState<MapViewMode>("current");
+
+  const [baseMapMode, setBaseMapMode] =
+    useState<BaseMapMode>("base");
 
   const [selectionMode, setSelectionMode] =
     useState(false);
 
-  const [baseMapMode, setBaseMapMode] =
-    useState<BaseMapMode>("base");
+  const [isPlaying, setIsPlaying] =
+    useState(false);
+
+  const [temporaryNoControl, setTemporaryNoControl] =
+    useState(false);
 
   const [loading, setLoading] =
     useState(true);
@@ -708,19 +947,36 @@ export default function SimulationSection() {
   const [loadedFeatureCount, setLoadedFeatureCount] =
     useState(0);
 
+  const selectedSigunguCode = selectedSigungu
+    ? getSigunguCode(selectedSigungu.properties || {})
+    : "";
+
+  const selectedSigunguName = selectedSigungu
+    ? getSigunguName(selectedSigungu.properties || {})
+    : "";
+
+  const effectiveViewMode =
+    temporaryNoControl && month > 0
+      ? "noControl"
+      : viewMode;
+
   async function loadVisibleTiles() {
     const map = leafletMapRef.current;
     const manifest = manifestRef.current;
+    const sigungu = selectedSigunguRef.current;
 
     if (!map || !manifest) return;
 
     const zoom = map.getZoom();
     setCurrentZoom(zoom);
 
-    if (zoom < MIN_GRID_ZOOM) {
+    /*
+     * 줌 6~9에서는 시군구 선택만 사용합니다.
+     * 시군구 선택 후 줌 10부터 격자를 표시합니다.
+     */
+    if (zoom < GRID_MIN_ZOOM || !sigungu) {
       requestSequenceRef.current += 1;
-      visibleTileFilesRef.current = [];
-      setFeatures([]);
+      setVisibleFeatures([]);
       setVisibleTileCount(0);
       setLoadedFeatureCount(0);
       setLoading(false);
@@ -736,34 +992,24 @@ export default function SimulationSection() {
     setLoading(true);
     setLoadError("");
 
-    const paddedBounds = map
-      .getBounds()
-      .pad(0.12);
+    const sigunguBounds =
+      L.geoJSON(sigungu as any).getBounds();
 
-    const visibleTiles =
-      manifest.tiles.filter((tile) =>
-        intersectsMapBounds(
-          tile,
-          paddedBounds
-        )
-      );
-
-    const visibleFiles =
-      visibleTiles.map((tile) => tile.file);
-
-    visibleTileFilesRef.current =
-      visibleFiles;
-
-    setVisibleTileCount(
-      visibleFiles.length
+    const visibleTiles = manifest.tiles.filter(
+      (tile) =>
+        intersectsMapBounds(tile, sigunguBounds)
     );
+
+    const visibleFiles = visibleTiles.map(
+      (tile) => tile.file
+    );
+
+    setVisibleTileCount(visibleFiles.length);
 
     try {
       await Promise.all(
         visibleFiles.map(async (file) => {
-          if (
-            tileCacheRef.current.has(file)
-          ) {
+          if (tileCacheRef.current.has(file)) {
             return;
           }
 
@@ -781,8 +1027,7 @@ export default function SimulationSection() {
 
           tileCacheRef.current.set(
             file,
-            (data.features ||
-              []) as SimulationFeature[]
+            (data.features || []) as SimulationFeature[]
           );
         })
       );
@@ -794,16 +1039,49 @@ export default function SimulationSection() {
         return;
       }
 
-      const nextFeatures =
+      const candidateFeatures =
         visibleFiles.flatMap(
           (file) =>
-            tileCacheRef.current.get(file) ??
-            []
+            tileCacheRef.current.get(file) ?? []
         );
 
-      setFeatures(nextFeatures);
+      const sigunguCode =
+        getSigunguCode(sigungu.properties || {});
+
+      const sigunguName =
+        getSigunguName(sigungu.properties || {});
+
+      /*
+       * 1차: 격자에 시군구 코드가 있으면 코드 기준 필터링.
+       * 2차: 코드가 없으면 격자 중심점이 시군구 polygon 안에 있는지 확인.
+       */
+      const filteredFeatures =
+        candidateFeatures.filter((feature) => {
+          const props = feature.properties || {};
+          const gridCode = getGridSigunguCode(props);
+          const gridName = getGridSigunguName(props);
+
+          if (gridCode && sigunguCode) {
+            return gridCode === sigunguCode;
+          }
+
+          if (gridName && sigunguName) {
+            return gridName === sigunguName;
+          }
+
+          const center = getFeatureCenter(feature);
+
+          if (!center) return false;
+
+          return pointInGeometry(
+            [center[1], center[0]],
+            sigungu.geometry
+          );
+        });
+
+      setVisibleFeatures(filteredFeatures);
       setLoadedFeatureCount(
-        nextFeatures.length
+        filteredFeatures.length
       );
       setLoading(false);
     } catch (error) {
@@ -820,7 +1098,7 @@ export default function SimulationSection() {
       }
 
       setLoadError(
-        "현재 지도 범위의 격자 타일을 불러오지 못했습니다. public/data/simulation_tiles 폴더를 확인하세요."
+        "선택 시군구의 시뮬레이션 격자를 불러오지 못했습니다."
       );
 
       setLoading(false);
@@ -828,29 +1106,48 @@ export default function SimulationSection() {
   }
 
   useEffect(() => {
-    fetch(MANIFEST_PATH)
-      .then((response) => {
+    Promise.all([
+      fetch(MANIFEST_PATH).then((response) => {
         if (!response.ok) {
           throw new Error(
             `manifest: ${response.status}`
           );
         }
 
-        return response.json();
-      })
-      .then((manifest: TileManifest) => {
+        return response.json() as Promise<TileManifest>;
+      }),
+
+      fetch(SIGUNGU_PATH).then((response) => {
+        if (!response.ok) {
+          throw new Error(
+            `sigungu: ${response.status}`
+          );
+        }
+
+        return response.json() as Promise<
+          GeoJSON.FeatureCollection<
+            GeoJSON.Geometry,
+            SigunguProps
+          >
+        >;
+      }),
+    ])
+      .then(([manifest, sigunguData]) => {
         manifestRef.current = manifest;
+        sigunguFeaturesRef.current =
+          (sigunguData.features ||
+            []) as SigunguFeature[];
+
         setLoading(false);
-        void loadVisibleTiles();
       })
       .catch((error) => {
         console.error(
-          "Simulation manifest load error:",
+          "Simulation base data load error:",
           error
         );
 
         setLoadError(
-          "simulation_tiles/manifest.json을 불러오지 못했습니다."
+          "시군구 경계 또는 시뮬레이션 타일 정보를 불러오지 못했습니다. SIGUNGU_PATH와 public/data 경로를 확인하세요."
         );
 
         setLoading(false);
@@ -858,8 +1155,16 @@ export default function SimulationSection() {
   }, []);
 
   useEffect(() => {
-    featuresRef.current = features;
-  }, [features]);
+    visibleFeaturesRef.current =
+      visibleFeatures;
+  }, [visibleFeatures]);
+
+  useEffect(() => {
+    selectedSigunguRef.current =
+      selectedSigungu;
+
+    void loadVisibleTiles();
+  }, [selectedSigungu]);
 
   useEffect(() => {
     selectionModeRef.current =
@@ -869,16 +1174,19 @@ export default function SimulationSection() {
 
     if (!map) return;
 
-    if (selectionMode) {
+    if (
+      selectionMode &&
+      selectedSigungu &&
+      map.getZoom() >= GRID_MIN_ZOOM
+    ) {
       map.dragging.disable();
       map.getContainer().style.cursor =
         "crosshair";
     } else {
       map.dragging.enable();
-      map.getContainer().style.cursor =
-        "";
+      map.getContainer().style.cursor = "";
     }
-  }, [selectionMode]);
+  }, [selectionMode, selectedSigungu]);
 
   useEffect(() => {
     if (
@@ -893,8 +1201,8 @@ export default function SimulationSection() {
       {
         center: [36.35, 127.7],
         zoom: 8,
-        minZoom: 6,
-        maxZoom: 15,
+        minZoom: MIN_MAP_ZOOM,
+        maxZoom: MAX_MAP_ZOOM,
         maxBounds: KOREA_BOUNDS,
         maxBoundsViscosity: 0.8,
         zoomControl: true,
@@ -959,6 +1267,7 @@ export default function SimulationSection() {
     });
 
     map.on("zoomend", () => {
+      setCurrentZoom(map.getZoom());
       void loadVisibleTiles();
     });
 
@@ -967,7 +1276,8 @@ export default function SimulationSection() {
       (event: L.LeafletMouseEvent) => {
         if (
           !selectionModeRef.current ||
-          map.getZoom() < MIN_GRID_ZOOM
+          !selectedSigunguRef.current ||
+          map.getZoom() < GRID_MIN_ZOOM
         ) {
           return;
         }
@@ -976,15 +1286,11 @@ export default function SimulationSection() {
         selectionStartRef.current =
           event.latlng;
 
-        if (
-          selectionRectangleRef.current
-        ) {
-          selectionRectangleRef.current.removeFrom(
-            map
-          );
-        }
+        selectionPreviewRef.current?.removeFrom(
+          map
+        );
 
-        selectionRectangleRef.current =
+        selectionPreviewRef.current =
           L.rectangle(
             L.latLngBounds(
               event.latlng,
@@ -994,7 +1300,7 @@ export default function SimulationSection() {
               color: "#2563eb",
               weight: 2,
               fillColor: "#2563eb",
-              fillOpacity: 0.05,
+              fillOpacity: 0.08,
               dashArray: "7 5",
             }
           ).addTo(map);
@@ -1008,12 +1314,12 @@ export default function SimulationSection() {
           !selectionModeRef.current ||
           !isSelectingRef.current ||
           !selectionStartRef.current ||
-          !selectionRectangleRef.current
+          !selectionPreviewRef.current
         ) {
           return;
         }
 
-        selectionRectangleRef.current.setBounds(
+        selectionPreviewRef.current.setBounds(
           L.latLngBounds(
             selectionStartRef.current,
             event.latlng
@@ -1042,12 +1348,8 @@ export default function SimulationSection() {
 
         selectionStartRef.current = null;
 
-        selectionRectangleRef.current?.setBounds(
-          bounds
-        );
-
         const nextSelectedIds =
-          featuresRef.current
+          visibleFeaturesRef.current
             .filter((feature) => {
               const center =
                 getFeatureCenter(feature);
@@ -1063,7 +1365,23 @@ export default function SimulationSection() {
             })
             .map(getFeatureId);
 
-        setSelectedIds(nextSelectedIds);
+        if (nextSelectedIds.length === 0) {
+          selectionPreviewRef.current?.removeFrom(
+            map
+          );
+
+          selectionPreviewRef.current = null;
+          return;
+        }
+
+        setSelectedControlArea({
+          bounds,
+          selectedIds: nextSelectedIds,
+        });
+
+        setMonth(0);
+        setViewMode("current");
+        setSelectionMode(false);
       }
     );
 
@@ -1117,27 +1435,139 @@ export default function SimulationSection() {
       }
     }
 
-    geoJsonLayerRef.current?.bringToFront();
-    selectionRectangleRef.current?.bringToFront();
+    gridLayerRef.current?.bringToFront();
+    sigunguLayerRef.current?.bringToFront();
+    buffer5LayerRef.current?.bringToFront();
+    buffer2LayerRef.current?.bringToFront();
+    directAreaLayerRef.current?.bringToFront();
   }, [baseMapMode]);
+
+  /*
+   * 줌 6~9에서는 시군구 경계를 표시하고 클릭 가능하게 합니다.
+   * 선택된 시군구가 있더라도 다시 축소하면 시군구 선택 화면으로 돌아옵니다.
+   */
+  useEffect(() => {
+    const map = leafletMapRef.current;
+    if (!map) return;
+
+    sigunguLayerRef.current?.removeFrom(map);
+    sigunguLayerRef.current = null;
+
+    if (
+      currentZoom > SIGUNGU_MAX_ZOOM ||
+      sigunguFeaturesRef.current.length === 0
+    ) {
+      return;
+    }
+
+    const layer = L.geoJSON(
+      {
+        type: "FeatureCollection",
+        features:
+          sigunguFeaturesRef.current,
+      } as GeoJSON.FeatureCollection,
+      {
+        interactive: true,
+        style: (feature: any) => {
+          const featureCode = getSigunguCode(
+            feature?.properties || {}
+          );
+
+          const selected =
+            Boolean(selectedSigunguCode) &&
+            featureCode === selectedSigunguCode;
+
+          return {
+            color: selected
+              ? "#0f766e"
+              : "#64748b",
+            weight: selected ? 2.6 : 1,
+            fillColor: selected
+              ? "#14b8a6"
+              : "#f8fafc",
+            fillOpacity: selected ? 0.24 : 0.08,
+          };
+        },
+        onEachFeature: (
+          feature: any,
+          featureLayer
+        ) => {
+          const name = getSigunguName(
+            feature.properties || {}
+          );
+
+          featureLayer.bindTooltip(name, {
+            sticky: true,
+            direction: "top",
+          });
+
+          featureLayer.on("click", () => {
+            const selected =
+              feature as SigunguFeature;
+
+            setSelectedSigungu(selected);
+            setSelectedControlArea(null);
+            setMonth(0);
+            setViewMode("current");
+            setIsPlaying(false);
+
+            const bounds = (
+              featureLayer as L.GeoJSON
+            ).getBounds?.() ??
+              L.geoJSON(feature).getBounds();
+
+            map.fitBounds(bounds, {
+              padding: [24, 24],
+              maxZoom: GRID_MIN_ZOOM,
+              animate: true,
+            });
+
+            setTimeout(() => {
+              if (
+                map.getZoom() <
+                GRID_MIN_ZOOM
+              ) {
+                map.setZoom(
+                  GRID_MIN_ZOOM
+                );
+              }
+            }, 350);
+          });
+        },
+      }
+    ).addTo(map);
+
+    sigunguLayerRef.current = layer;
+  }, [
+    currentZoom,
+    selectedSigunguCode,
+    selectedSigungu,
+  ]);
 
   const simulatedFeatures = useMemo(
     () =>
       runSimulation({
-        features,
-        selectedIds,
+        features: visibleFeatures,
+        controlArea: selectedControlArea,
         month,
       }),
-    [features, selectedIds, month]
+    [
+      visibleFeatures,
+      selectedControlArea,
+      month,
+    ]
   );
 
   const summary = useMemo(
     () =>
       summarizeSimulation(
         simulatedFeatures,
-        selectedIds
+        selectedControlArea
       ),
-    [simulatedFeatures, selectedIds]
+    [
+      simulatedFeatures,
+      selectedControlArea,
+    ]
   );
 
   useEffect(() => {
@@ -1145,16 +1575,12 @@ export default function SimulationSection() {
 
     if (!map) return;
 
-    if (geoJsonLayerRef.current) {
-      geoJsonLayerRef.current.removeFrom(
-        map
-      );
-
-      geoJsonLayerRef.current = null;
-    }
+    gridLayerRef.current?.removeFrom(map);
+    gridLayerRef.current = null;
 
     if (
-      currentZoom < MIN_GRID_ZOOM ||
+      currentZoom < GRID_MIN_ZOOM ||
+      !selectedSigungu ||
       simulatedFeatures.length === 0
     ) {
       return;
@@ -1177,17 +1603,44 @@ export default function SimulationSection() {
 
           const safeProps = props || {};
 
-          const score = getScenarioScore(
-            safeProps,
-            month,
-            scenario
+          const currentRisk = Number(
+            safeProps.currentRisk ??
+              safeProps.risk_score ??
+              0
           );
 
+          const noControlRisk = Number(
+            safeProps.futureNoControlRisk ??
+              currentRisk
+          );
+
+          const controlRisk = Number(
+            safeProps.futureControlRisk ??
+              currentRisk
+          );
+
+          const effectDifference = Number(
+            safeProps.effectDifference ?? 0
+          );
+
+          let score = currentRisk;
+
+          if (
+            effectiveViewMode ===
+            "noControl"
+          ) {
+            score = noControlRisk;
+          } else if (
+            effectiveViewMode === "control"
+          ) {
+            score = controlRisk;
+          }
+
           const visualPercentile =
-            getScenarioVisualPercentile(
+            getVisualPercentile(
               safeProps,
-              month,
-              scenario
+              score,
+              effectiveViewMode
             );
 
           const selected = Boolean(
@@ -1201,6 +1654,25 @@ export default function SimulationSection() {
               safeProps.risk_candidate_flag
             ) === 1;
 
+          if (
+            effectiveViewMode === "effect"
+          ) {
+            return {
+              color: selected
+                ? "#1d4ed8"
+                : "transparent",
+              weight: selected ? 1.6 : 0,
+              fillColor:
+                getEffectColor(
+                  effectDifference
+                ),
+              fillOpacity:
+                getEffectOpacity(
+                  effectDifference
+                ),
+            };
+          }
+
           return {
             color: selected
               ? "#2563eb"
@@ -1210,7 +1682,7 @@ export default function SimulationSection() {
             weight: selected
               ? 1.8
               : candidate
-              ? 0.55
+              ? 0.5
               : 0,
             fillColor:
               interpolateRiskColor(
@@ -1230,48 +1702,56 @@ export default function SimulationSection() {
             SimulationGridProps =
             feature.properties || {};
 
-          const score = getScenarioScore(
-            props,
-            month,
-            scenario
+          const currentRisk = Number(
+            props.currentRisk ??
+              props.risk_score ??
+              0
           );
 
-          const visualPercentile =
-            getScenarioVisualPercentile(
-              props,
-              month,
-              scenario
-            );
+          const noControlRisk = Number(
+            props.futureNoControlRisk ??
+              currentRisk
+          );
+
+          const controlRisk = Number(
+            props.futureControlRisk ??
+              currentRisk
+          );
+
+          const effectDifference = Number(
+            props.effectDifference ?? 0
+          );
 
           featureLayer.bindTooltip(
             `
-              <div style="min-width:170px">
-                <div style="font-weight:800;margin-bottom:4px">
+              <div style="min-width:190px">
+                <div style="font-weight:800;margin-bottom:5px">
                   격자 ${
                     props.grid_id ??
                     props.id ??
                     "-"
                   }
                 </div>
-                <div>위험도 ${score.toFixed(
+                <div>현재 위험도 ${currentRisk.toFixed(
                   2
                 )}점</div>
-                <div>위험등급 ${getRiskLabel(
-                  score
-                )}</div>
-                <div>상대분포 상위 ${Math.max(
-                  0,
-                  100 - visualPercentile
-                ).toFixed(1)}%</div>
-                <div>${
-                  month === 0
-                    ? "현재 위험도"
-                    : `${month}개월 후 · ${
-                        scenario ===
-                        "noControl"
-                          ? "미방제"
-                          : "방제 적용"
-                      }`
+                <div>${month}개월 미방제 ${noControlRisk.toFixed(
+                  2
+                )}점</div>
+                <div>${month}개월 방제 적용 ${controlRisk.toFixed(
+                  2
+                )}점</div>
+                <div>방제 저감효과 ${effectDifference.toFixed(
+                  2
+                )}점</div>
+                <div>영향구역 ${
+                  props.controlZone === "direct"
+                    ? "직접 방제구역"
+                    : props.controlZone === "buffer2"
+                    ? "2km 강한 영향권"
+                    : props.controlZone === "buffer5"
+                    ? "5km 간접 영향권"
+                    : "영향권 밖"
                 }</div>
               </div>
             `,
@@ -1284,87 +1764,258 @@ export default function SimulationSection() {
       }
     ).addTo(map);
 
-    geoJsonLayerRef.current = layer;
+    gridLayerRef.current = layer;
     layer.bringToFront();
 
-    selectionRectangleRef.current?.bringToFront();
+    directAreaLayerRef.current?.bringToFront();
   }, [
     simulatedFeatures,
+    effectiveViewMode,
     month,
-    scenario,
     baseMapMode,
     currentZoom,
+    selectedSigungu,
   ]);
 
-  function resetSimulation() {
-    setSelectedIds([]);
+  /*
+   * 선택 방제구역과 2km·5km 영향권을 지도에 표시합니다.
+   */
+  useEffect(() => {
+    const map = leafletMapRef.current;
+    if (!map) return;
+
+    directAreaLayerRef.current?.removeFrom(map);
+    buffer2LayerRef.current?.removeFrom(map);
+    buffer5LayerRef.current?.removeFrom(map);
+    pulseLayerRef.current?.removeFrom(map);
+
+    directAreaLayerRef.current = null;
+    buffer2LayerRef.current = null;
+    buffer5LayerRef.current = null;
+    pulseLayerRef.current = null;
+
+    if (!selectedControlArea) return;
+
+    const directBounds =
+      selectedControlArea.bounds;
+
+    const buffer2Bounds =
+      expandBoundsByKm(directBounds, 2);
+
+    const buffer5Bounds =
+      expandBoundsByKm(directBounds, 5);
+
+    buffer5LayerRef.current =
+      L.rectangle(buffer5Bounds, {
+        color: "#60a5fa",
+        weight: 1.5,
+        dashArray: "8 6",
+        fillColor: "#93c5fd",
+        fillOpacity: 0.055,
+        interactive: false,
+      }).addTo(map);
+
+    buffer2LayerRef.current =
+      L.rectangle(buffer2Bounds, {
+        color: "#3b82f6",
+        weight: 1.8,
+        dashArray: "6 4",
+        fillColor: "#60a5fa",
+        fillOpacity: 0.09,
+        interactive: false,
+      }).addTo(map);
+
+    directAreaLayerRef.current =
+      L.rectangle(directBounds, {
+        color: "#1d4ed8",
+        weight: 2.6,
+        fillColor: "#2563eb",
+        fillOpacity: 0.12,
+        interactive: false,
+      }).addTo(map);
+
+    const center = directBounds.getCenter();
+
+    const pulseRadius =
+      effectiveViewMode === "noControl"
+        ? 1800 + month * 900
+        : effectiveViewMode === "control" ||
+          effectiveViewMode === "effect"
+        ? 1000 + month * 400
+        : 700;
+
+    pulseLayerRef.current =
+      L.circle(center, {
+        radius: pulseRadius,
+        color:
+          effectiveViewMode === "noControl"
+            ? "#dc2626"
+            : "#0f766e",
+        weight: 2,
+        dashArray: "7 7",
+        fillColor:
+          effectiveViewMode === "noControl"
+            ? "#ef4444"
+            : "#14b8a6",
+        fillOpacity: 0.035,
+        opacity: 0.75,
+        interactive: false,
+      }).addTo(map);
+
+    buffer5LayerRef.current.bringToFront();
+    buffer2LayerRef.current.bringToFront();
+    pulseLayerRef.current.bringToFront();
+    directAreaLayerRef.current.bringToFront();
+  }, [
+    selectedControlArea,
+    month,
+    effectiveViewMode,
+  ]);
+
+  /*
+   * 자동재생: 현재 → 1개월 → ... → 6개월.
+   */
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const timer = window.setInterval(() => {
+      setMonth((previous) => {
+        if (previous >= 6) {
+          setIsPlaying(false);
+          return 6;
+        }
+
+        const next =
+          (previous + 1) as ForecastMonth;
+
+        if (next > 0 && viewMode === "current") {
+          setViewMode("noControl");
+        }
+
+        return next;
+      });
+    }, 900);
+
+    return () => window.clearInterval(timer);
+  }, [isPlaying, viewMode]);
+
+  function resetControlArea() {
+    setSelectedControlArea(null);
     setMonth(0);
-    setScenario("noControl");
+    setViewMode("current");
     setSelectionMode(false);
+    setIsPlaying(false);
+    setTemporaryNoControl(false);
 
     const map = leafletMapRef.current;
 
-    if (
-      selectionRectangleRef.current &&
-      map
-    ) {
-      selectionRectangleRef.current.removeFrom(
-        map
-      );
+    selectionPreviewRef.current?.removeFrom(
+      map as L.Map
+    );
 
-      selectionRectangleRef.current = null;
-    }
+    selectionPreviewRef.current = null;
+  }
 
-    isSelectingRef.current = false;
-    selectionStartRef.current = null;
+  function resetSigungu() {
+    resetControlArea();
+    setSelectedSigungu(null);
+    setVisibleFeatures([]);
+    setLoadedFeatureCount(0);
+    setVisibleTileCount(0);
+
+    const map = leafletMapRef.current;
 
     if (map) {
-      map.dragging.enable();
-      map.getContainer().style.cursor =
-        "";
+      map.setView([36.35, 127.7], 8, {
+        animate: true,
+      });
     }
   }
 
-  const interpretation = useMemo(() => {
-    if (currentZoom < MIN_GRID_ZOOM) {
-      return "지도를 확대하면 현재 화면 범위의 500m 격자를 불러와 위험분포를 표시합니다.";
+  function startPlayback() {
+    if (!selectedControlArea) return;
+
+    if (month >= 6) {
+      setMonth(0);
+      setViewMode("current");
+
+      window.setTimeout(() => {
+        setViewMode("noControl");
+        setIsPlaying(true);
+      }, 250);
+
+      return;
     }
 
-    if (summary.selectedCount === 0) {
-      return "지도에서 방제 검토 구역을 선택하면 선택 지역의 현재 위험도와 월별 미방제·방제 적용 시나리오를 비교합니다.";
+    if (month === 0) {
+      setViewMode("noControl");
+    }
+
+    setIsPlaying(true);
+  }
+
+  const interpretation = useMemo(() => {
+    if (!selectedSigungu) {
+      return "줌 6~9에서 분석할 시군구를 선택하세요. 선택 후 해당 시군구의 500m 격자만 불러옵니다.";
+    }
+
+    if (!selectedControlArea) {
+      return `${selectedSigunguName}의 신규 확산위험 격자를 표시하고 있습니다. 방제 검토 구역을 드래그하면 직접 방제구역과 주변 2km·5km 영향권을 비교합니다.`;
     }
 
     if (month === 0) {
       return `선택한 ${summary.selectedCount.toLocaleString(
         "ko-KR"
-      )}개 격자의 현재 평균 위험도는 ${summary.avgCurrent.toFixed(
+      )}개 격자의 현재 평균 상대위험은 ${summary.avgCurrent.toFixed(
         1
       )}점입니다.`;
     }
 
-    if (scenario === "noControl") {
-      return `선택한 ${summary.selectedCount.toLocaleString(
-        "ko-KR"
-      )}개 격자를 방제하지 않을 경우 ${month}개월 후 평균 위험도가 ${summary.avgCurrent.toFixed(
+    if (effectiveViewMode === "noControl") {
+      return `${month}개월 미방제 시 선택 구역의 평균 상대위험이 ${summary.avgCurrent.toFixed(
         1
       )}점에서 ${summary.avgNoControl.toFixed(
         1
-      )}점으로 높아지는 상대위험 시나리오입니다.`;
+      )}점으로 높아지는 시나리오입니다.`;
     }
 
-    return `선택한 ${summary.selectedCount.toLocaleString(
-      "ko-KR"
-    )}개 격자에 방제를 적용하면 ${month}개월 후 평균 위험도가 미방제 ${summary.avgNoControl.toFixed(
-      1
-    )}점에서 ${summary.avgControl.toFixed(
-      1
-    )}점으로 낮아지는 상대위험 시나리오입니다.`;
+    if (effectiveViewMode === "control") {
+      return `${month}개월 방제 적용 시 직접 방제구역과 주변 2km·5km 영향권에서 평균 ${summary.avgReduction.toFixed(
+        1
+      )}점의 상대위험 저감효과가 나타나는 시나리오입니다.`;
+    }
+
+    if (effectiveViewMode === "effect") {
+      return `청록색이 진할수록 미방제 대비 방제 적용 시 상대위험 저감효과가 큰 격자입니다. 3점 이상 저감되는 면적은 약 ${summary.suppressedAreaKm2.toFixed(
+        1
+      )}㎢입니다.`;
+    }
+
+    return "현재 위험분포를 표시하고 있습니다.";
   }, [
-    currentZoom,
+    selectedSigungu,
+    selectedSigunguName,
+    selectedControlArea,
     summary,
     month,
-    scenario,
+    effectiveViewMode,
   ]);
+
+  const animatedCurrent = useAnimatedNumber(
+    summary.avgCurrent
+  );
+
+  const animatedNoControl = useAnimatedNumber(
+    summary.avgNoControl
+  );
+
+  const animatedControl = useAnimatedNumber(
+    summary.avgControl
+  );
+
+  const animatedReduction = useAnimatedNumber(
+    summary.avgReduction
+  );
 
   return (
     <div className="bg-white rounded-[28px] shadow-sm border border-[#E5E7EB] p-6">
@@ -1375,10 +2026,9 @@ export default function SimulationSection() {
           </h2>
 
           <p className="text-[#94A3B8] mt-2 text-[15px]">
-            신규 확산위험 예측 대상
-            375,490개 격자 전체를 기반으로,
-            현재 지도 범위의 500m 격자를
-            동적으로 표시합니다.
+            줌 6~9에서는 시군구를 선택하고,
+            선택 후 해당 시군구의 500m 격자에서
+            미방제·방제 적용·방제효과를 비교합니다.
           </p>
         </div>
 
@@ -1414,10 +2064,18 @@ export default function SimulationSection() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="rounded-xl bg-[#F8FAFC] border border-[#E5E7EB] px-4 py-2 text-sm">
+          시군구{" "}
+          <b className="text-[#0F766E]">
+            {selectedSigunguName || "미선택"}
+          </b>
+        </div>
+
         <button
           type="button"
           disabled={
-            currentZoom < MIN_GRID_ZOOM
+            !selectedSigungu ||
+            currentZoom < GRID_MIN_ZOOM
           }
           onClick={() =>
             setSelectionMode(
@@ -1425,7 +2083,8 @@ export default function SimulationSection() {
             )
           }
           className={
-            currentZoom < MIN_GRID_ZOOM
+            !selectedSigungu ||
+            currentZoom < GRID_MIN_ZOOM
               ? "px-4 py-2 rounded-xl text-sm font-bold bg-[#F1F5F9] text-[#94A3B8] cursor-not-allowed"
               : selectionMode
               ? "px-4 py-2 rounded-xl text-sm font-bold bg-[#2563EB] text-white shadow"
@@ -1433,29 +2092,46 @@ export default function SimulationSection() {
           }
         >
           {selectionMode
-            ? "지도에서 선택 중"
+            ? "방제 구역 선택 중"
             : "방제 구역 선택"}
         </button>
 
         <button
           type="button"
-          onClick={resetSimulation}
+          disabled={!selectedControlArea}
+          onClick={
+            isPlaying
+              ? () => setIsPlaying(false)
+              : startPlayback
+          }
+          className={
+            selectedControlArea
+              ? "px-4 py-2 rounded-xl text-sm font-bold bg-[#0F766E] text-white shadow"
+              : "px-4 py-2 rounded-xl text-sm font-bold bg-[#F1F5F9] text-[#94A3B8] cursor-not-allowed"
+          }
+        >
+          {isPlaying
+            ? "⏸ 일시정지"
+            : "▶ 시뮬레이션 재생"}
+        </button>
+
+        <button
+          type="button"
+          onClick={resetControlArea}
           className="px-4 py-2 rounded-xl text-sm font-bold bg-white text-[#64748B] border border-[#E5E7EB]"
         >
-          초기화
+          방제 선택 초기화
+        </button>
+
+        <button
+          type="button"
+          onClick={resetSigungu}
+          className="px-4 py-2 rounded-xl text-sm font-bold bg-white text-[#64748B] border border-[#E5E7EB]"
+        >
+          시군구 다시 선택
         </button>
 
         <div className="ml-auto flex flex-wrap justify-end gap-x-4 gap-y-1 text-sm text-[#64748B]">
-          <span>
-            표시 타일{" "}
-            <b className="text-[#111827]">
-              {visibleTileCount.toLocaleString(
-                "ko-KR"
-              )}
-            </b>
-            개
-          </span>
-
           <span>
             표시 격자{" "}
             <b className="text-[#111827]">
@@ -1469,18 +2145,11 @@ export default function SimulationSection() {
           <span>
             선택 격자{" "}
             <b className="text-[#111827]">
-              {selectedIds.length.toLocaleString(
+              {summary.selectedCount.toLocaleString(
                 "ko-KR"
               )}
             </b>
-            개 ·{" "}
-            <b className="text-[#111827]">
-              {formatNumber(
-                summary.selectedAreaKm2,
-                2
-              )}
-            </b>
-            ㎢
+            개
           </span>
         </div>
       </div>
@@ -1496,13 +2165,11 @@ export default function SimulationSection() {
               }}
             />
 
-            {loading &&
-              currentZoom >= MIN_GRID_ZOOM && (
-                <div className="absolute left-1/2 top-4 -translate-x-1/2 z-[650] rounded-full bg-white/95 border border-[#E5E7EB] px-4 py-2 text-sm font-bold text-[#475569] shadow">
-                  현재 지도 범위의 격자를
-                  불러오는 중입니다.
-                </div>
-              )}
+            {loading && (
+              <div className="absolute left-1/2 top-4 -translate-x-1/2 z-[650] rounded-full bg-white/95 border border-[#E5E7EB] px-4 py-2 text-sm font-bold text-[#475569] shadow">
+                지도 데이터를 불러오는 중입니다.
+              </div>
+            )}
 
             {loadError && (
               <div className="absolute left-4 right-4 top-4 z-[700] rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm font-semibold text-red-700">
@@ -1510,76 +2177,220 @@ export default function SimulationSection() {
               </div>
             )}
 
-            {currentZoom <
-              MIN_GRID_ZOOM && (
-              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[600] rounded-2xl bg-white/95 border border-[#E5E7EB] px-6 py-5 text-center shadow-xl">
-                <div className="text-lg font-extrabold text-[#1F2937]">
-                  지도를 더 확대해 주세요
-                </div>
-
-                <div className="mt-2 text-sm leading-6 text-[#64748B]">
-                  확대 단계{" "}
-                  <b>{MIN_GRID_ZOOM}</b>
-                  부터 현재 화면 범위의
-                  500m 격자를 표시합니다.
-                </div>
-
-                <div className="mt-1 text-xs text-[#94A3B8]">
-                  현재 확대 단계:{" "}
-                  {currentZoom}
-                </div>
+            {currentZoom <= SIGUNGU_MAX_ZOOM && (
+              <div className="absolute left-1/2 top-4 -translate-x-1/2 z-[600] rounded-full bg-white/95 border border-[#CBD5E1] px-5 py-2 text-sm font-extrabold text-[#334155] shadow">
+                지도에서 분석할 시군구를 선택하세요
               </div>
             )}
+
+            {selectedSigungu &&
+              currentZoom >= GRID_MIN_ZOOM &&
+              !selectedControlArea &&
+              !selectionMode && (
+                <div className="absolute left-1/2 top-4 -translate-x-1/2 z-[600] rounded-full bg-white/95 border border-[#CBD5E1] px-5 py-2 text-sm font-extrabold text-[#334155] shadow">
+                  방제 구역 선택 버튼을 누른 뒤
+                  지도에서 범위를 드래그하세요
+                </div>
+              )}
 
             {selectionMode && (
-              <div className="absolute left-1/2 top-4 -translate-x-1/2 z-[600] rounded-full bg-[#2563EB] text-white px-4 py-2 text-sm font-bold shadow-lg">
-                마우스로 방제 검토 구역을
-                드래그하세요.
+              <div className="absolute left-1/2 top-4 -translate-x-1/2 z-[610] rounded-full bg-[#2563EB] text-white px-5 py-2 text-sm font-bold shadow-lg">
+                마우스로 직접 방제할 구역을
+                드래그하세요
               </div>
             )}
 
+            {selectedControlArea &&
+              month > 0 && (
+                <div className="absolute top-4 right-4 z-[610] rounded-2xl bg-white/95 border border-[#E5E7EB] shadow-lg px-4 py-3 min-w-[180px]">
+                  <div className="text-xs text-[#64748B]">
+                    현재 재생 시점
+                  </div>
+
+                  <div className="text-2xl font-extrabold text-[#111827] mt-1">
+                    {month}개월 후
+                  </div>
+
+                  <div
+                    className={
+                      effectiveViewMode ===
+                      "noControl"
+                        ? "text-sm font-bold text-[#B91C1C] mt-1"
+                        : effectiveViewMode ===
+                          "effect"
+                        ? "text-sm font-bold text-[#0F766E] mt-1"
+                        : "text-sm font-bold text-[#0F766E] mt-1"
+                    }
+                  >
+                    {effectiveViewMode ===
+                    "noControl"
+                      ? "미방제 확산"
+                      : effectiveViewMode ===
+                        "effect"
+                      ? "방제 저감효과"
+                      : "방제 적용"}
+                  </div>
+                </div>
+              )}
+
             <div className="absolute left-4 bottom-4 z-[600] rounded-xl bg-white/95 border border-[#E5E7EB] shadow px-4 py-3">
-              <div className="text-xs font-bold text-[#334155] mb-2">
-                신규 확산위험 상대분포
-              </div>
+              {effectiveViewMode === "effect" ? (
+                <>
+                  <div className="text-xs font-bold text-[#334155] mb-2">
+                    미방제 대비 방제 저감효과
+                  </div>
 
-              <div
-                className="h-3 w-64 rounded-full"
-                style={{
-                  background:
-                    "linear-gradient(90deg,#fff7f7 0%,#fee2e2 50%,#fca5a5 75%,#f87171 90%,#dc2626 95%,#991b1b 99%,#450a0a 100%)",
-                }}
-              />
+                  <div
+                    className="h-3 w-64 rounded-full"
+                    style={{
+                      background:
+                        "linear-gradient(90deg,#ecfdf5 0%,#99f6e4 40%,#2dd4bf 70%,#0f766e 100%)",
+                    }}
+                  />
 
-              <div className="mt-1 flex justify-between text-[11px] text-[#64748B]">
-                <span>낮음</span>
-                <span>상위 25%</span>
-                <span>상위 10%</span>
-                <span>상위 5%</span>
-                <span>상위 1%</span>
-              </div>
+                  <div className="mt-1 flex justify-between text-[11px] text-[#64748B]">
+                    <span>변화 적음</span>
+                    <span>3점</span>
+                    <span>10점</span>
+                    <span>20점+</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-xs font-bold text-[#334155] mb-2">
+                    신규 확산위험 상대분포
+                  </div>
 
-              <div className="mt-2 flex items-center gap-2 text-[11px] text-[#64748B]">
-                <span className="inline-block w-5 h-3 border-2 border-[#991b1b] bg-transparent" />
-                상위 10% 후보 외곽선
+                  <div
+                    className="h-3 w-64 rounded-full"
+                    style={{
+                      background:
+                        "linear-gradient(90deg,#fff7f7 0%,#fee2e2 50%,#fca5a5 75%,#f87171 90%,#dc2626 95%,#991b1b 99%,#450a0a 100%)",
+                    }}
+                  />
+
+                  <div className="mt-1 flex justify-between text-[11px] text-[#64748B]">
+                    <span>낮음</span>
+                    <span>상위 25%</span>
+                    <span>상위 10%</span>
+                    <span>상위 1%</span>
+                  </div>
+                </>
+              )}
+
+              <div className="mt-3 space-y-1 text-[11px] text-[#64748B]">
+                <div>
+                  <span className="inline-block w-5 h-3 border-2 border-[#1d4ed8] bg-blue-100/40 mr-2 align-middle" />
+                  직접 방제구역
+                </div>
+
+                <div>
+                  <span className="inline-block w-5 h-3 border border-[#3b82f6] bg-blue-100/30 mr-2 align-middle" />
+                  주변 2km 강한 영향권
+                </div>
+
+                <div>
+                  <span className="inline-block w-5 h-3 border border-dashed border-[#60a5fa] bg-blue-50/20 mr-2 align-middle" />
+                  주변 5km 간접 영향권
+                </div>
               </div>
             </div>
           </div>
 
           <div className="mt-4 rounded-[18px] border border-[#E5E7EB] bg-[#F8FAFC] p-4">
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              <ModeButton
+                active={
+                  effectiveViewMode ===
+                  "current"
+                }
+                label="현재 위험도"
+                onClick={() =>
+                  setViewMode("current")
+                }
+              />
+
+              <ModeButton
+                active={
+                  effectiveViewMode ===
+                  "noControl"
+                }
+                label="미방제 미래"
+                onClick={() => {
+                  setViewMode("noControl");
+
+                  if (month === 0) {
+                    setMonth(1);
+                  }
+                }}
+                danger
+              />
+
+              <ModeButton
+                active={
+                  effectiveViewMode ===
+                  "control"
+                }
+                label="방제 적용"
+                onClick={() => {
+                  setViewMode("control");
+
+                  if (month === 0) {
+                    setMonth(1);
+                  }
+                }}
+              />
+
+              <ModeButton
+                active={
+                  effectiveViewMode ===
+                  "effect"
+                }
+                label="방제 효과"
+                onClick={() => {
+                  setViewMode("effect");
+
+                  if (month === 0) {
+                    setMonth(1);
+                  }
+                }}
+              />
+            </div>
+
             <div className="flex items-center justify-between mb-3">
               <div className="font-bold text-[#334155]">
                 월별 시점
               </div>
 
-              <div className="text-sm text-[#64748B]">
-                선택 시점{" "}
-                <span className="font-extrabold text-[#111827]">
-                  {month === 0
-                    ? "현재"
-                    : `${month}개월 후`}
-                </span>
-              </div>
+              <button
+                type="button"
+                disabled={
+                  !selectedControlArea ||
+                  month === 0
+                }
+                onPointerDown={() => {
+                  if (
+                    selectedControlArea &&
+                    month > 0
+                  ) {
+                    setTemporaryNoControl(true);
+                  }
+                }}
+                onPointerUp={() =>
+                  setTemporaryNoControl(false)
+                }
+                onPointerLeave={() =>
+                  setTemporaryNoControl(false)
+                }
+                className={
+                  selectedControlArea &&
+                  month > 0
+                    ? "px-3 py-2 rounded-lg border border-[#FCA5A5] bg-white text-[#B91C1C] text-xs font-extrabold"
+                    : "px-3 py-2 rounded-lg border border-[#E5E7EB] bg-white text-[#94A3B8] text-xs font-bold cursor-not-allowed"
+                }
+              >
+                누르고 미방제 비교
+              </button>
             </div>
 
             <div className="grid grid-cols-7 gap-2">
@@ -1588,13 +2399,23 @@ export default function SimulationSection() {
                   <button
                     key={option}
                     type="button"
-                    onClick={() =>
-                      setMonth(option)
-                    }
+                    onClick={() => {
+                      setMonth(option);
+
+                      if (option === 0) {
+                        setViewMode("current");
+                      } else if (
+                        viewMode === "current"
+                      ) {
+                        setViewMode(
+                          "noControl"
+                        );
+                      }
+                    }}
                     className={
                       month === option
-                        ? "py-3 rounded-xl bg-[#0F766E] text-white text-sm font-extrabold shadow"
-                        : "py-3 rounded-xl bg-white border border-[#E5E7EB] text-[#64748B] text-sm font-bold"
+                        ? "py-3 rounded-xl bg-[#0F766E] text-white text-sm font-extrabold shadow scale-[1.02] transition-transform"
+                        : "py-3 rounded-xl bg-white border border-[#E5E7EB] text-[#64748B] text-sm font-bold transition-transform hover:scale-[1.02]"
                     }
                   >
                     {option === 0
@@ -1614,6 +2435,11 @@ export default function SimulationSection() {
             </div>
 
             <InfoRow
+              label="선택 시군구"
+              value={selectedSigunguName || "-"}
+            />
+
+            <InfoRow
               label="기준 시점"
               value={
                 month === 0
@@ -1623,15 +2449,22 @@ export default function SimulationSection() {
             />
 
             <InfoRow
-              label="표시 범위"
-              value={`${loadedFeatureCount.toLocaleString(
+              label="직접 방제"
+              value={`${summary.directCount.toLocaleString(
                 "ko-KR"
-              )}개 격자`}
+              )}개`}
             />
 
             <InfoRow
-              label="선택 격자"
-              value={`${summary.selectedCount.toLocaleString(
+              label="2km 영향권"
+              value={`${summary.buffer2Count.toLocaleString(
+                "ko-KR"
+              )}개`}
+            />
+
+            <InfoRow
+              label="5km 영향권"
+              value={`${summary.buffer5Count.toLocaleString(
                 "ko-KR"
               )}개`}
             />
@@ -1643,38 +2476,6 @@ export default function SimulationSection() {
                 2
               )}㎢`}
             />
-
-            {month > 0 && (
-              <div className="mt-4 grid grid-cols-2 gap-2 bg-[#F3F4F6] p-1 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setScenario("noControl")
-                  }
-                  className={
-                    scenario === "noControl"
-                      ? "py-2 rounded-lg bg-white text-[#B91C1C] text-sm font-extrabold shadow"
-                      : "py-2 rounded-lg text-[#64748B] text-sm font-bold"
-                  }
-                >
-                  미방제
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setScenario("control")
-                  }
-                  className={
-                    scenario === "control"
-                      ? "py-2 rounded-lg bg-white text-[#0F766E] text-sm font-extrabold shadow"
-                      : "py-2 rounded-lg text-[#64748B] text-sm font-bold"
-                  }
-                >
-                  방제 적용
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="rounded-[20px] border border-[#E5E7EB] bg-[#F8FAFC] p-5">
@@ -1685,7 +2486,7 @@ export default function SimulationSection() {
             <MetricCard
               label="현재 평균 위험도"
               value={`${formatNumber(
-                summary.avgCurrent,
+                animatedCurrent,
                 1
               )}점`}
             />
@@ -1693,7 +2494,7 @@ export default function SimulationSection() {
             <MetricCard
               label={`${month || 1}개월 미방제`}
               value={`${formatNumber(
-                summary.avgNoControl,
+                animatedNoControl,
                 1
               )}점`}
               emphasis="danger"
@@ -1702,7 +2503,7 @@ export default function SimulationSection() {
             <MetricCard
               label={`${month || 1}개월 방제 적용`}
               value={`${formatNumber(
-                summary.avgControl,
+                animatedControl,
                 1
               )}점`}
               emphasis="safe"
@@ -1720,23 +2521,24 @@ export default function SimulationSection() {
               <SmallMetric
                 label="평균 위험 저감"
                 value={`${formatNumber(
-                  summary.avgReduction,
+                  animatedReduction,
                   1
                 )}점`}
               />
 
               <SmallMetric
-                label="고위험 해소"
+                label="고위험 후보 해소"
                 value={`${summary.resolvedHighRisk.toLocaleString(
                   "ko-KR"
                 )}개`}
               />
 
               <SmallMetric
-                label="주변 5km 격자"
-                value={`${summary.affectedNeighborCount.toLocaleString(
-                  "ko-KR"
-                )}개`}
+                label="확산 억제 면적"
+                value={`${formatNumber(
+                  summary.suppressedAreaKm2,
+                  1
+                )}㎢`}
               />
             </div>
           </div>
@@ -1758,20 +2560,20 @@ export default function SimulationSection() {
 
             <ol className="space-y-2 text-sm leading-5 text-[#475569] list-decimal pl-5">
               <li>
-                고위험 중심 격자를 우선 현장
-                확인 대상으로 검토
+                직접 방제구역의 고위험 후보를
+                우선 현장 확인 대상으로 검토
               </li>
               <li>
-                주변 5km 후보격자를 드론 예찰
-                범위에 포함
+                주변 2km 구역은 집중 드론
+                예찰과 추가 방제 여부 검토
               </li>
               <li>
-                접근성이 낮은 지역은 드론 선행
-                확인 후 현장 투입
+                주변 5km 구역은 신규 확산위험
+                변화 모니터링
               </li>
               <li>
                 방제 완료 후 1개월 단위로
-                위험도 재분석
+                위험도를 재분석
               </li>
             </ol>
           </div>
@@ -1779,15 +2581,38 @@ export default function SimulationSection() {
       </div>
 
       <div className="mt-5 rounded-[18px] border border-[#E5E7EB] bg-[#F8FAFC] p-4 text-sm leading-6 text-[#64748B]">
-        화면의 숫자는 실제 0~100점
-        상대위험 점수이며, 색상 농도는 전체
-        예측 대상에서의 상대분포를 기준으로
-        표현합니다. 월별 결과는 실제 감염
-        발생을 확정하는 값이 아니라 방제
-        의사결정을 위한 상대위험 변화
-        시나리오입니다.
+        화면의 위험점수는 실제 감염확률이 아닌
+        0~100점 상대위험 점수입니다. 월별 결과는
+        학습된 월별 감염예측값이 아니라 현재
+        위험요인과 방제구역·주변 영향권을 반영한
+        의사결정용 상대위험 변화 시나리오입니다.
       </div>
     </div>
+  );
+}
+
+function ModeButton(props: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  const activeClass = props.danger
+    ? "bg-[#B91C1C] text-white border-[#B91C1C] shadow"
+    : "bg-[#0F766E] text-white border-[#0F766E] shadow";
+
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      className={
+        props.active
+          ? `py-3 rounded-xl border text-sm font-extrabold ${activeClass}`
+          : "py-3 rounded-xl bg-white border border-[#E5E7EB] text-[#64748B] text-sm font-bold"
+      }
+    >
+      {props.label}
+    </button>
   );
 }
 
