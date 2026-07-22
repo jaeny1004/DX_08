@@ -64,6 +64,7 @@ function scoreText(value: number | null | undefined): string {
 export default function AdminSection() {
   const [activeTab, setActiveTab] =
   useState<"new-report" | "reports" | "species">("new-report");
+  const [reportsRefreshKey, setReportsRefreshKey] = useState(0);
 
   // --------------------------------------------
   // 실제 행정 보고서 조회·미리보기·다운로드 상태
@@ -195,7 +196,7 @@ export default function AdminSection() {
     return () => {
       cancelled = true;
     };
-  }, [reportType, selectedYear, selectedSido, selectedSigungu]);
+  }, [reportType, selectedYear, selectedSido, selectedSigungu, reportsRefreshKey]);
 
   // 문서번호를 선택하면 3종 연결 상태를 확인한다.
   useEffect(() => {
@@ -375,7 +376,12 @@ export default function AdminSection() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
           >
-            <NewReportGenerator />
+            <NewReportGenerator
+              onRegistered={() => {
+                setReportsRefreshKey((current) => current + 1);
+                setActiveTab("reports");
+              }}
+            />
           </motion.div>
         )}
         {activeTab === "reports" && (
