@@ -440,6 +440,9 @@ export default function SimulationSection() {
   const featureLayerByIdRef = useRef<Map<string, L.Path>>(new Map());
   const gridCacheRef = useRef<Map<string, GridFeature[]>>(new Map());
 
+  const featuresRef = useRef<GridFeature[]>([]);
+  const selectedSigunguRef = useRef<SigunguFeature | null>(null);
+
   const sigunguFeaturesRef = useRef<SigunguFeature[]>([]);
   const indexRef = useRef<SigunguIndex | null>(null);
 
@@ -468,6 +471,14 @@ export default function SimulationSection() {
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    featuresRef.current = features;
+  }, [features]);
+
+  useEffect(() => {
+    selectedSigunguRef.current = selectedSigungu;
+  }, [selectedSigungu]);
 
   const derivedById = useMemo(() => {
     const map = new Map<string, DerivedGrid>();
@@ -607,7 +618,7 @@ export default function SimulationSection() {
       if (
         !selectionModeRef.current ||
         map.getZoom() < GRID_MIN_ZOOM ||
-        !selectedSigungu
+        !selectedSigunguRef.current
       ) {
         return;
       }
@@ -661,7 +672,7 @@ export default function SimulationSection() {
       selectionStartRef.current = null;
 
       const selectedIds = new Set(
-        features
+        featuresRef.current
           .filter((feature) => {
             const center = getCenter(feature);
             return center
@@ -693,7 +704,7 @@ export default function SimulationSection() {
       map.remove();
       mapRef.current = null;
     };
-  }, [features, selectedSigungu]);
+  }, []);
 
   useEffect(() => {
     selectionModeRef.current = selectionMode;
@@ -818,27 +829,39 @@ export default function SimulationSection() {
               }
 
               setFeatures(nextFeatures);
+              setLoading(false);
 
               const bounds = L.latLngBounds(
                 L.latLng(indexItem.bounds[1], indexItem.bounds[0]),
                 L.latLng(indexItem.bounds[3], indexItem.bounds[2])
               );
 
-              map.fitBounds(bounds, {
-                padding: [24, 24],
-                maxZoom: GRID_MIN_ZOOM,
-              });
+              /*
+               * React 상태 갱신 직후에도 동일한 Leaflet map 인스턴스를 유지하므로
+               * 제거된 지도에 fitBounds를 호출하는 문제가 발생하지 않습니다.
+               */
+              window.requestAnimationFrame(() => {
+                const currentMap = mapRef.current;
 
-              setTimeout(() => {
-                if (map.getZoom() < GRID_MIN_ZOOM) {
-                  map.setZoom(GRID_MIN_ZOOM);
+                if (!currentMap) return;
+
+                currentMap.fitBounds(bounds, {
+                  padding: [24, 24],
+                  maxZoom: GRID_MIN_ZOOM,
+                  animate: false,
+                });
+
+                if (currentMap.getZoom() < GRID_MIN_ZOOM) {
+                  currentMap.setZoom(GRID_MIN_ZOOM, {
+                    animate: false,
+                  });
                 }
-              }, 250);
-
-              setLoading(false);
+              });
             } catch (error) {
-              console.error(error);
-              setLoadError(`${name} 격자 파일을 불러오지 못했습니다.`);
+              console.error("시군구 격자 로딩 오류:", error);
+              setLoadError(
+                `${name} 격자 파일을 불러오지 못했습니다. 브라우저 Network에서 ${indexItem.file} 응답을 확인하세요.`
+              );
               setLoading(false);
             }
           });
