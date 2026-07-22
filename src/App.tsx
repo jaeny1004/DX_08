@@ -766,7 +766,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[1990] bg-slate-950/20"
+              className="fixed inset-0 z-[9998] cursor-default bg-transparent"
             />
 
             <motion.aside
@@ -788,7 +788,11 @@ export default function App() {
               transition={{
                 duration: 0.18,
               }}
-              className="fixed left-4 top-4 z-[2000] flex max-h-[calc(100vh-32px)] w-[390px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+              style={{
+                left: isSidebarOpen ? 276 : 104,
+                top: 16,
+              }}
+              className="fixed z-[9999] flex max-h-[calc(100vh-32px)] w-[390px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
             >
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <div>
