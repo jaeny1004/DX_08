@@ -1,0 +1,15 @@
+M	.env.example
+M	.gitignore
+M	package-lock.json
+M	package.json
+M	rag-backend/app/main.py
+M	rag-backend/requirements.txt
+M	src/components/AdminSection.tsx
+M	src/components/ControlSection.tsx
+M	src/components/FieldSection.tsx
+M	src/config/api.ts
+M	src/services/authApi.ts
+M	src/services/ragApi.ts
+M	src/services/reportApi.ts
+M	src/services/reportDraftApi.ts
+M	src/types.ts
