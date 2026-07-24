@@ -76,6 +76,10 @@ def _ocr_page(page) -> str:
         import pytesseract
         from PIL import Image
 
+        tesseract_cmd = os.environ.get("TESSERACT_CMD")
+        if tesseract_cmd:
+            pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+
         pix = page.get_pixmap(dpi=300)
         img = Image.open(io.BytesIO(pix.tobytes("png")))
         # --psm 4(가변 크기 단일 컬럼): 다단·표·인포그래픽 페이지에서 psm6/psm3보다
