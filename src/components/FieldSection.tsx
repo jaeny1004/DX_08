@@ -1,23 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
-import axios from "axios";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Battery,
   UserCheck,
   Download,
   Smartphone,
-  Loader2,
   Brain,
-  ShieldAlert,
-  Leaf,
   Image as ImageIcon,
-  ExternalLink,
   MapPin,
-  Gauge,
   AlertTriangle,
   CheckCircle2,
   Database,
-  FileJson,
 } from "lucide-react";
 import { WorkerStatus, CrowdReport } from "../types";
 
@@ -25,6 +18,10 @@ import {
   DispatchAssignment,
   DispatchStatus,
 } from "../types/dispatch";
+
+import {
+  LeafletMap
+} from "./LeafletMap";
 
 interface FieldSectionProps {
   workers: WorkerStatus[];
@@ -51,53 +48,8 @@ interface FieldSectionProps {
     status: CrowdReport["status"]
   ) => void;
 
-  onConfirmInfection: (
-    report: CrowdReport
-  ) => void;
 }
 
-type RoboflowPrediction = {
-  class?: string;
-  label?: string;
-  confidence?: number;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-};
-
-type RoboflowRawResult = {
-  top?: string;
-  predictions?: RoboflowPrediction[] | Record<string, { confidence?: number }>;
-  image?: {
-    width?: number;
-    height?: number;
-  };
-  [key: string]: unknown;
-};
-
-type ParsedAiResult = {
-  ok: boolean;
-  label: string;
-  score: number;
-  level: "danger" | "safe" | "warning";
-  message: string;
-  raw: RoboflowRawResult | null;
-  predictions: RoboflowPrediction[];
-  error?: string;
-};
-
-
-const ROBOFLOW_API_KEY = import.meta.env.VITE_ROBOFLOW_API_KEY as string | undefined;
-const ROBOFLOW_MODEL_ID =
-  (import.meta.env.VITE_ROBOFLOW_MODEL_ID as string | undefined) ||
-  "pine-disease-classification-qmgil/1";
-
-
-/**
- * CrowdReport 타입이 현재 image_url을 명시적으로 가지고 있지 않을 수 있으므로,
- * Supabase/모바일 신고 연동 시 흔히 쓰는 후보 필드들을 안전하게 확인한다.
- */
 function getReportImageUrl(report?: CrowdReport): string {
   if (!report) return "";
 
@@ -141,153 +93,22 @@ function getReportCoordinateText(report?: CrowdReport): string {
   return "좌표 정보 없음";
 }
 
-function normalizeConfidence(confidence: number | undefined): number {
-  if (!confidence || Number.isNaN(confidence)) return 0;
-  return confidence <= 1 ? confidence * 100 : confidence;
-}
+function getReportStatusClass(
+  status: CrowdReport["status"]
+): string {
+  switch (status) {
+    case "접수 완료":
+      return "bg-sky-100 text-sky-700";
 
-function parseRoboflowResult(result: RoboflowRawResult): ParsedAiResult {
-  let label = result.top || "알 수 없음";
-  let score = 0;
-  const normalizedPredictions: RoboflowPrediction[] = [];
+    case "조사 완료":
+      return "bg-amber-100 text-amber-700";
 
-  const predictions = result.predictions;
+    case "방제 완료":
+      return "bg-emerald-100 text-emerald-700";
 
-  if (Array.isArray(predictions) && predictions.length > 0) {
-    predictions.forEach((prediction) => {
-      normalizedPredictions.push(prediction);
-    });
-
-    const sorted = [...predictions].sort(
-      (a, b) => normalizeConfidence(b.confidence) - normalizeConfidence(a.confidence)
-    );
-
-    const first = sorted[0];
-    label = first.class || first.label || label;
-    score = normalizeConfidence(first.confidence);
-  } else if (
-    predictions &&
-    typeof predictions === "object" &&
-    !Array.isArray(predictions)
-  ) {
-    const predictionMap = predictions as Record<string, { confidence?: number }>;
-    const labels = Object.keys(predictionMap);
-
-    if (labels.length > 0) {
-      const bestLabel = labels.reduce((best, current) => {
-        const bestScore = normalizeConfidence(predictionMap[best]?.confidence);
-        const currentScore = normalizeConfidence(predictionMap[current]?.confidence);
-        return currentScore > bestScore ? current : best;
-      }, labels[0]);
-
-      label = bestLabel;
-      score = normalizeConfidence(predictionMap[bestLabel]?.confidence);
-
-      labels.forEach((itemLabel) => {
-        normalizedPredictions.push({
-          class: itemLabel,
-          confidence: predictionMap[itemLabel]?.confidence,
-        });
-      });
-    }
+    default:
+      return "bg-slate-100 text-slate-600";
   }
-
-  const normalizedLabel = String(label).toLowerCase();
-  const infectedKeywordMatched = [
-    "infected",
-    "diseased",
-    "disease",
-    "pine wilt",
-    "wilt",
-    "감염",
-    "감염의심",
-    "재선충",
-  ].some((keyword) => normalizedLabel.includes(keyword));
-
-  const level: ParsedAiResult["level"] =
-    infectedKeywordMatched || score >= 75 ? "danger" : score >= 45 ? "warning" : "safe";
-
-  const message =
-    level === "danger"
-      ? `소나무 재선충병 감염 의심 - 확률 ${score.toFixed(1)}%`
-      : level === "warning"
-        ? `추가 현장 확인 필요 - 신뢰도 ${score.toFixed(1)}%`
-        : `정상 소나무 식생 또는 감염 가능성 낮음 - 신뢰도 ${score.toFixed(1)}%`;
-
-  return {
-    ok: true,
-    label,
-    score,
-    level,
-    message,
-    raw: result,
-    predictions: normalizedPredictions,
-  };
-}
-
-
-async function requestRoboflowAnalysis(
-  imageUrl: string,
-  recordId: string
-): Promise<ParsedAiResult> {
-  if (!imageUrl) {
-    throw new Error("분석할 image_url이 없습니다.");
-  }
-
-  const { data } = await axios.post(
-    "/api/roboflow",
-    {
-      imageUrl,
-      recordId,
-    },
-    {
-      timeout: 45000,
-    }
-  );
-
-  return {
-    ok: data.ok ?? true,
-    label: data.label ?? "unknown",
-    score: Number(data.score ?? 0),
-    level: data.level ?? "warning",
-    message:
-      data.message ??
-      `AI 판독 완료 - ${data.label ?? "unknown"} / ${Number(
-        data.score ?? 0
-      ).toFixed(1)}%`,
-    raw: data.raw ?? data,
-    predictions: data.raw?.predictions ?? [],
-  };
-}
-
-function getRiskTheme(level: ParsedAiResult["level"] | undefined) {
-  if (level === "danger") {
-    return {
-      panel: "bg-rose-50 border-rose-200 text-rose-900",
-      badge: "bg-rose-600 text-white",
-      bar: "bg-rose-500",
-      icon: <ShieldAlert size={18} />,
-      label: "고위험",
-    };
-  }
-
-  if (level === "warning") {
-    return {
-      panel: "bg-amber-50 border-amber-200 text-amber-900",
-      badge: "bg-amber-500 text-white",
-      bar: "bg-amber-500",
-      icon: <AlertTriangle size={18} />,
-      label: "주의",
-    };
-  }
-
-  return {
-    panel: "bg-emerald-50 border-emerald-200 text-emerald-900",
-    badge: "bg-emerald-600 text-white",
-    bar: "bg-emerald-500",
-    icon: <Leaf size={18} />,
-    label: "낮음",
-  };
 }
 
 export default function FieldSection({
@@ -298,7 +119,6 @@ export default function FieldSection({
   onCancelDispatch,
   onUpdateWorkerStatus,
   onUpdateReportStatus,
-  onConfirmInfection,
 }: FieldSectionProps) {
   const [activeTab, setActiveTab] = useState<"tracking" | "crowd" | "mobile">(
     "tracking"
@@ -321,6 +141,38 @@ export default function FieldSection({
   );
   const selectedReport = reports.find((r) => r.id === selectedReportId) || reports[0];
 
+  useEffect(() => {
+    if (reports.length === 0) {
+      setSelectedReportId("");
+      return;
+    }
+
+    const selectedReportStillExists =
+      reports.some(
+        report =>
+          report.id === selectedReportId
+      );
+
+    if (!selectedReportStillExists) {
+      setSelectedReportId(
+        reports[0].id
+      );
+    }
+  }, [
+    reports,
+    selectedReportId,
+  ]);
+
+  const nextReportStatus:
+    CrowdReport["status"] | null =
+    selectedReport?.status ===
+      "접수 완료"
+      ? "조사 완료"
+      : selectedReport?.status ===
+        "조사 완료"
+        ? "방제 완료"
+        : null;
+
   const selectedImageUrl = useMemo(
     () => getReportImageUrl(selectedReport),
     [selectedReport]
@@ -331,19 +183,8 @@ export default function FieldSection({
     [selectedReport]
   );
 
-  const [aiResult, setAiResult] = useState<ParsedAiResult | null>(null);
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string>("");
-  const [isRawOpen, setIsRawOpen] = useState(false);
 
-  useEffect(() => {
-    setAiResult(null);
-    setAiError("");
-    setIsRawOpen(false);
-  }, [selectedReportId]);
 
-  const aiTheme = getRiskTheme(aiResult?.level);
-  const scorePercent = Math.max(0, Math.min(100, aiResult?.score || 0));
 
   const handleGenerateReport = (e: React.FormEvent) => {
     e.preventDefault();
@@ -370,74 +211,18 @@ export default function FieldSection({
     setGeneratedReport(doc);
   };
 
-  const handleConfirmReportToInfection = (rep: CrowdReport) => {
-    onConfirmInfection(rep);
-    onUpdateReportStatus(rep.id, "확진전환");
-  };
-
-  const handleRunAiAnalysis = async () => {
-    if (!selectedReport) {
-      alert("먼저 제보를 선택해 주세요.");
-      return;
-    }
-
-    if (!selectedImageUrl) {
-      alert(
-        "선택된 제보에 이미지 URL이 없습니다. CrowdReport 샘플 데이터에 photoUrl 또는 imageUrl을 연결해 주세요."
-      );
-      return;
-    }
-
-    setIsAiLoading(true);
-    setAiError("");
-    setAiResult(null);
-    setIsRawOpen(false);
-
-    try {
-      const result = await requestRoboflowAnalysis(
-        selectedImageUrl,
-        String(selectedReport.id)
-      );
-
-      setAiResult(result);
-    } catch (error) {
-      console.error(error);
-
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Roboflow AI 분석 중 알 수 없는 오류가 발생했습니다.";
-
-      setAiError(message);
-
-      setAiResult({
-        ok: false,
-        label: "분석 실패",
-        score: 0,
-        level: "warning",
-        message: "⚠️ 이미지를 불러올 수 없거나 분석에 실패했습니다.",
-        raw: null,
-        predictions: [],
-        error: message,
-      });
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
-
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 space-y-6">
       {/* Category Tabs */}
-      <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 text-sm font-bold text-slate-600 max-w-lg">
-        <button
-          onClick={() => setActiveTab("tracking")}
-          className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "tracking"
-            ? "bg-white text-emerald-950 shadow-sm"
-            : "hover:text-slate-900"
-            }`}
-        >
-          🚶 요원 GPS 및 출동배정
-        </button>
+      <div className="flex w-full max-w-lg rounded-2xl border border-slate-200 bg-slate-100 p-1 text-sm font-bold text-slate-600">        <button
+        onClick={() => setActiveTab("tracking")}
+        className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "tracking"
+          ? "bg-white text-emerald-950 shadow-sm"
+          : "hover:text-slate-900"
+          }`}
+      >
+        🚶 요원 GPS 및 출동배정
+      </button>
         <button
           onClick={() => setActiveTab("crowd")}
           className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "crowd"
@@ -465,7 +250,7 @@ export default function FieldSection({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-6"
+            className="grid w-full min-w-0 grid-cols-1 gap-6 lg:grid-cols-12"
           >
             {/* Real-time Worker Dispatch (FR-FLD-002) */}
             <div className="lg:col-span-7 space-y-4">
@@ -531,11 +316,11 @@ export default function FieldSection({
                             {assignment.distanceKm === null
                               ? "-"
                               : `${assignment.distanceKm.toLocaleString(
-                                  "ko-KR",
-                                  {
-                                    maximumFractionDigits: 1,
-                                  }
-                                )}km`}
+                                "ko-KR",
+                                {
+                                  maximumFractionDigits: 1,
+                                }
+                              )}km`}
                           </td>
 
                           <td className="py-3.5 px-3 font-mono">
@@ -723,15 +508,14 @@ export default function FieldSection({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-6"
-          >
+            className="grid w-full min-w-0 grid-cols-1 items-start gap-4 xl:grid-cols-12"          >
             {/* Reports List */}
-            <div className="lg:col-span-7 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
-              <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-                👥 크라우드 소싱 기반 대국민 시민 제보대장 (FLD-004)
+            <div className="min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-3">
+              <h3 className="mb-4 flex items-center gap-2 text-sm font-black text-slate-900">
+                👥 시민 제보대장 (FLD-004)
               </h3>
 
-              <div className="space-y-4">
+              <div className="max-h-[calc(100vh-230px)] space-y-3 overflow-y-auto pr-1">
                 {reports.map((rep) => (
                   <div
                     key={rep.id}
@@ -756,12 +540,9 @@ export default function FieldSection({
 
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-black ${rep.status === "접수"
-                            ? "bg-sky-100 text-sky-700"
-                            : rep.status === "검토"
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-emerald-100 text-emerald-700"
-                            }`}
+                          className={`rounded px-2 py-0.5 text-[10px] font-black ${getReportStatusClass(
+                            rep.status
+                          )}`}
                         >
                           {rep.status}
                         </span>
@@ -776,7 +557,7 @@ export default function FieldSection({
             </div>
 
             {/* Selected report detail board (FR-FLD-005, FR-FLD-006) */}
-            <div className="lg:col-span-5 bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
+            <div className="min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-5">
               <h3 className="text-sm font-extrabold text-slate-800 border-b border-slate-100 pb-3 mb-4 flex items-center gap-1.5">
                 🔎 시민 제보 원문 정밀 검증 (FLD-005)
               </h3>
@@ -822,106 +603,51 @@ export default function FieldSection({
                     </div>
                   </div>
 
-                  {/* Streamlit AI analysis migration panel */}
-                  <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white shadow-sm">
-                    <div className="bg-gradient-to-br from-emerald-950 via-emerald-900 to-slate-900 text-white p-4">
+                  {/* 시민 제보 현장 이미지 패널 */}
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="bg-gradient-to-br from-emerald-950 via-emerald-900 to-slate-900 p-4 text-white">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="inline-flex items-center gap-1.5 bg-emerald-400/15 border border-emerald-400/20 text-emerald-100 px-2.5 py-1 rounded-full text-[10px] font-black mb-2">
-                            <Brain size={13} />
-                            ROBOFLOW AI VERIFICATION
-                          </div>
                           <h4 className="text-sm font-black">
-                            🤖 소나무 정밀 AI 분석 및 시각화
+                            📷 시민 제보 현장 이미지
                           </h4>
-                          <p className="text-[11px] text-emerald-100 mt-1 leading-relaxed">
-                            선택된 시민 제보 이미지 URL을 Roboflow 모델에 전달해
-                            감염 의심 라벨과 신뢰도를 검증합니다.
+
+                          <p className="mt-1 text-[11px] text-emerald-100">
+                            모바일 신고 앱에서 전송된 현장 사진입니다.
                           </p>
                         </div>
 
-                        <span
-                          className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-black ${ROBOFLOW_API_KEY
-                            ? "bg-emerald-400 text-emerald-950"
-                            : "bg-rose-400 text-white"
-                            }`}
-                        >
-                          {ROBOFLOW_API_KEY ? "API KEY OK" : "API KEY 없음"}
+                        <span className="shrink-0 rounded-full bg-rose-400 px-2.5 py-1 text-[10px] font-black text-white">
+                          AI 판단 {selectedReport.aiProbability}%
                         </span>
                       </div>
                     </div>
 
-                    <div className="p-4 space-y-4">
-                      <div className="rounded-2xl border border-slate-200 bg-slate-950 overflow-hidden relative min-h-[240px] flex items-center justify-center">
+                    <div className="space-y-4 p-4">
+                      <div className="relative flex min-h-[240px] items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-950">
                         {selectedImageUrl ? (
-                          <>
-                            <img
-                              src={selectedImageUrl}
-                              alt="시민 제보 현장 이미지"
-                              className="w-full max-h-[320px] object-contain bg-slate-950"
-                              onError={(event) => {
-                                event.currentTarget.style.display = "none";
-                              }}
+                          <img
+                            src={selectedImageUrl}
+                            alt="시민 제보 현장 이미지"
+                            className="max-h-[320px] w-full object-contain bg-slate-950"
+                            onError={(event) => {
+                              event.currentTarget.style.display =
+                                "none";
+                            }}
+                          />
+                        ) : (
+                          <div className="p-6 text-center text-slate-400">
+                            <ImageIcon
+                              size={32}
+                              className="mx-auto mb-2 opacity-70"
                             />
 
-                            {aiResult?.predictions
-                              ?.filter(
-                                (prediction) =>
-                                  prediction.x &&
-                                  prediction.y &&
-                                  prediction.width &&
-                                  prediction.height &&
-                                  aiResult.raw?.image &&
-                                  typeof aiResult.raw.image === "object"
-                              )
-                              .map((prediction, index) => {
-                                const imageWidth = aiResult.raw?.image?.width || 1;
-                                const imageHeight = aiResult.raw?.image?.height || 1;
+                            <p className="font-bold">
+                              등록된 현장 이미지가 없습니다.
+                            </p>
 
-                                const left =
-                                  (((prediction.x || 0) -
-                                    (prediction.width || 0) / 2) /
-                                    imageWidth) *
-                                  100;
-                                const top =
-                                  (((prediction.y || 0) -
-                                    (prediction.height || 0) / 2) /
-                                    imageHeight) *
-                                  100;
-                                const width =
-                                  ((prediction.width || 0) / imageWidth) * 100;
-                                const height =
-                                  ((prediction.height || 0) / imageHeight) * 100;
-
-                                return (
-                                  <div
-                                    key={`${prediction.class || prediction.label}-${index}`}
-                                    className="absolute border-2 border-rose-400 bg-rose-500/10 rounded-lg"
-                                    style={{
-                                      left: `${left}%`,
-                                      top: `${top}%`,
-                                      width: `${width}%`,
-                                      height: `${height}%`,
-                                    }}
-                                  >
-                                    <span className="absolute -top-6 left-0 bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-md whitespace-nowrap">
-                                      {prediction.class || prediction.label || "target"} ·{" "}
-                                      {normalizeConfidence(
-                                        prediction.confidence
-                                      ).toFixed(1)}
-                                      %
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                          </>
-                        ) : (
-                          <div className="text-center text-slate-400 p-6">
-                            <ImageIcon size={32} className="mx-auto mb-2 opacity-70" />
-                            <p className="font-bold">등록된 image_url이 없습니다.</p>
-                            <p className="text-[11px] mt-1">
-                              Supabase pine_records 또는 CrowdReport 데이터에
-                              image_url 필드를 연결하세요.
+                            <p className="mt-1 text-[11px]">
+                              Supabase pine_records의 image_url을 확인하세요.
                             </p>
                           </div>
                         )}
@@ -929,189 +655,27 @@ export default function FieldSection({
 
                       <div className="grid grid-cols-2 gap-3">
                         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-black uppercase">
+                          <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-slate-500">
                             <Database size={13} />
                             제보 ID
                           </div>
-                          <p className="text-sm font-black text-slate-900 mt-1 truncate">
+
+                          <p className="mt-1 truncate text-sm font-black text-slate-900">
                             {selectedReport.id}
                           </p>
                         </div>
 
                         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-black uppercase">
+                          <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-slate-500">
                             <MapPin size={13} />
                             좌표
                           </div>
-                          <p className="text-[11px] font-bold text-slate-700 mt-1 leading-relaxed">
+
+                          <p className="mt-1 text-[11px] font-bold leading-relaxed text-slate-700">
                             {selectedCoordinateText}
                           </p>
                         </div>
                       </div>
-
-                      <button
-                        onClick={handleRunAiAnalysis}
-                        disabled={isAiLoading || !selectedImageUrl || !ROBOFLOW_API_KEY}
-                        className={`w-full rounded-2xl py-3 px-4 font-black text-xs flex items-center justify-center gap-2 transition-all ${isAiLoading || !selectedImageUrl || !ROBOFLOW_API_KEY
-                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                          : "bg-emerald-800 hover:bg-emerald-900 text-white shadow-lg"
-                          }`}
-                      >
-                        {isAiLoading ? (
-                          <>
-                            <Loader2 size={15} className="animate-spin" />
-                            Roboflow AI 모델이 현장 이미지를 분석하는 중...
-                          </>
-                        ) : (
-                          <>
-                            <Brain size={15} />
-                            Roboflow 정밀 판독 실행
-                          </>
-                        )}
-                      </button>
-
-                      {selectedImageUrl && (
-                        <a
-                          href={selectedImageUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-emerald-700"
-                        >
-                          원본 이미지 새 창에서 열기
-                          <ExternalLink size={12} />
-                        </a>
-                      )}
-
-                      {aiError && (
-                        <div className="rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 p-3 text-[11px] font-bold leading-relaxed flex gap-2">
-                          <AlertTriangle size={15} className="shrink-0 mt-0.5" />
-                          <span>{aiError}</span>
-                        </div>
-                      )}
-
-                      {aiResult && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="space-y-3"
-                        >
-                          <div
-                            className={`rounded-2xl border p-4 ${aiTheme.panel}`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex items-start gap-2">
-                                <div className="mt-0.5">{aiTheme.icon}</div>
-                                <div>
-                                  <p className="text-sm font-black">
-                                    {aiResult.message}
-                                  </p>
-                                  <p className="text-[11px] font-semibold opacity-80 mt-1">
-                                    Streamlit metric 스타일을 React/Tailwind로
-                                    재현한 AI 판독 검증 리포트입니다.
-                                  </p>
-                                </div>
-                              </div>
-
-                              <span
-                                className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${aiTheme.badge}`}
-                              >
-                                {aiTheme.label}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
-                              <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-black uppercase">
-                                <Gauge size={13} />
-                                AI 판독 신뢰도
-                              </div>
-                              <p className="text-2xl font-black text-slate-900 mt-1">
-                                {aiResult.score.toFixed(1)}%
-                              </p>
-                            </div>
-
-                            <div className="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
-                              <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-black uppercase">
-                                <CheckCircle2 size={13} />
-                                판독 라벨
-                              </div>
-                              <p className="text-sm font-black text-slate-900 mt-2 truncate">
-                                {aiResult.label}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                            <div className="flex justify-between items-center mb-2">
-                              <span className="text-[11px] font-black text-slate-600">
-                                위험도 스코어 바
-                              </span>
-                              <span className="text-[11px] font-black text-slate-900">
-                                {scorePercent.toFixed(1)}%
-                              </span>
-                            </div>
-                            <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
-                              <motion.div
-                                initial={{ width: 0 }}
-                                animate={{ width: `${scorePercent}%` }}
-                                transition={{ duration: 0.7, ease: "easeOut" }}
-                                className={`h-full rounded-full ${aiTheme.bar}`}
-                              />
-                            </div>
-                            <div className="flex justify-between text-[9px] text-slate-400 font-bold mt-1.5">
-                              <span>낮음</span>
-                              <span>주의</span>
-                              <span>고위험</span>
-                            </div>
-                          </div>
-
-                          {aiResult.predictions.length > 0 && (
-                            <div className="rounded-2xl bg-white border border-slate-200 p-4">
-                              <p className="text-[11px] font-black text-slate-500 uppercase mb-3">
-                                분석 결과 데이터 창
-                              </p>
-                              <div className="space-y-2">
-                                {aiResult.predictions.slice(0, 5).map((prediction, index) => (
-                                  <div
-                                    key={`${prediction.class || prediction.label}-${index}`}
-                                    className="flex items-center justify-between gap-3 bg-slate-50 rounded-xl px-3 py-2 border border-slate-100"
-                                  >
-                                    <span className="font-bold text-slate-700 truncate">
-                                      {prediction.class || prediction.label || `result-${index + 1}`}
-                                    </span>
-                                    <span className="font-black text-rose-600">
-                                      {normalizeConfidence(
-                                        prediction.confidence
-                                      ).toFixed(1)}
-                                      %
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="rounded-2xl border border-slate-200 overflow-hidden">
-                            <button
-                              onClick={() => setIsRawOpen(!isRawOpen)}
-                              className="w-full flex items-center justify-between bg-slate-900 text-emerald-300 px-4 py-3 font-mono text-[11px] font-black"
-                            >
-                              <span className="flex items-center gap-1.5">
-                                <FileJson size={14} />
-                                Roboflow 원본 응답 보기
-                              </span>
-                              <span>{isRawOpen ? "접기" : "펼치기"}</span>
-                            </button>
-
-                            {isRawOpen && (
-                              <pre className="max-h-[260px] overflow-auto bg-slate-950 text-emerald-300 text-[10px] p-4 leading-relaxed">
-                                {JSON.stringify(aiResult.raw, null, 2)}
-                              </pre>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
                     </div>
                   </div>
 
@@ -1121,44 +685,93 @@ export default function FieldSection({
                       제보 처리 및 대장 연계 (FLD-006)
                     </span>
 
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleConfirmReportToInfection(selectedReport)}
-                        disabled={selectedReport.status === "확진전환"}
-                        className="flex-1 bg-emerald-800 text-white rounded-xl py-3 font-bold hover:bg-emerald-900 disabled:bg-slate-200 disabled:text-slate-400 flex items-center justify-center gap-1.5"
-                      >
-                        <UserCheck size={14} />
-                        <span>확진 대장 전환</span>
-                      </button>
-                      <button
-                        onClick={() => onUpdateReportStatus(selectedReport.id, "반려")}
-                        disabled={
-                          selectedReport.status === "반려" ||
-                          selectedReport.status === "확진전환"
-                        }
-                        className="px-3 border border-slate-200 bg-white hover:bg-slate-50 rounded-xl font-bold text-slate-600 disabled:bg-slate-100 disabled:text-slate-400"
-                      >
-                        반려
-                      </button>
-                    </div>
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <span className="block text-[11px] font-bold tracking-wider text-slate-400">
+                        민원 처리 단계
+                      </span>
 
-                    {selectedReport.status === "확진전환" && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="bg-emerald-50 text-emerald-800 p-3 rounded-xl border border-emerald-100 text-[11px] font-medium leading-relaxed"
-                      >
-                        📬 <b>제보자 알림 자동 발송 완료:</b> 시민{" "}
-                        {selectedReport.reporter}님께 "소나무재선충 확진 확인에
-                        따른 방제 배정" 감사 피드백 SMS가 자동 전송되었습니다.
-                        (FR-FLD-006 연계)
-                      </motion.div>
-                    )}
+                      {nextReportStatus ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void onUpdateReportStatus(
+                              selectedReport.id,
+                              nextReportStatus
+                            )
+                          }
+                          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-800 py-3 font-bold text-white hover:bg-emerald-900"
+                        >
+                          <UserCheck size={14} />
+
+                          <span>
+                            {nextReportStatus} 처리
+                          </span>
+                        </button>
+                      ) : (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center text-xs font-bold text-emerald-800">
+                          <CheckCircle2
+                            size={16}
+                            className="mx-auto mb-1"
+                          />
+
+                          방제 처리가 완료된 민원입니다.
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : (
                 <div className="h-[250px] flex items-center justify-center text-slate-400">
                   제보를 선택해 주십시오.
+                </div>
+              )}
+            </div>
+
+            {/* 오른쪽 시민 제보 위치 지도 */}
+            <div className="min-w-0 self-start rounded-3xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-4">
+              <h3 className="mb-4 flex items-center gap-2 border-b border-slate-100 pb-3 text-sm font-extrabold text-slate-800">
+                <MapPin
+                  size={16}
+                  className="text-rose-500"
+                />
+                시민 제보 위치 지도
+              </h3>
+
+              <div className="h-[430px] w-full min-w-0">
+                <LeafletMap
+                  records={reports}
+                  selectedRecordId={selectedReport?.id}
+                  onMarkerClick={(record) => {
+                    setSelectedReportId(record.id);
+                  }}
+                />
+              </div>
+
+              {selectedReport ? (
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-[10px] font-black uppercase text-slate-400">
+                      위도
+                    </div>
+
+                    <div className="mt-1 break-all font-mono text-xs font-bold text-slate-800">
+                      {selectedReport.latitude ?? "좌표 없음"}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-[10px] font-black uppercase text-slate-400">
+                      경도
+                    </div>
+
+                    <div className="mt-1 break-all font-mono text-xs font-bold text-slate-800">
+                      {selectedReport.longitude ?? "좌표 없음"}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center text-xs font-bold text-slate-400">
+                  지도에서 확인할 시민 제보가 없습니다.
                 </div>
               )}
             </div>
@@ -1172,7 +785,7 @@ export default function FieldSection({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+            className="grid w-full min-w-0 grid-cols-1 gap-6 lg:grid-cols-2"
           >
             {/* Mobile frame emulator */}
             <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex justify-center">
@@ -1317,6 +930,6 @@ export default function FieldSection({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </div >
   );
 }

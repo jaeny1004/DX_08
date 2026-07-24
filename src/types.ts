@@ -57,17 +57,24 @@ export interface WorkerStatus {
   lastActive: string;
 }
 
+export type CrowdReportStatus =
+  | "접수 완료"
+  | "조사 완료"
+  | "방제 완료";
+
 export interface CrowdReport {
   id: string;
-  title: string;
-  region: string;
   reporter: string;
   date: string;
-  status: "접수" | "검토" | "확진전환" | "반려";
-  aiProbability: number;
+  title: string;
+  region: string;
   description: string;
-  photoUrl?: string;
 
+  status: CrowdReportStatus;
+
+  aiProbability: number;
+
+  photoUrl?: string;
   latitude?: number;
   longitude?: number;
   phone_number?: string;
@@ -274,12 +281,6 @@ export const initialWorkers: WorkerStatus[] = [
   { id: "W-102", name: "박조사", region: "경남 밀양 산내면", status: "출동", battery: 82, progress: 40, distance: "3.4km", lastActive: "14:29" },
   { id: "W-103", name: "이요원", region: "전남 순천 승주읍", status: "대기", battery: 100, progress: 0, distance: "-", lastActive: "14:00" },
   { id: "W-104", name: "최예찰", region: "강원 원주 신림면", status: "복귀", battery: 45, progress: 100, distance: "8.1km", lastActive: "14:31" },
-];
-
-export const initialCrowdReports: CrowdReport[] = [
-  { id: "CR-9204", title: "학구산 정상 등산로 부근 소나무 집단 변색", region: "전남 순천시 서면", reporter: "이민우", date: "2026-07-07", status: "검토", aiProbability: 84, description: "등산로 우측 20m 지점에 잎이 적갈색으로 완전히 말라버린 소나무 3그루가 밀집해 있습니다." },
-  { id: "CR-9202", title: "농장 경계지 해송 고사 의심", region: "경북 포항시 기계면", reporter: "박순옥", date: "2026-07-06", status: "접수", aiProbability: 76, description: "송진이 전혀 나오지 않고 잎 끝부터 노랗게 타들어가고 있습니다." },
-  { id: "CR-9195", title: "밀양강변 인근 소나무 단일 고사", region: "경남 밀양시 삼문동", reporter: "최범수", date: "2026-07-04", status: "확진전환", aiProbability: 92, description: "강변 자전거도로 인근 소나무 가변이 급속히 일어남." },
 ];
 
 export const initialControlTasks: ControlTask[] = [
