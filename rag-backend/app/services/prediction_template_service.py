@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import json
-import subprocess
 from pathlib import Path
 from typing import Any
 
+from app.services.prediction_report_generator import (
+    generate_single_prediction_report,
+)
 from app.services.report_draft_service import (
     load_draft,
     save_draft,
@@ -12,12 +13,6 @@ from app.services.report_draft_service import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-REPORT_PYTHON = PROJECT_ROOT / "report-venv" / "bin" / "python"
-SINGLE_GENERATOR = (
-    PROJECT_ROOT
-    / "scripts"
-    / "prediction_report_single.py"
-)
 GENERATED_DRAFT_ROOT = (
     PROJECT_ROOT
     / "rag-backend"
@@ -48,18 +43,6 @@ def _read_single_grid_id(
         ) from exc
 
 
-def _validate_runtime() -> None:
-    if not REPORT_PYTHON.is_file():
-        raise FileNotFoundError(
-            f"보고서 가상환경 Python이 없습니다: {REPORT_PYTHON}"
-        )
-
-    if not SINGLE_GENERATOR.is_file():
-        raise FileNotFoundError(
-            f"단일 보고서 생성기가 없습니다: {SINGLE_GENERATOR}"
-        )
-
-
 def apply_prediction_template(
     draft_id: str,
 ) -> dict[str, Any]:
@@ -70,92 +53,36 @@ def apply_prediction_template(
             "현재 1차 연결은 신규 확산위험 분석 보고서만 지원합니다."
         )
 
-    _validate_runtime()
-
     center_grid_id = _read_single_grid_id(draft)
     year = int(draft.get("year") or 2026)
 
     draft_directory = GENERATED_DRAFT_ROOT / draft_id
     output_directory = draft_directory / "prediction_template"
-    result_json = draft_directory / "prediction_template_result.json"
 
     draft_directory.mkdir(parents=True, exist_ok=True)
     output_directory.mkdir(parents=True, exist_ok=True)
 
-    runner_code = r"""
-import importlib.util
-import json
-import sys
-from pathlib import Path
-
-script_path = Path(sys.argv[1])
-center_grid_id = int(sys.argv[2])
-year = int(sys.argv[3])
-output_directory = Path(sys.argv[4])
-result_json = Path(sys.argv[5])
-
-spec = importlib.util.spec_from_file_location(
-    "prediction_report_single_runtime",
-    script_path,
-)
-if spec is None or spec.loader is None:
-    raise RuntimeError(
-        f"생성기를 불러올 수 없습니다: {script_path}"
+    data_summary = draft.get("data_summary")
+    center_metrics = (
+        data_summary.get("center_grid")
+        if isinstance(data_summary, dict)
+        and isinstance(data_summary.get("center_grid"), dict)
+        else {}
     )
-
-module = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = module
-spec.loader.exec_module(module)
-
-result = module.generate_single_prediction_report(
-    center_grid_id=center_grid_id,
-    year=year,
-    output_root=output_directory,
-    report_no=1,
-)
-
-result_json.write_text(
-    json.dumps(result, ensure_ascii=False, indent=2),
-    encoding="utf-8",
-)
-"""
-
-    completed = subprocess.run(
-        [
-            str(REPORT_PYTHON),
-            "-c",
-            runner_code,
-            str(SINGLE_GENERATOR),
-            str(center_grid_id),
-            str(year),
-            str(output_directory),
-            str(result_json),
-        ],
-        cwd=str(PROJECT_ROOT),
-        text=True,
-        capture_output=True,
-        timeout=300,
-        check=False,
-    )
-
-    if completed.returncode != 0:
-        detail = (
-            completed.stderr.strip()
-            or completed.stdout.strip()
-            or "알 수 없는 생성 오류"
-        )
-        raise RuntimeError(
-            "기존 양식 보고서 생성에 실패했습니다.\n"
-            f"{detail}"
-        )
-
-    if not result_json.is_file():
-        raise RuntimeError(
-            f"생성 결과 JSON이 없습니다: {result_json}"
-        )
-
-    result = json.loads(
-        result_json.read_text(encoding="utf-8")
+    # 기존 생성기는 후보 GeoJSON에서 risk_score/risk_grade와
+    # access_score_v3만 실제 지표에 덮어썼다. draft의 정규화된 다른
+    # 값까지 전달하면 기존 보고서 수치가 달라지므로 같은 입력만 넘긴다.
+    candidate_metrics = {
+        "risk_score": center_metrics.get("risk_score"),
+        "risk_grade": center_metrics.get("risk_grade"),
+        "access_score_v3": center_metrics.get("access_score"),
+    }
+    result = generate_single_prediction_report(
+        center_grid_id=center_grid_id,
+        year=year,
+        output_root=output_directory,
+        report_no=1,
+        candidate_metrics=candidate_metrics,
     )
 
     docx_path = Path(result["docx_path"]).resolve()
