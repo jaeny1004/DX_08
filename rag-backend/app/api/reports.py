@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import csv
+import json
 import re
 import zipfile
 from io import BytesIO
@@ -10,7 +10,9 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, Response, StreamingResponse
+from sqlalchemy import text
 
+from app.core.database import SessionLocal
 from app.services.report_excel_service import (
     build_linked_reports_workbook,
     build_single_report_workbook,
@@ -77,31 +79,36 @@ def _report_directory(report_type: str) -> Path:
     return directory
 
 
-def _csv_path(report_type: str) -> Path:
-    path = _report_directory(report_type) / "문서목록.csv"
-
-    if not path.is_file():
-        raise HTTPException(
-            status_code=500,
-            detail=f"문서목록.csv를 찾을 수 없습니다: {path}",
-        )
-
-    return path
-
-
 def _read_rows(report_type: str) -> list[dict[str, str]]:
-    path = _csv_path(report_type)
+    # report_type 필터만 SQL WHERE로 옮기고, 나머지 필터링(_matches_filters)과
+    # 3종 연계 판정(_linked_status_for_document 등)은 그대로 Python에서 처리한다.
+    with SessionLocal() as session:
+        rows = session.execute(
+            text(
+                "select document_no, file_name, year, center_grid_id, "
+                "sido_name, sigungu_name, data "
+                "from reports where report_type = :report_type "
+                "order by document_no::int"
+            ),
+            {"report_type": report_type},
+        ).mappings().all()
 
-    with path.open("r", encoding="utf-8-sig", newline="") as file:
-        reader = csv.DictReader(file)
-        return [
-            {
-                str(key).strip(): (value or "").strip()
-                for key, value in row.items()
-                if key is not None
-            }
-            for row in reader
-        ]
+    result: list[dict[str, str]] = []
+    for row in rows:
+        merged: dict[str, str] = {
+            "document_no": row["document_no"],
+            "file_name": row["file_name"],
+            "year": row["year"],
+            "center_grid_id": row["center_grid_id"],
+            "sido_name": row["sido_name"],
+            "sigungu_name": row["sigungu_name"],
+        }
+        data_field = row["data"]
+        if isinstance(data_field, str):
+            data_field = json.loads(data_field)
+        merged.update(data_field or {})
+        result.append(merged)
+    return result
 
 
 def _normalize_risk_grade(value: str | None) -> str:

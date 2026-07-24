@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import json
 import math
 import re
@@ -14,7 +13,10 @@ from typing import Any
 
 from docx import Document
 from PIL import Image, ImageDraw, ImageFont
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
+from app.core.database import SessionLocal
 from app.services.report_draft_service import (
     ALIASES,
     CANDIDATE_GEOJSON,
@@ -396,15 +398,77 @@ def get_template_file(draft_id: str, file_format: str) -> Path:
     return path
 
 
-def _next_document_no(csv_path: Path) -> str:
-    maximum = 0
-    if csv_path.is_file():
-        with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
-            for row in csv.DictReader(file):
-                value = str(row.get("document_no", "")).strip()
-                if value.isdigit():
-                    maximum = max(maximum, int(value))
-    return str(maximum + 1)
+def _next_document_no(session, report_type: str) -> str:
+    result = session.execute(
+        text(
+            "select coalesce(max(document_no::int), 0) + 1 "
+            "from reports where report_type = :report_type"
+        ),
+        {"report_type": report_type},
+    ).scalar()
+    return str(result)
+
+
+def _insert_report_row(
+    *,
+    report_type: str,
+    year: str,
+    center_grid_id: str,
+    sido_name: str,
+    sigungu_name: str,
+    file_stem_suffix: str,
+    data_fields: dict[str, Any],
+) -> tuple[str, str, str]:
+    """document_no를 계산해 reports에 insert한다.
+
+    unique(report_type, document_no) 충돌 시 번호를 다시 계산해 한 번만
+    재시도한다. 두 번째도 실패하면 무한 재시도하지 않고 그대로 실패시킨다.
+    """
+    last_error: IntegrityError | None = None
+    for attempt in (1, 2):
+        with SessionLocal() as session:
+            document_no = _next_document_no(session, report_type)
+            file_stem = f"{document_no}_{file_stem_suffix}"
+            pdf_name = f"{file_stem}.pdf"
+            try:
+                session.execute(
+                    text(
+                        """
+                        insert into reports
+                            (report_type, document_no, file_name, year,
+                             center_grid_id, sido_name, sigungu_name, data)
+                        values
+                            (:report_type, :document_no, :file_name, :year,
+                             :center_grid_id, :sido_name, :sigungu_name, cast(:data as jsonb))
+                        """
+                    ),
+                    {
+                        "report_type": report_type,
+                        "document_no": document_no,
+                        "file_name": pdf_name,
+                        "year": year,
+                        "center_grid_id": center_grid_id,
+                        "sido_name": sido_name,
+                        "sigungu_name": sigungu_name,
+                        "data": json.dumps(data_fields, ensure_ascii=False),
+                    },
+                )
+                session.commit()
+                return document_no, pdf_name, f"{file_stem}.docx"
+            except IntegrityError as exc:
+                session.rollback()
+                is_unique_violation = getattr(exc.orig, "pgcode", None) == "23505"
+                if not is_unique_violation:
+                    raise RuntimeError(
+                        f"보고서 등록 중 예기치 않은 DB 오류가 발생했습니다: {exc.orig}"
+                    ) from exc
+                last_error = exc
+
+    raise RuntimeError(
+        "보고서 문서번호 등록에 두 번 모두 실패했습니다 "
+        f"(report_type={report_type}): "
+        f"{last_error.orig if last_error else '알 수 없는 오류'}"
+    )
 
 
 def register_report(draft_id: str) -> dict[str, Any]:
@@ -418,34 +482,12 @@ def register_report(draft_id: str) -> dict[str, Any]:
     docx_dir = directory / "docx"
     pdf_dir.mkdir(parents=True, exist_ok=True)
     docx_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = directory / "문서목록.csv"
-    document_no = _next_document_no(csv_path)
 
     source_pdf = get_template_file(draft_id, "pdf")
     source_docx = get_template_file(draft_id, "docx")
-    file_stem = f"{document_no}_{draft['year']}_{draft['sigungu_name']}_{REPORT_LABELS[report_type]}"
-    pdf_name = f"{file_stem}.pdf"
-    docx_name = f"{file_stem}.docx"
-    shutil.copy2(source_pdf, pdf_dir / pdf_name)
-    shutil.copy2(source_docx, docx_dir / docx_name)
-
-    default_headers = [
-        "document_no", "file_name", "year", "center_grid_id", "sido_name", "sigungu_name",
-        "risk_score", "risk_grade", "priority_score", "priority_grade", "created_at",
-    ]
-    existing_headers: list[str] = []
-    if csv_path.is_file():
-        with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
-            existing_headers = next(csv.reader(file), [])
-    headers = existing_headers or default_headers
     center = draft["data_summary"].get("center_grid", {})
-    row = {
-        "document_no": document_no,
-        "file_name": pdf_name,
-        "year": str(draft["year"]),
-        "center_grid_id": str(center.get("grid_id", "")),
-        "sido_name": draft["sido_name"],
-        "sigungu_name": draft["sigungu_name"],
+
+    data_fields = {
         "risk_score": _value(center.get("risk_score")),
         "risk_grade": _value(center.get("risk_grade")),
         "priority_score": _value(center.get("priority_score")),
@@ -456,12 +498,19 @@ def register_report(draft_id: str) -> dict[str, Any]:
         "control_status": "방제 결과 등록",
         "survey_datetime": draft["end_date"],
     }
-    write_header = not csv_path.is_file() or csv_path.stat().st_size == 0
-    with csv_path.open("a", encoding="utf-8-sig", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=headers, extrasaction="ignore")
-        if write_header:
-            writer.writeheader()
-        writer.writerow({key: row.get(key, "") for key in headers})
+
+    document_no, pdf_name, docx_name = _insert_report_row(
+        report_type=report_type,
+        year=str(draft["year"]),
+        center_grid_id=str(center.get("grid_id", "")),
+        sido_name=draft["sido_name"],
+        sigungu_name=draft["sigungu_name"],
+        file_stem_suffix=f"{draft['year']}_{draft['sigungu_name']}_{REPORT_LABELS[report_type]}",
+        data_fields=data_fields,
+    )
+
+    shutil.copy2(source_pdf, pdf_dir / pdf_name)
+    shutil.copy2(source_docx, docx_dir / docx_name)
 
     registered = {"report_type": report_type, "document_no": document_no, "file_name": pdf_name}
     draft["status"] = "registered"
