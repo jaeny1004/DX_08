@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import zipfile
 from io import BytesIO
@@ -9,10 +10,11 @@ from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from sqlalchemy import text
 
 from app.core.database import SessionLocal
+from app.core.report_storage import BUCKET, storage_key_for
 from app.services.report_excel_service import (
     build_linked_reports_workbook,
     build_single_report_workbook,
@@ -21,9 +23,18 @@ from app.services.report_excel_service import (
 
 router = APIRouter(prefix="/api/reports", tags=["보고서"])
 
+SIGNED_URL_EXPIRES_IN = 300  # 5분
 
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
-GENERATED_REPORTS_ROOT = BACKEND_ROOT / "data" / "generated_reports"
+_client = None
+
+
+def _storage():
+    global _client
+    if _client is None:
+        from supabase import create_client
+
+        _client = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+    return _client
 
 
 REPORT_CONFIG: dict[str, dict[str, str]] = {
@@ -64,19 +75,6 @@ def _require_report_type(report_type: str) -> dict[str, str]:
             detail=f"지원하지 않는 보고서 유형입니다: {report_type}",
         )
     return config
-
-
-def _report_directory(report_type: str) -> Path:
-    config = _require_report_type(report_type)
-    directory = GENERATED_REPORTS_ROOT / config["directory"]
-
-    if not directory.exists():
-        raise HTTPException(
-            status_code=500,
-            detail=f"보고서 폴더를 찾을 수 없습니다: {directory}",
-        )
-
-    return directory
 
 
 def _read_rows(report_type: str) -> list[dict[str, str]]:
@@ -143,17 +141,16 @@ def _safe_file_name(file_name: str) -> str:
     return name
 
 
-def _file_paths(
+def _storage_keys(
     report_type: str,
     row: dict[str, str],
-) -> dict[str, Path]:
-    directory = _report_directory(report_type)
+) -> dict[str, str]:
     pdf_name = _safe_file_name(row.get("file_name", ""))
     docx_name = Path(pdf_name).with_suffix(".docx").name
 
     return {
-        "pdf": directory / "pdf" / pdf_name,
-        "docx": directory / "docx" / docx_name,
+        "pdf": storage_key_for(report_type, pdf_name),
+        "docx": storage_key_for(report_type, docx_name),
     }
 
 
@@ -161,8 +158,6 @@ def _public_row(
     report_type: str,
     row: dict[str, str],
 ) -> dict[str, Any]:
-    paths = _file_paths(report_type, row)
-
     numeric_fields = {
         "center_annual_count",
         "center_cumulative_count",
@@ -192,11 +187,13 @@ def _public_row(
     )
     result["report_type"] = report_type
     result["report_type_label"] = REPORT_CONFIG[report_type]["label"]
-    result["available_formats"] = [
-        fmt
-        for fmt, path in paths.items()
-        if path.is_file()
-    ] + ["xlsx"]
+    # available_formats는 매 조회마다 Storage에 존재 확인을 하지 않고, 등록/백필
+    # 시점에 저장해둔 값을 그대로 쓴다 (register_report()/backfill_reports_from_csv.py
+    # 참고). 값이 없는 예전 행을 위한 안전한 기본값은 pdf 하나만 가정한다.
+    stored_formats = row.get("available_formats")
+    if not isinstance(stored_formats, list):
+        stored_formats = ["pdf"]
+    result["available_formats"] = list(stored_formats) + ["xlsx"]
 
     return result
 
@@ -586,16 +583,19 @@ def download_linked_report_zip(document_no: str) -> StreamingResponse:
         for report_type in REPORT_CONFIG:
             row = _find_row(report_type, document_no)
             rows_by_type[report_type] = row
-            paths = _file_paths(report_type, row)
+            keys = _storage_keys(report_type, row)
             label = REPORT_CONFIG[report_type]["label"].replace(" ", "_")
 
             for fmt in ("pdf", "docx"):
-                path = paths[fmt]
-                if path.is_file():
-                    archive.write(
-                        path,
-                        arcname=f"{label}/{path.name}",
-                    )
+                pdf_name = _safe_file_name(row.get("file_name", ""))
+                arcname = pdf_name if fmt == "pdf" else Path(pdf_name).with_suffix(".docx").name
+                try:
+                    file_bytes = _storage().storage.from_(BUCKET).download(keys[fmt])
+                except Exception:
+                    # docx는 없는 경우가 많고(백필 데이터는 PDF만 존재), Storage에
+                    # 없으면 로컬 파일이 없던 예전과 동일하게 조용히 건너뛴다.
+                    continue
+                archive.writestr(f"{label}/{arcname}", file_bytes)
 
         linked_workbook = build_linked_reports_workbook(
             prediction_rows=[
@@ -637,26 +637,24 @@ def download_linked_report_zip(document_no: str) -> StreamingResponse:
 def preview_report(
     report_type: str,
     document_no: str,
-) -> FileResponse:
+) -> RedirectResponse:
     row = _find_row(report_type, document_no)
-    pdf_path = _file_paths(report_type, row)["pdf"]
+    pdf_name = _safe_file_name(row.get("file_name", ""))
+    storage_key = _storage_keys(report_type, row)["pdf"]
 
-    if not pdf_path.is_file():
+    try:
+        signed = (
+            _storage()
+            .storage.from_(BUCKET)
+            .create_signed_url(storage_key, SIGNED_URL_EXPIRES_IN)
+        )
+    except Exception as exc:
         raise HTTPException(
             status_code=404,
-            detail=f"PDF 파일을 찾을 수 없습니다: {pdf_path.name}",
-        )
+            detail=f"PDF 파일을 찾을 수 없습니다: {pdf_name}",
+        ) from exc
 
-    return FileResponse(
-        path=pdf_path,
-        media_type=MIME_TYPES["pdf"],
-        headers={
-            "Content-Disposition": _content_disposition(
-                "inline",
-                pdf_path.name,
-            )
-        },
-    )
+    return RedirectResponse(signed["signedURL"])
 
 
 @router.get("/{report_type}/{document_no}/download")
@@ -694,21 +692,24 @@ def download_report(
             },
         )
 
-    path = _file_paths(report_type, row)[fmt]
+    pdf_name = _safe_file_name(row.get("file_name", ""))
+    file_name = pdf_name if fmt == "pdf" else Path(pdf_name).with_suffix(".docx").name
+    storage_key = _storage_keys(report_type, row)[fmt]
 
-    if not path.is_file():
+    try:
+        signed = (
+            _storage()
+            .storage.from_(BUCKET)
+            .create_signed_url(
+                storage_key,
+                SIGNED_URL_EXPIRES_IN,
+                options={"download": file_name},
+            )
+        )
+    except Exception as exc:
         raise HTTPException(
             status_code=404,
-            detail=f"{fmt.upper()} 파일을 찾을 수 없습니다: {path.name}",
-        )
+            detail=f"{fmt.upper()} 파일을 찾을 수 없습니다: {file_name}",
+        ) from exc
 
-    return FileResponse(
-        path=path,
-        media_type=MIME_TYPES[fmt],
-        headers={
-            "Content-Disposition": _content_disposition(
-                "attachment",
-                path.name,
-            )
-        },
-    )
+    return RedirectResponse(signed["signedURL"])

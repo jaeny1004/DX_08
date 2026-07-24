@@ -73,6 +73,10 @@ def _to_report_row(report_type: str, csv_row: dict[str, str]) -> dict:
     if not document_no:
         raise ValueError(f"document_no가 없는 행이 있습니다: {csv_row}")
     data = {k: v for k, v in csv_row.items() if k not in STRUCTURED_KEYS}
+    # 이 백필 대상 CSV들은 DOCX 없이 PDF만 있으므로 available_formats를
+    # 미리 확정해서 저장한다 (app/api/reports.py의 _public_row()가 매 조회마다
+    # Storage 존재 확인을 하지 않고 이 값을 그대로 읽는다).
+    data["available_formats"] = ["pdf"]
     return {
         "report_type": report_type,
         "document_no": document_no,

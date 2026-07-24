@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -17,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import SessionLocal
+from app.core.report_storage import BUCKET, storage_key_for
 from app.services.report_draft_service import (
     ALIASES,
     CANDIDATE_GEOJSON,
@@ -471,6 +473,42 @@ def _insert_report_row(
     )
 
 
+_storage_client = None
+
+
+def _storage():
+    global _storage_client
+    if _storage_client is None:
+        from supabase import create_client
+
+        _storage_client = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+    return _storage_client
+
+
+def _upload_report_file(report_type: str, local_path: Path, filename: str) -> None:
+    """생성된 pdf/docx를 Supabase Storage에도 업로드한다.
+
+    로컬 저장(shutil.copy2)은 당장 병행 유지하는 게 목적이라, 여기서 실패해도
+    register_report() 전체를 실패시키지 않는다 — 업로드가 안 되면 preview/download가
+    나중에 404를 내겠지만, 등록 자체(문서번호 발급, draft 상태 갱신)는 막지 않는다.
+    """
+    content_type = (
+        "application/pdf"
+        if local_path.suffix.lower() == ".pdf"
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    try:
+        storage_key = storage_key_for(report_type, filename)
+        data = local_path.read_bytes()
+        _storage().storage.from_(BUCKET).upload(
+            storage_key,
+            data,
+            {"content-type": content_type, "upsert": "true"},
+        )
+    except Exception as exc:  # noqa: BLE001 - 등록 자체를 막으면 안 되므로 의도적으로 광범위하게 처리
+        print(f"[register_report] Storage 업로드 실패 (로컬 등록은 계속 진행): {report_type}/{filename}: {exc}")
+
+
 def register_report(draft_id: str) -> dict[str, Any]:
     draft = load_draft(draft_id)
     if isinstance(draft.get("registered_report"), dict):
@@ -497,6 +535,8 @@ def register_report(draft_id: str) -> dict[str, Any]:
         "link_status": "UNLINKED",
         "control_status": "방제 결과 등록",
         "survey_datetime": draft["end_date"],
+        # apply_report_template()이 pdf/docx를 둘 다 만들므로 둘 다 있다고 기록한다.
+        "available_formats": ["pdf", "docx"],
     }
 
     document_no, pdf_name, docx_name = _insert_report_row(
@@ -511,6 +551,9 @@ def register_report(draft_id: str) -> dict[str, Any]:
 
     shutil.copy2(source_pdf, pdf_dir / pdf_name)
     shutil.copy2(source_docx, docx_dir / docx_name)
+
+    _upload_report_file(report_type, pdf_dir / pdf_name, pdf_name)
+    _upload_report_file(report_type, docx_dir / docx_name, docx_name)
 
     registered = {"report_type": report_type, "document_no": document_no, "file_name": pdf_name}
     draft["status"] = "registered"
