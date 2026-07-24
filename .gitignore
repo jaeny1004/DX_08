@@ -52,6 +52,9 @@ rag-backend/data/generated_reports/
 Thumbs.db
 __MACOSX/
 
+# Claude Code local session/tool settings (per-developer, not for sharing)
+.claude/
+
 # Root data/ raw source GeoJSON copies (large, regeneratable staging data).
 # Deployed copies used by the app live in public/data/ and rag-backend/data/
 # only — this pattern is anchored to the top-level data/ folder and does not
