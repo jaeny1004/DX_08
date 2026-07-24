@@ -1,20 +1,85 @@
-import React, { useState } from "react";
+import React, {
+  useEffect,
+  useState,
+} from "react";
+import {
+  createClient,
+} from "@supabase/supabase-js";
 import { motion, AnimatePresence } from "motion/react";
-import { 
-  ShieldAlert, 
-  Layers, 
-  MapPin, 
-  Camera, 
-  Plus, 
-  Eye, 
-  Wind, 
-  Thermometer, 
-  Play, 
-  Calendar, 
-  Check, 
-  Trash2 
+import {
+  ShieldAlert,
+  Layers,
+  MapPin,
+  Camera,
+  Plus,
+  Eye,
+  Wind,
+  Thermometer,
+  Play,
+  Calendar,
+  Check,
+  Trash2
 } from "lucide-react";
 import { TreeRecord } from "../types";
+
+const SUPABASE_URL =
+  import.meta.env
+    .VITE_SUPABASE_URL as string;
+
+const SUPABASE_ANON_KEY =
+  import.meta.env
+    .VITE_SUPABASE_ANON_KEY as string;
+
+const supabase =
+  createClient(
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
+  );
+
+const DRONE_BUCKET =
+  "drone-images";
+
+type ThermalPrediction = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+  class: string;
+};
+
+type ThermalDetectionResult = {
+  ok: boolean;
+
+  status:
+  | "INFECTED"
+  | "NORMAL";
+
+  infectedCount: number;
+
+  predictions:
+  ThermalPrediction[];
+
+  image?: {
+    width?: number;
+    height?: number;
+  } | null;
+
+  storage?: {
+    bucket: string;
+    path: string;
+  };
+
+  error?: string;
+};
+
+function confidencePercent(
+  confidence: number,
+): number {
+  return confidence <= 1
+    ? confidence * 100
+    : confidence;
+}
 
 interface MonitoringSectionProps {
   trees: TreeRecord[];
@@ -22,13 +87,13 @@ interface MonitoringSectionProps {
   onUpdateTreeStatus: (id: string, newStatus: TreeRecord["status"]) => void;
 }
 
-export default function MonitoringSection({ 
-  trees, 
-  onAddTree, 
-  onUpdateTreeStatus 
+export default function MonitoringSection({
+  trees,
+  onAddTree,
+  onUpdateTreeStatus
 }: MonitoringSectionProps) {
   const [activeTab, setActiveLayer] = useState<"list" | "drone" | "emergence">("list");
-  
+
   // Tree registration form state (FR-MON-002)
   const [region, setRegion] = useState("");
   const [species, setSpecies] = useState<TreeRecord["species"]>("소나무");
@@ -39,9 +104,84 @@ export default function MonitoringSection({
   const [isRegistering, setIsRegistering] = useState(false);
 
   // Drone Spectral simulation options (FR-MON-004, FR-MON-005)
-  const [droneMode, setDroneMode] = useState<"rgb" | "thermal" | "ndvi">("rgb");
-  const [aiAnalysisRunning, setAiAnalysisRunning] = useState(false);
-  const [aiScore, setAiScore] = useState<number | null>(null);
+  const [droneMode, setDroneMode] =
+    useState<"rgb" | "thermal">("rgb");
+
+  const [rgbFile, setRgbFile] =
+    useState<File | null>(null);
+
+  const [thermalFile, setThermalFile] =
+    useState<File | null>(null);
+
+  const [rgbPreviewUrl, setRgbPreviewUrl] =
+    useState("");
+
+  const [
+    thermalPreviewUrl,
+    setThermalPreviewUrl,
+  ] = useState("");
+
+  const [
+    aiAnalysisRunning,
+    setAiAnalysisRunning,
+  ] = useState(false);
+
+  const [
+    thermalResult,
+    setThermalResult,
+  ] =
+    useState<ThermalDetectionResult | null>(
+      null,
+    );
+
+  const [
+    analysisError,
+    setAnalysisError,
+  ] = useState("");
+
+  const [
+    rgbStoragePath,
+    setRgbStoragePath,
+  ] = useState("");
+
+  const [
+    thermalStoragePath,
+    setThermalStoragePath,
+  ] = useState("");
+
+  // RGB 파일이 선택될 때 미리보기 주소 생성
+  useEffect(() => {
+    if (!rgbFile) {
+      setRgbPreviewUrl("");
+      return;
+    }
+
+    const objectUrl =
+      URL.createObjectURL(rgbFile);
+
+    setRgbPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [rgbFile]);
+
+  // 열화상 파일이 선택될 때 미리보기 주소 생성
+  useEffect(() => {
+    if (!thermalFile) {
+      setThermalPreviewUrl("");
+      return;
+    }
+
+    const objectUrl =
+      URL.createObjectURL(thermalFile);
+
+    setThermalPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [thermalFile]);
 
   // Emergence simulation state (FR-MON-007)
   const [windDirection, setWindDirection] = useState<"NE" | "SW" | "NW" | "SE">("SW");
@@ -67,11 +207,11 @@ export default function MonitoringSection({
       y: Number(gpsY),
       inspector,
       timeline: [
-        { 
-          stage: "현장 제보 등록 (MON-002)", 
-          date: new Date().toLocaleString(), 
-          note: `GPS 등록 완료 (EPSG:5186 가상 투영변화 완료). 피해정도: ${severity}`, 
-          actor: inspector 
+        {
+          stage: "현장 제보 등록 (MON-002)",
+          date: new Date().toLocaleString(),
+          note: `GPS 등록 완료 (EPSG:5186 가상 투영변화 완료). 피해정도: ${severity}`,
+          actor: inspector
         }
       ]
     };
@@ -81,34 +221,209 @@ export default function MonitoringSection({
     setIsRegistering(false);
   };
 
+
+
   const selectedTree = trees.find(t => t.id === selectedTreeId) || trees[0];
 
-  const handleRunAiAnalysis = () => {
-    setAiAnalysisRunning(true);
-    setAiScore(null);
-    setTimeout(() => {
-      setAiAnalysisRunning(false);
-      setAiScore(88.4);
-    }, 1800);
-  };
+  const uploadDroneImage =
+    async (
+      folder:
+        | "rgb"
+        | "thermal",
+      file: File,
+    ): Promise<string> => {
+      const originalExtension =
+        file.name
+          .split(".")
+          .pop()
+          ?.toLowerCase();
 
+      const extension =
+        originalExtension &&
+          [
+            "jpg",
+            "jpeg",
+            "png",
+            "webp",
+          ].includes(
+            originalExtension,
+          )
+          ? originalExtension
+          : "jpg";
+
+      const uploadDate =
+        new Date()
+          .toISOString()
+          .slice(0, 10);
+
+      const filePath =
+        `${folder}/${uploadDate}/` +
+        `${crypto.randomUUID()}.` +
+        extension;
+
+      const {
+        error,
+      } = await supabase
+        .storage
+        .from(DRONE_BUCKET)
+        .upload(
+          filePath,
+          file,
+          {
+            contentType:
+              file.type ||
+              "image/jpeg",
+
+            cacheControl:
+              "3600",
+
+            upsert: false,
+          },
+        );
+
+      if (error) {
+        throw new Error(
+          `${folder} 이미지 업로드 실패: ${error.message}`,
+        );
+      }
+
+      return filePath;
+    };
+
+  const handleRunAiAnalysis =
+    async () => {
+      if (!rgbFile) {
+        setAnalysisError(
+          "RGB 이미지를 선택해 주세요.",
+        );
+        return;
+      }
+
+      if (!thermalFile) {
+        setAnalysisError(
+          "열화상 이미지를 선택해 주세요.",
+        );
+        return;
+      }
+
+      setAiAnalysisRunning(true);
+      setAnalysisError("");
+      setThermalResult(null);
+
+      try {
+        /*
+         * 이미 Storage에 올라간 파일이면
+         * 재업로드하지 않습니다.
+         */
+        let nextRgbPath =
+          rgbStoragePath;
+
+        if (!nextRgbPath) {
+          nextRgbPath =
+            await uploadDroneImage(
+              "rgb",
+              rgbFile,
+            );
+
+          setRgbStoragePath(
+            nextRgbPath,
+          );
+        }
+
+        let nextThermalPath =
+          thermalStoragePath;
+
+        if (!nextThermalPath) {
+          nextThermalPath =
+            await uploadDroneImage(
+              "thermal",
+              thermalFile,
+            );
+
+          setThermalStoragePath(
+            nextThermalPath,
+          );
+        }
+
+        /*
+         * Edge Function에는 파일 자체가 아니라
+         * Storage 경로만 전달합니다.
+         */
+        const {
+          data,
+          error,
+        } =
+          await supabase
+            .functions
+            .invoke<ThermalDetectionResult>(
+              "thermal-detection",
+              {
+                body: {
+                  bucket:
+                    DRONE_BUCKET,
+
+                  path:
+                    nextThermalPath,
+
+                  confidence:
+                    50,
+
+                  overlap:
+                    30,
+                },
+              },
+            );
+
+        if (error) {
+          throw new Error(
+            `Edge Function 호출 실패: ${error.message}`,
+          );
+        }
+
+        if (!data?.ok) {
+          throw new Error(
+            data?.error ??
+            "Roboflow 분석에 실패했습니다.",
+          );
+        }
+
+        setThermalResult(data);
+
+        /*
+         * 분석 후 열화상 탭으로 자동 전환
+         */
+        setDroneMode(
+          "thermal",
+        );
+      } catch (error) {
+        console.error(error);
+
+        setAnalysisError(
+          error instanceof Error
+            ? error.message
+            : "분석 중 오류가 발생했습니다.",
+        );
+      } finally {
+        setAiAnalysisRunning(false);
+      }
+    };
   return (
     <div className="space-y-6">
       {/* Category Tabs */}
       <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200/80 text-sm font-bold text-slate-600 max-w-lg">
-        <button 
+        <button
           onClick={() => setActiveLayer("list")}
           className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "list" ? "bg-white text-emerald-950 shadow-sm" : "hover:text-slate-900"}`}
         >
           🌲 확진목 현황 &amp; 상세 이력
         </button>
-        <button 
+        <button
           onClick={() => setActiveLayer("drone")}
           className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "drone" ? "bg-white text-emerald-950 shadow-sm" : "hover:text-slate-900"}`}
         >
           🚁 AI 드론 스펙트럴 분석
         </button>
-        <button 
+        <button
           onClick={() => setActiveLayer("emergence")}
           className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "emergence" ? "bg-white text-emerald-950 shadow-sm" : "hover:text-slate-900"}`}
         >
@@ -118,7 +433,7 @@ export default function MonitoringSection({
 
       <AnimatePresence mode="wait">
         {activeTab === "list" && (
-          <motion.div 
+          <motion.div
             key="list-view"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -137,7 +452,7 @@ export default function MonitoringSection({
                       PCR 검사 확진 및 감염 강도에 따라 분류된 고사목 격재 좌표 통계
                     </p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setIsRegistering(!isRegistering)}
                     className="bg-emerald-800 text-white rounded-xl px-4 py-2 text-xs font-bold flex items-center gap-1.5 hover:bg-emerald-900 transition-colors"
                   >
@@ -147,7 +462,7 @@ export default function MonitoringSection({
                 </div>
 
                 {isRegistering && (
-                  <motion.form 
+                  <motion.form
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     onSubmit={handleRegisterTree}
@@ -161,8 +476,8 @@ export default function MonitoringSection({
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                       <div className="space-y-1">
                         <label className="font-bold text-slate-600 block">지역 상세 주소</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           required
                           value={region}
                           onChange={(e) => setRegion(e.target.value)}
@@ -172,7 +487,7 @@ export default function MonitoringSection({
                       </div>
                       <div className="space-y-1">
                         <label className="font-bold text-slate-600 block">수종 선택</label>
-                        <select 
+                        <select
                           value={species}
                           onChange={(e) => setSpecies(e.target.value as any)}
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 outline-none font-medium"
@@ -188,9 +503,9 @@ export default function MonitoringSection({
                         <div className="flex gap-4 pt-1 font-bold text-slate-700">
                           {["경", "중", "심"].map((item) => (
                             <label key={item} className="flex items-center gap-1.5 cursor-pointer">
-                              <input 
-                                type="radio" 
-                                name="severity" 
+                              <input
+                                type="radio"
+                                name="severity"
                                 checked={severity === item}
                                 onChange={() => setSeverity(item as any)}
                                 className="accent-emerald-700"
@@ -203,8 +518,8 @@ export default function MonitoringSection({
 
                       <div className="space-y-1">
                         <label className="font-bold text-slate-600 block">담당 요원 (서명자)</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           value={inspector}
                           onChange={(e) => setInspector(e.target.value)}
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 outline-none font-medium"
@@ -213,8 +528,8 @@ export default function MonitoringSection({
 
                       <div className="space-y-1">
                         <label className="font-bold text-slate-600 block">중부 원점 좌표 X (EPSG:5186)</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           value={gpsX}
                           onChange={(e) => setX(e.target.value)}
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 outline-none font-medium font-mono"
@@ -223,8 +538,8 @@ export default function MonitoringSection({
 
                       <div className="space-y-1">
                         <label className="font-bold text-slate-600 block">중부 원점 좌표 Y (EPSG:5186)</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           value={gpsY}
                           onChange={(e) => setY(e.target.value)}
                           className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 outline-none font-medium font-mono"
@@ -233,15 +548,15 @@ export default function MonitoringSection({
                     </div>
 
                     <div className="flex justify-end gap-2 text-xs pt-2">
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={() => setIsRegistering(false)}
                         className="px-3.5 py-2 border border-slate-200 bg-white rounded-xl font-bold text-slate-600"
                       >
                         취소
                       </button>
-                      <button 
-                        type="submit" 
+                      <button
+                        type="submit"
                         className="px-4 py-2 bg-emerald-800 text-white rounded-xl font-bold hover:bg-emerald-900"
                       >
                         대장 추가 등록
@@ -263,8 +578,8 @@ export default function MonitoringSection({
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
                       {trees.map((t) => (
-                        <tr 
-                          key={t.id} 
+                        <tr
+                          key={t.id}
                           onClick={() => setSelectedTreeId(t.id)}
                           className={`hover:bg-slate-50/80 cursor-pointer transition-colors ${selectedTreeId === t.id ? "bg-emerald-50/60" : ""}`}
                         >
@@ -272,14 +587,13 @@ export default function MonitoringSection({
                           <td className="py-3 px-3 truncate max-w-[150px]">{t.region}</td>
                           <td className="py-3 px-3 text-slate-500">{t.species}</td>
                           <td className="py-3 px-3 text-center">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                              t.severity === "심" ? "bg-rose-100 text-rose-700" : t.severity === "중" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${t.severity === "심" ? "bg-rose-100 text-rose-700" : t.severity === "중" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                              }`}>
                               {t.severity}
                             </span>
                           </td>
                           <td className="py-3 px-3 text-right">
-                            <select 
+                            <select
                               value={t.status}
                               onChange={(e) => onUpdateTreeStatus(t.id, e.target.value as any)}
                               onClick={(e) => e.stopPropagation()}
@@ -323,7 +637,7 @@ export default function MonitoringSection({
                         <div key={idx} className="relative">
                           {/* Indicator circle */}
                           <div className="absolute -left-[23px] top-0.5 w-2.5 h-2.5 rounded-full bg-emerald-800 border border-white" />
-                          
+
                           <div className="space-y-1 text-xs">
                             <div className="flex justify-between font-bold text-slate-800">
                               <span>{step.stage}</span>
@@ -348,7 +662,7 @@ export default function MonitoringSection({
 
         {/* Drone Image analyzer simulation (FR-MON-004, FR-MON-005) */}
         {activeTab === "drone" && (
-          <motion.div 
+          <motion.div
             key="drone-view"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -361,29 +675,24 @@ export default function MonitoringSection({
                   🚁 드론 텔레메트리 멀티스펙트럴 분광 뷰어
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  RGB 촬영 이미지, 열화상(Thermal), NDVI(식생지수) 분광 분석 오버레이 시뮬레이터 (FR-MON-004, FR-MON-005)
+                  RGB 실사 이미지와 열화상 이미지를 비교하고,
+                  열 이상 의심목을 AI로 탐지합니다.
                 </p>
               </div>
 
               {/* Spectral toggles */}
               <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold text-slate-600">
-                <button 
+                <button
                   onClick={() => setDroneMode("rgb")}
                   className={`px-3 py-1.5 rounded-lg transition-all ${droneMode === "rgb" ? "bg-white text-slate-950 shadow-sm" : ""}`}
                 >
                   RGB 실사
                 </button>
-                <button 
+                <button
                   onClick={() => setDroneMode("thermal")}
                   className={`px-3 py-1.5 rounded-lg transition-all ${droneMode === "thermal" ? "bg-white text-slate-950 shadow-sm" : ""}`}
                 >
                   열화상 분광
-                </button>
-                <button 
-                  onClick={() => setDroneMode("ndvi")}
-                  className={`px-3 py-1.5 rounded-lg transition-all ${droneMode === "ndvi" ? "bg-white text-slate-950 shadow-sm" : ""}`}
-                >
-                  NDVI 식생
                 </button>
               </div>
             </div>
@@ -392,43 +701,132 @@ export default function MonitoringSection({
               <div className="lg:col-span-8">
                 {/* Simulated Camera Feed Grid Canvas */}
                 <div className="bg-slate-900 rounded-3xl aspect-[16/9] w-full relative overflow-hidden flex items-center justify-center border border-slate-800">
-                  
-                  {/* Dynamic Color filter based on Spectral mode */}
+
                   {droneMode === "rgb" && (
-                    <div className="absolute inset-0 bg-gradient-to-tr from-emerald-900 via-emerald-850 to-green-950 flex flex-col justify-between p-6">
-                      <div className="relative border border-emerald-500/40 w-full h-full rounded-2xl flex items-center justify-center">
-                        <div className="w-16 h-16 rounded-full border-2 border-emerald-400/80 animate-ping absolute" />
-                        <div className="border border-emerald-400 px-3 py-1 text-[10px] text-emerald-400 font-mono font-bold rounded-lg backdrop-blur-sm">
-                          RGB LIVE: 수관 우거짐 수림 구역 스캔 중
+                    <div className="absolute inset-0 flex items-center justify-center bg-slate-950">
+                      {rgbPreviewUrl ? (
+                        <img
+                          src={rgbPreviewUrl}
+                          alt="드론 RGB 실사 이미지"
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <div className="text-center text-slate-400">
+                          <Camera
+                            size={40}
+                            className="mx-auto mb-3 opacity-70"
+                          />
+
+                          <p className="text-xs font-bold">
+                            RGB 이미지를 선택해 주세요.
+                          </p>
+
+                          <p className="mt-1 text-[10px]">
+                            오른쪽 분석 패널에서 업로드할 수 있습니다.
+                          </p>
                         </div>
-                      </div>
+                      )}
                     </div>
                   )}
 
                   {droneMode === "thermal" && (
-                    <div className="absolute inset-0 bg-gradient-to-tr from-purple-900 via-orange-800 to-indigo-950 flex flex-col justify-between p-6">
-                      <div className="relative border border-amber-500/40 w-full h-full rounded-2xl flex items-center justify-center">
-                        {/* Red Heat spots symbolizing infested dry tree water transpiration failure */}
-                        <div className="absolute top-1/3 left-1/3 w-20 h-20 rounded-full bg-rose-500/80 filter blur-xl animate-pulse" />
-                        <div className="absolute top-1/2 right-1/4 w-12 h-12 rounded-full bg-red-400/90 filter blur-lg animate-pulse" />
-                        <div className="border border-amber-400 px-3 py-1 text-[10px] text-amber-400 font-mono font-bold rounded-lg backdrop-blur-sm">
-                          THERMAL: 고사 수관부 발열 밀집대 감지 (+4.5°C 편차)
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                    <div className="absolute inset-0 flex items-center justify-center bg-slate-950">
+                      {thermalPreviewUrl ? (
+                        <div className="relative h-full w-full">
+                          <img
+                            src={thermalPreviewUrl}
+                            alt="드론 열화상 이미지"
+                            className="h-full w-full object-fill"
+                          />
 
-                  {droneMode === "ndvi" && (
-                    <div className="absolute inset-0 bg-gradient-to-tr from-yellow-700 via-amber-800 to-emerald-950 flex flex-col justify-between p-6">
-                      <div className="relative border border-yellow-500/40 w-full h-full rounded-2xl flex items-center justify-center">
-                        {/* Yellow spots indicating low chlorophyll density */}
-                        <div className="absolute top-1/3 left-1/3 w-24 h-24 rounded-full bg-yellow-400/40 border-2 border-dashed border-yellow-300 flex items-center justify-center">
-                          <span className="text-[10px] text-yellow-300 font-bold">NDVI &lt; 0.15</span>
+                          {thermalResult?.predictions.map(
+                            (
+                              prediction,
+                              index,
+                            ) => {
+                              const imageWidth =
+                                thermalResult.image
+                                  ?.width ?? 1;
+
+                              const imageHeight =
+                                thermalResult.image
+                                  ?.height ?? 1;
+
+                              const left =
+                                (
+                                  (
+                                    prediction.x -
+                                    prediction.width /
+                                    2
+                                  ) /
+                                  imageWidth
+                                ) *
+                                100;
+
+                              const top =
+                                (
+                                  (
+                                    prediction.y -
+                                    prediction.height /
+                                    2
+                                  ) /
+                                  imageHeight
+                                ) *
+                                100;
+
+                              const width =
+                                (
+                                  prediction.width /
+                                  imageWidth
+                                ) *
+                                100;
+
+                              const height =
+                                (
+                                  prediction.height /
+                                  imageHeight
+                                ) *
+                                100;
+
+                              return (
+                                <div
+                                  key={`${prediction.x}-${prediction.y}-${index}`}
+                                  className="absolute rounded-md border-2 border-yellow-300 bg-yellow-300/10"
+                                  style={{
+                                    left: `${left}%`,
+                                    top: `${top}%`,
+                                    width: `${width}%`,
+                                    height: `${height}%`,
+                                  }}
+                                >
+                                  <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-yellow-300 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
+                                    #{index + 1}{" "}
+                                    {confidencePercent(
+                                      prediction.confidence,
+                                    ).toFixed(1)}
+                                    %
+                                  </span>
+                                </div>
+                              );
+                            },
+                          )}
                         </div>
-                        <div className="border border-yellow-400 px-3 py-1 text-[10px] text-yellow-400 font-mono font-bold rounded-lg backdrop-blur-sm">
-                          NDVI: 광합성 엽록소 반사율 급감 분석
+                      ) : (
+                        <div className="text-center text-slate-400">
+                          <Thermometer
+                            size={40}
+                            className="mx-auto mb-3 opacity-70"
+                          />
+
+                          <p className="text-xs font-bold">
+                            열화상 이미지를 선택해 주세요.
+                          </p>
+
+                          <p className="mt-1 text-[10px]">
+                            AI 판독에는 열화상 이미지가 사용됩니다.
+                          </p>
                         </div>
-                      </div>
+                      )}
                     </div>
                   )}
 
@@ -455,16 +853,89 @@ export default function MonitoringSection({
               <div className="lg:col-span-4 space-y-4">
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4">
                   <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">AI 이미지 병변 분석 모델</h4>
-                  
+                  {/* RGB·열화상 이미지 선택 */}
                   <div className="space-y-3">
-                    <button 
+                    {/* RGB 이미지 */}
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-600">
+                        RGB 실사 이미지
+                      </label>
+
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => {
+                          const selectedFile =
+                            event.target.files?.[0] ??
+                            null;
+
+                          setRgbFile(
+                            selectedFile,
+                          );
+
+                          setRgbStoragePath("");
+                          setThermalResult(null);
+                          setAnalysisError("");
+                        }}
+                        className="block w-full rounded-xl border border-slate-200 bg-white p-2 text-[11px] text-slate-600"
+                      />
+
+                      {rgbFile && (
+                        <p className="truncate text-[10px] font-bold text-emerald-700">
+                          선택됨: {rgbFile.name}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* 열화상 이미지 */}
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-600">
+                        열화상 이미지
+                      </label>
+
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => {
+                          const selectedFile =
+                            event.target.files?.[0] ??
+                            null;
+
+                          setThermalFile(
+                            selectedFile,
+                          );
+
+                          setThermalStoragePath("");
+                          setThermalResult(null);
+                          setAnalysisError("");
+                        }}
+                        className="block w-full rounded-xl border border-slate-200 bg-white p-2 text-[11px] text-slate-600"
+                      />
+
+                      {thermalFile && (
+                        <p className="truncate text-[10px] font-bold text-amber-700">
+                          선택됨: {thermalFile.name}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+
+                    <button
                       onClick={handleRunAiAnalysis}
-                      disabled={aiAnalysisRunning}
+                      disabled={
+                        aiAnalysisRunning ||
+                        !rgbFile ||
+                        !thermalFile
+                      }
                       className="w-full bg-emerald-800 text-white rounded-xl py-3 text-xs font-bold flex items-center justify-center gap-2 hover:bg-emerald-900 transition-colors disabled:bg-slate-300"
                     >
-                      {aiAnalysisRunning ? "격자 화소 분석 중..." : "AI 감염 정밀 판독 실행"}
+                      {aiAnalysisRunning
+                        ? "Storage 업로드 및 AI 분석 중..."
+                        : "AI 감염 정밀 판독 실행"}
                     </button>
-                    
+
                     {aiAnalysisRunning && (
                       <div className="space-y-1">
                         <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
@@ -474,28 +945,119 @@ export default function MonitoringSection({
                       </div>
                     )}
 
-                    {aiScore !== null && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-white border border-slate-200 p-4 rounded-xl space-y-3"
+                    {analysisError && (
+                      <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-[11px] font-bold leading-relaxed text-rose-700">
+                        분석 오류: {analysisError}
+                      </div>
+                    )}
+
+                    {thermalResult && (
+                      <motion.div
+                        initial={{
+                          opacity: 0,
+                          y: 5,
+                        }}
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                        }}
+                        className="space-y-3 rounded-xl border border-slate-200 bg-white p-4"
                       >
-                        <div className="flex justify-between items-center text-xs font-bold">
-                          <span className="text-slate-600">감염 매핑 신뢰도</span>
-                          <span className="text-rose-600 text-sm font-black">{aiScore}%</span>
-                        </div>
-                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                          <div className="bg-rose-500 h-full rounded-full" style={{ width: `${aiScore}%` }} />
-                        </div>
-                        
-                        <div className="text-[11px] text-slate-500 font-medium leading-relaxed">
-                          🔍 <b>판독 근거:</b> 식생 NDVI 대조 결과 0.12로 떨어져 수분 고사 징후가 현저하며, 열화상 이미지 상 주변 정상 임목 대비 4.2도 높게 측정되어 소나무재선충 기생에 의한 수분 통로 차단 상태로 분석됩니다.
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-600">
+                            분석 상태
+                          </span>
+
+                          <span
+                            className={`rounded px-2 py-1 text-[10px] font-black ${thermalResult.status ===
+                                "INFECTED"
+                                ? "bg-rose-100 text-rose-700"
+                                : "bg-emerald-100 text-emerald-700"
+                              }`}
+                          >
+                            {thermalResult.status}
+                          </span>
                         </div>
 
-                        <div className="border-t border-slate-100 pt-2 flex justify-between items-center">
-                          <span className="text-[10px] text-emerald-800 font-bold">요구사항 FR-MON-005 부합</span>
-                          <span className="text-[10px] bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded font-black border border-rose-100">위험 판단</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-lg bg-slate-50 p-2.5">
+                            <p className="text-[10px] font-bold text-slate-400">
+                              감염 의심목
+                            </p>
+
+                            <p className="mt-1 text-lg font-black text-slate-900">
+                              {thermalResult.infectedCount}개
+                            </p>
+                          </div>
+
+                          <div className="rounded-lg bg-slate-50 p-2.5">
+                            <p className="text-[10px] font-bold text-slate-400">
+                              최고 신뢰도
+                            </p>
+
+                            <p className="mt-1 text-lg font-black text-rose-600">
+                              {thermalResult.predictions.length >
+                                0
+                                ? Math.max(
+                                  ...thermalResult.predictions.map(
+                                    prediction =>
+                                      confidencePercent(
+                                        prediction.confidence,
+                                      ),
+                                  ),
+                                ).toFixed(1)
+                                : "0.0"}
+                              %
+                            </p>
+                          </div>
                         </div>
+
+                        {thermalResult.status ===
+                          "NORMAL" ? (
+                          <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-[11px] font-bold text-emerald-700">
+                            열 이상 의심목이 탐지되지 않았습니다.
+                          </div>
+                        ) : (
+                          <div className="max-h-48 space-y-2 overflow-y-auto">
+                            {thermalResult.predictions.map(
+                              (
+                                prediction,
+                                index,
+                              ) => (
+                                <div
+                                  key={`${prediction.x}-${prediction.y}-${index}`}
+                                  className="rounded-lg border border-slate-100 bg-slate-50 p-2.5 text-[10px]"
+                                >
+                                  <div className="flex justify-between font-black text-slate-800">
+                                    <span>
+                                      감염 의심목 #{index + 1}
+                                    </span>
+
+                                    <span className="text-rose-600">
+                                      {confidencePercent(
+                                        prediction.confidence,
+                                      ).toFixed(1)}
+                                      %
+                                    </span>
+                                  </div>
+
+                                  <div className="mt-1 font-mono text-slate-500">
+                                    중심 픽셀: (
+                                    {prediction.x.toFixed(1)},
+                                    {" "}
+                                    {prediction.y.toFixed(1)})
+                                  </div>
+                                </div>
+                              ),
+                            )}
+                          </div>
+                        )}
+
+                        <p className="border-t border-slate-100 pt-2 text-[9px] leading-relaxed text-slate-400">
+                          실제 열화상 이미지와 Roboflow 탐지
+                          결과입니다. 드론 GPS·고도·화각은 이후
+                          데모 텔레메트리와 결합합니다.
+                        </p>
                       </motion.div>
                     )}
                   </div>
@@ -507,7 +1069,7 @@ export default function MonitoringSection({
 
         {/* Emergence Vector Beetle flight path spread simulator (FR-MON-007) */}
         {activeTab === "emergence" && (
-          <motion.div 
+          <motion.div
             key="emergence-view"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -532,10 +1094,10 @@ export default function MonitoringSection({
                     <span>평균 기온 설정</span>
                   </span>
                   <div className="flex items-center gap-3">
-                    <input 
-                      type="range" 
-                      min={15} 
-                      max={32} 
+                    <input
+                      type="range"
+                      min={15}
+                      max={32}
                       value={temperature}
                       onChange={(e) => setTemperature(Number(e.target.value))}
                       className="w-full accent-emerald-700"
@@ -563,7 +1125,7 @@ export default function MonitoringSection({
                   </div>
                 </div>
 
-                <button 
+                <button
                   onClick={() => {
                     setIsSimulatingEmergence(true);
                     setTimeout(() => setIsSimulatingEmergence(false), 2500);
@@ -601,10 +1163,10 @@ export default function MonitoringSection({
 
                   {/* Motion spread path */}
                   {isSimulatingEmergence && (
-                    <motion.div 
+                    <motion.div
                       initial={{ scale: 1, opacity: 0.8 }}
-                      animate={{ 
-                        scale: temperature >= 25 ? 4.5 : 2.8, 
+                      animate={{
+                        scale: temperature >= 25 ? 4.5 : 2.8,
                         opacity: 0,
                         x: windDirection === "SW" ? 140 : windDirection === "NE" ? -140 : windDirection === "NW" ? 140 : -140,
                         y: windDirection === "SW" ? -80 : windDirection === "NE" ? 80 : windDirection === "NW" ? 80 : -80
