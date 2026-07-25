@@ -1,23 +1,32 @@
 import io
+import json
+import hashlib
 import os
 import re
 import subprocess
 import tempfile
 import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
 
 import fitz  # PyMuPDF
 
 from app.core.models import PageText
 
 
-import re
 from collections import Counter
+
+CACHE_SCHEMA_VERSION = 1
 
 # 쪽번호만 있는 줄: "10", "- 35 -", "– 4 –" 등
 _PAGENUM_RE = re.compile(r"^\s*[-–—]?\s*\d{1,4}\s*[-–—]?\s*$")
 
 
 def parse(path: str) -> list[PageText]:
+    cached_pages = _load_cached_pages(path)
+    if cached_pages is not None:
+        return _strip_boilerplate(cached_pages)
+
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pdf":
         pages = _parse_pdf(path)
@@ -28,6 +37,65 @@ def parse(path: str) -> list[PageText]:
     else:
         raise ValueError(f"지원하지 않는 형식: {ext}")
     return _strip_boilerplate(pages)
+
+
+def cache_path_for(path: str | Path) -> Path:
+    source = Path(path)
+    return source.parent.parent / "docs_text_cache" / f"{source.name}.json"
+
+
+def _load_cached_pages(path: str | Path) -> list[PageText] | None:
+    cache_path = cache_path_for(path)
+    if not cache_path.is_file():
+        return None
+    payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != CACHE_SCHEMA_VERSION:
+        raise ValueError(
+            f"지원하지 않는 문서 텍스트 캐시 버전입니다: {cache_path}"
+        )
+    if payload.get("document_name") != Path(path).name:
+        raise ValueError(
+            f"문서 텍스트 캐시의 원본 파일명이 일치하지 않습니다: {cache_path}"
+        )
+    return [
+        PageText(page=int(item["page"]), text=str(item.get("text", "")))
+        for item in payload.get("pages", [])
+    ]
+
+
+def source_sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def extract_pages_for_cache(path: str | Path) -> dict:
+    source = Path(path)
+    ext = source.suffix.lower()
+    if ext == ".pdf":
+        page_rows = _extract_pdf_page_rows(str(source))
+    elif ext == ".hwp":
+        text, method = _extract_hwp_text(str(source))
+        page_rows = [{"page": 1, "text": text, "method": method}]
+    else:
+        raise ValueError(f"전처리를 지원하지 않는 형식입니다: {ext}")
+
+    return {
+        "schema_version": CACHE_SCHEMA_VERSION,
+        "document_name": source.name,
+        "source_extension": ext,
+        "source_sha256": source_sha256(source),
+        "processed_at": datetime.now(timezone.utc).isoformat(),
+        "pages": [
+            {
+                **row,
+                "char_count": len(str(row.get("text", ""))),
+            }
+            for row in page_rows
+        ],
+    }
 
 
 def _strip_boilerplate(pages: list[PageText]) -> list[PageText]:
@@ -56,14 +124,23 @@ def _strip_boilerplate(pages: list[PageText]) -> list[PageText]:
 
 
 def _parse_pdf(path: str) -> list[PageText]:
-    pages: list[PageText] = []
+    return [
+        PageText(page=int(row["page"]), text=str(row["text"]))
+        for row in _extract_pdf_page_rows(path)
+    ]
+
+
+def _extract_pdf_page_rows(path: str) -> list[dict]:
+    pages: list[dict] = []
     doc = fitz.open(path)
     try:
         for i, page in enumerate(doc, start=1):
             text = page.get_text().strip()
+            method = "embedded_text"
             if not text:
                 text = _ocr_page(page)
-            pages.append(PageText(page=i, text=text))
+                method = "tesseract_ocr"
+            pages.append({"page": i, "text": text, "method": method})
     finally:
         doc.close()
     return pages
@@ -104,10 +181,16 @@ def _parse_hwpx(path: str) -> list[PageText]:
 
 
 def _parse_hwp(path: str) -> list[PageText]:
-    text = _hwp5txt(path)
-    if not text.strip():
-        text = _libreoffice_to_text(path)
+    text, _ = _extract_hwp_text(path)
     return [PageText(page=1, text=text.strip())]
+
+
+def _extract_hwp_text(path: str) -> tuple[str, str]:
+    text = _hwp5txt(path)
+    if text.strip():
+        return text.strip(), "hwp5txt"
+    text = _libreoffice_to_text(path)
+    return text.strip(), "libreoffice_fallback"
 
 
 def _hwp5txt(path: str) -> str:
