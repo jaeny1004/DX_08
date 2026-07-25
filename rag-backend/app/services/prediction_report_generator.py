@@ -5,8 +5,6 @@ import math
 import os
 import random
 import re
-import shutil
-import subprocess
 import time
 import zipfile
 from dataclasses import dataclass
@@ -1402,50 +1400,80 @@ def create_docx(
     )
 
 
-def find_libreoffice() -> str:
-    for name in ("libreoffice", "soffice"):
-        path = shutil.which(name)
-        if path:
-            return path
-    raise RuntimeError(
-        "LibreOffice가 설치되어 있지 않습니다. "
-        "sudo apt install libreoffice 로 설치하세요."
-    )
-
-
-def convert_docx_to_pdf(
-    docx_path: Path,
-    pdf_directory: Path,
-) -> Path:
-    libreoffice = find_libreoffice()
-    pdf_directory.mkdir(parents=True, exist_ok=True)
-    profile_directory = pdf_directory / ".lo_profile"
-    profile_directory.mkdir(parents=True, exist_ok=True)
-    command = [
-        libreoffice,
-        "--headless",
-        f"-env:UserInstallation=file://{profile_directory.resolve()}",
-        "--convert-to",
-        "pdf:writer_pdf_Export",
-        "--outdir",
-        str(pdf_directory),
-        str(docx_path),
-    ]
-    result = subprocess.run(
-        command,
-        text=True,
-        capture_output=True,
-        timeout=180,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"PDF 변환 실패: {docx_path.name}\n"
-            f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
-        )
-    pdf_path = pdf_directory / f"{docx_path.stem}.pdf"
-    if not pdf_path.exists() or pdf_path.stat().st_size == 0:
-        raise RuntimeError(f"PDF 파일이 생성되지 않았습니다: {pdf_path}")
-    return pdf_path
+def build_prediction_render_payload(
+    *,
+    record: ReportRecord,
+    metrics: dict[str, Any],
+    source: ReportSourceData,
+    map_path: Path,
+) -> dict[str, Any]:
+    center_point = source.static.get("center_point_4326") or {}
+    coordinates = center_point.get("coordinates") or [None, None]
+    longitude = coordinates[0] if len(coordinates) > 0 else None
+    latitude = coordinates[1] if len(coordinates) > 1 else None
+    block_grid_ids = [int(value) for value in metrics["block_grid_ids"]]
+    neighbor_grids = [
+        {"grid_id": grid_id}
+        for grid_id in block_grid_ids
+        if grid_id != record.center_grid_id
+    ][:4]
+    end_day = 10 + (record.report_no % 18)
+    center_grid = {
+        "grid_id": record.center_grid_id,
+        "sido_name": record.sido_name,
+        "sigungu_name": record.sigungu_name,
+        "risk_score": metrics["risk_score"],
+        "risk_grade": metrics["risk_grade"],
+        "priority_score": metrics["priority_score"],
+        "priority_grade": metrics["priority_grade"],
+        "infection_pressure": metrics["infection_pressure"],
+        "access_score": metrics["access_score"],
+        "road_distance": metrics["road_distance"],
+        "road_type": metrics["road_type"],
+        "environment_flag": metrics["environment_warning"],
+        # report_render._percent()는 0~1 입력을 100배 하므로, 기존 DOCX가
+        # 백분율 값으로 표시하던 pine_mean을 비율 입력으로 맞춘다.
+        "pine_ratio": metrics["pine_mean"] / 100.0,
+        "latitude": latitude,
+        "longitude": longitude,
+        "center_annual_count": record.annual_count,
+        "center_cumulative_count": record.cumulative_count,
+        "block_grid_ids": block_grid_ids,
+    }
+    prediction_data = {
+        **center_grid,
+        "center_grid_id": record.center_grid_id,
+        "document_no": record.report_no,
+        "year": record.year,
+        "block_count": metrics["block_count"],
+    }
+    return {
+        "report_type": "prediction",
+        "document_no": record.report_no,
+        "report_no": record.report_no,
+        "year": record.year,
+        "title": (
+            f"{record.year}년 {record.sigungu_name} "
+            "신규 확산위험 분석 보고서"
+        ),
+        "start_date": f"{record.year}-01-01",
+        "end_date": f"{record.year}-12-{end_day:02d}",
+        "sido_name": record.sido_name,
+        "sigungu_name": record.sigungu_name,
+        "center_grid_id": record.center_grid_id,
+        "center_grid_ids": [str(record.center_grid_id)],
+        "block_grid_ids": block_grid_ids,
+        "map_path": str(map_path),
+        "prediction_data": prediction_data,
+        "data": prediction_data,
+        "data_summary": {
+            "selected_grid_count": 1,
+            "region_candidate_count": 1,
+            "grid_ids": [str(record.center_grid_id)],
+            "center_grid": center_grid,
+            "neighbor_grids": neighbor_grids,
+        },
+    }
 
 
 def generate_single_prediction_report(
@@ -1525,6 +1553,7 @@ def generate_single_prediction_report(
     )
     map_path = map_directory / f"{base_name}.png"
     docx_path = docx_directory / f"{base_name}.docx"
+    pdf_path = pdf_directory / f"{base_name}.pdf"
     build_vworld_overlay_map(
         output_path=map_path,
         record=record,
@@ -1542,7 +1571,15 @@ def generate_single_prediction_report(
         record=record,
         metrics=metrics,
     )
-    pdf_path = convert_docx_to_pdf(docx_path, pdf_directory)
+    render_payload = build_prediction_render_payload(
+        record=record,
+        metrics=metrics,
+        source=source,
+        map_path=map_path,
+    )
+    from app.services.report_render.renderer import render_report_pdf
+
+    pdf_path.write_bytes(render_report_pdf("prediction", render_payload))
 
     for label, path in {
         "지도": map_path,

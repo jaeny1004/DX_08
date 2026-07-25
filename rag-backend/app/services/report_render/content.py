@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 from reportlab.lib.units import cm
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Image as ReportLabImage
 from reportlab.platypus import Paragraph, Spacer
 
 from app.services.report_template_service import (
@@ -253,6 +255,27 @@ def expected_lines(report_type: str, draft: dict[str, Any]) -> list[str]:
     return [render_line(line, replacements, exact) for line in _all_lines(report_type)]
 
 
+def _prediction_map(draft: dict[str, Any]) -> ReportLabImage | None:
+    map_path = draft.get("map_path")
+    if not map_path:
+        return None
+
+    reader = ImageReader(str(map_path))
+    width, height = reader.getSize()
+    if width <= 0 or height <= 0:
+        raise ValueError(f"지도 이미지 크기가 올바르지 않습니다: {map_path}")
+
+    target_width = 16 * cm
+    target_height = target_width * height / width
+    image = ReportLabImage(
+        str(map_path),
+        width=target_width,
+        height=target_height,
+    )
+    image.hAlign = "CENTER"
+    return image
+
+
 def build_body_story(report_type: str, draft: dict[str, Any]) -> list:
     replacements = _common_replacements(draft)
     exact = EXACT_BUILDERS[report_type](draft)
@@ -276,5 +299,10 @@ def build_body_story(report_type: str, draft: dict[str, Any]) -> list:
         for line in lines:
             text = render_line(line, replacements, exact)
             story.append(Paragraph(for_pdf(text), line_style(line)))
+        if report_type == "prediction" and roman == "Ⅲ":
+            map_image = _prediction_map(draft)
+            if map_image is not None:
+                story.append(Spacer(1, 0.3 * cm))
+                story.append(map_image)
 
     return story
