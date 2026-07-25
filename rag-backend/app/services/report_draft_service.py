@@ -10,6 +10,9 @@ from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from sqlalchemy import text
+
+from app.core.database import SessionLocal
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT = BACKEND_ROOT / "data"
@@ -269,10 +272,6 @@ def build_sections(payload: dict[str, Any], summary: dict[str, Any]) -> list[dic
     return sections
 
 
-def _draft_path(draft_id: str) -> Path:
-    return DRAFT_ROOT / draft_id / "draft.json"
-
-
 def create_draft(payload: dict[str, Any], created_by: str) -> dict[str, Any]:
     grid_ids = [str(v).strip() for v in payload.get("center_grid_ids", []) if str(v).strip()]
     if len(grid_ids) != 1:
@@ -307,16 +306,43 @@ def create_draft(payload: dict[str, Any], created_by: str) -> dict[str, Any]:
 
 
 def save_draft(draft: dict[str, Any]) -> None:
-    path = _draft_path(draft["draft_id"])
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
+    # report_drafts.py, report_template_service.py, prediction_template_service.py 등
+    # 요청 컨텍스트 밖에서도 호출되는 일반 함수라 db 세션을 인자로 받지 않고
+    # 여기서 직접 짧게 열었다 닫는다 (기존 파일 기반 save_draft와 동일한 호출 계약 유지).
+    with SessionLocal() as session:
+        session.execute(
+            text(
+                """
+                insert into report_drafts (draft_id, report_type, status, created_by, data, updated_at)
+                values (:draft_id, :report_type, :status, :created_by, cast(:data as jsonb), now())
+                on conflict (draft_id) do update
+                set report_type = excluded.report_type,
+                    status = excluded.status,
+                    created_by = excluded.created_by,
+                    data = excluded.data,
+                    updated_at = now()
+                """
+            ),
+            {
+                "draft_id": draft["draft_id"],
+                "report_type": draft["report_type"],
+                "status": draft.get("status", "draft"),
+                "created_by": draft.get("created_by"),
+                "data": json.dumps(draft, ensure_ascii=False),
+            },
+        )
+        session.commit()
 
 
 def load_draft(draft_id: str) -> dict[str, Any]:
-    path = _draft_path(draft_id)
-    if not path.is_file():
+    with SessionLocal() as session:
+        row = session.execute(
+            text("select data from report_drafts where draft_id = :draft_id"),
+            {"draft_id": draft_id},
+        ).first()
+    if row is None:
         raise FileNotFoundError(f"초안을 찾을 수 없습니다: {draft_id}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    return row[0]
 
 
 def update_draft(draft_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -333,7 +359,10 @@ def update_draft(draft_id: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_xlsx(draft: dict[str, Any]) -> Path:
-    directory = _draft_path(draft["draft_id"]).parent
+    # draft.json이 이 디렉터리를 미리 만들어 주던 시절의 잔재 —
+    # 초안 메타데이터는 Postgres로 이전됐지만 xlsx 산출물은 아직 로컬 파일이라 유지.
+    directory = DRAFT_ROOT / draft["draft_id"]
+    directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{_safe_name(draft['title'])}.xlsx"
     workbook = Workbook()
     sheet = workbook.active
