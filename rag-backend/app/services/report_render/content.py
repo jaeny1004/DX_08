@@ -255,7 +255,7 @@ def expected_lines(report_type: str, draft: dict[str, Any]) -> list[str]:
     return [render_line(line, replacements, exact) for line in _all_lines(report_type)]
 
 
-def _prediction_map(draft: dict[str, Any]) -> ReportLabImage | None:
+def _report_map(draft: dict[str, Any]) -> ReportLabImage | None:
     map_path = draft.get("map_path")
     if not map_path:
         return None
@@ -299,8 +299,11 @@ def build_body_story(report_type: str, draft: dict[str, Any]) -> list:
         for line in lines:
             text = render_line(line, replacements, exact)
             story.append(Paragraph(for_pdf(text), line_style(line)))
-        if report_type == "prediction" and roman == "Ⅲ":
-            map_image = _prediction_map(draft)
+        map_section = {"prediction": "Ⅲ", "field_survey": "Ⅰ"}.get(
+            report_type
+        )
+        if map_section == roman:
+            map_image = _report_map(draft)
             if map_image is not None:
                 story.append(Spacer(1, 0.3 * cm))
                 story.append(map_image)
