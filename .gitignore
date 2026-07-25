@@ -38,6 +38,7 @@ __pycache__/
 rag-backend/data/chroma/
 rag-backend/data/generated_drafts/
 rag-backend/data/generated_reports/
+data/precompute_logs/
 
 # Backups and archives
 *.backup_*
