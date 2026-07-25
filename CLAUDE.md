@@ -105,6 +105,16 @@ AI 결과를 예찰 우선순위·방제 검토·인력배정·현장보고·행
 
 ## Git / 서버 배포 절차
 
+## RAG 문서 전처리
+
+- 새 PDF 또는 HWP 문서를 `rag-backend/data/docs/`에 추가하면 배포 전에
+  반드시 로컬에서 `scripts/preprocess_docs.py`를 실행한다.
+- Windows PowerShell:
+  `.\rag-backend\venv\Scripts\python.exe .\scripts\preprocess_docs.py`
+- 생성된 `rag-backend/data/docs_text_cache/*.json`도 문서와 함께 배포한다.
+- 서버의 ingest 과정은 텍스트 캐시를 우선 사용한다. 캐시가 있으면
+  Tesseract와 `hwp5txt`를 호출하지 않는다.
+
 ```
 # 로컬
 cd "C:\Users\User\Desktop\산림 데이터셋\DX_08"

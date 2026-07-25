@@ -71,19 +71,81 @@ git checkout -b feature/serverless-migration
 
 ---
 
-## 3단계 — LibreOffice 변환 → reportlab로 재작성 (가장 큰 작업)
+## 3단계 — LibreOffice 변환 제거, reportlab로 PDF 직접 생성 (DOCX·XLSX는 유지)
 
-먼저 지금 보고서 양식이 정확히 어떻게 생겼는지 파악부터 시켜야 합니다.
+**⚠️ 2026-07-24 정정: 최종 산출물은 PDF·DOCX·XLSX 세 가지를 모두 유지한다.**
+처음엔 "DOCX는 PDF 생성용 중간 재료"로 오해해서 DOCX를 아예 없애는 방향으로
+진행할 뻔했으나, 실제로는 **DOCX 생성(`python-docx`) 자체는 원래도 서버리스에
+문제없었고, 막혔던 건 "DOCX→PDF 변환"(LibreOffice) 단계뿐이었다.** 따라서:
+- PDF는 `reportlab`으로 **독립적으로** 생성 (DOCX를 거치지 않음)
+- DOCX는 기존 `python-docx` 로직을 **그대로 유지**해서 독립적으로 생성
+- XLSX는 원래도 LibreOffice와 무관했으므로 그대로 유지
+- 제거 대상은 오직 LibreOffice(DOCX→PDF 변환 subprocess)뿐이며, `docx_path`/
+  `available_formats: ["pdf","docx"]`는 그대로 유지한다.
 
-```
-report_template_service.py가 사용하는 docx 템플릿들(TEMPLATE_ROOT 하위)을 전부
-찾아서, 각 템플릿에 어떤 필드(변수)가 들어가고 레이아웃이 어떤 구조인지
-정리해줘. 아직 재작성은 하지 마. 이 정리 결과를 먼저 나한테 보여줘.
-```
+**한글(HWP) 관련 조사 결과 (참고용, 이번 범위엔 미포함)**
+- 진짜 `.hwp`(바이너리) 파일을 순수 파이썬으로 "쓰는" 것은 사실상 불가능
+  (기존 `pyhwp` 등은 전부 읽기 전용, 실제 작성은 한컴오피스 자동화 필요 —
+  Vercel에서 불가능).
+- `.hwpx`(최신 XML 기반 한글 형식)는 `python-hwpx` 라이브러리로 순수 파이썬
+  생성이 기술적으로 가능함 (한컴오피스 설치 불필요). 다만 라이브러리가
+  상대적으로 신생이라 검증 필요. "가능하면 추가" 수준의 후속 과제로 분리,
+  이번 3단계 범위에는 포함하지 않음.
 
-이 결과를 받으면 저한테 공유해주세요. 템플릿 구조를 보고 reportlab로 재작성하는
-게 합리적인지, 아니면 일부는 다른 방식(예: HTML→PDF 변환 라이브러리)이 더
-나을지 같이 판단한 뒤 다음 프롬프트를 만들어드릴게요.
+**확정된 범위 (템플릿 조사 완료, 2026-07-24)**
+- 본문(장 제목·단락·표)은 reportlab로 직접 그린다.
+- 별지(대장·계획서·조사야장 등 8개 — prediction 2·field_survey 2·control 4,
+  지금까지 이미지로만 존재)도 이미지 합성이
+  아니라 **텍스트·표로 다시 그린다.** `scripts/generate_vworld_*.py`에 이미 별지에
+  실제 값을 채우는 로직이 있으므로, 이를 reportlab 설계의 기준으로 재사용한다.
+- 대화형 초안(`report_draft_service.py`) 경로로 만드는 문서도 별지에 **실제 값을
+  채우는 기능을 새로 추가한다** (지금까지는 이 경로에서 별지가 항상 빈 템플릿으로
+  나갔음 — 의도된 게 아니라 누락이었음, 이번에 같이 해결).
+- 현장 예찰의 `[ ]℃`, `[ ]m/s`, `[ ]m`(수고), `[ ]cm`(DBH) 빈 플레이스홀더도
+  실제 값으로 채우도록 고친다 (의도된 여백이 아니라 누락이었음). **현재는
+  실제 데이터 소스(기상 API, 현장 측정 입력 폼)가 시스템 어디에도 없음을
+  확인함 — 프로토타입 단계에서는 `generate_vworld_field_survey_reports.py`의
+  기존 랜덤값 생성 로직(rng.uniform 범위 그대로)을 재사용해 채우고, 실제
+  기상 API·현장 입력 폼 연동은 이후 별도 과제로 분리한다.**
+
+**진행 순서**
+1. `generate_vworld_*.py`의 별지 렌더링 로직 + `[ ]` 필드들의 실제 데이터 출처
+   조사 (완료 후 결과 검토)
+2. 조사 결과 바탕으로 reportlab 설계(레이아웃, 표 구조, 데이터 매핑) 확정
+3. 본문 + 별지 + 빈 플레이스홀더 채우기를 함께 재작성
+4. `report_template_service.py`와 대화형 초안 경로 양쪽 다 새 로직 적용
+5. 전후 비교 테스트(기존 DOCX/PDF 결과물과 내용 대조 — PDF는 reportlab vs
+   기존 LibreOffice 결과물, DOCX는 기존 python-docx 로직 그대로라 변경 없음을 확인)
+
+**진행 상황 (2026-07-24 기준)**
+- `report_render/`(reportlab 렌더러) 본문 3종 + 별지 8종 완료·검증·커밋됨.
+- `prediction_report_generator.py`(GeoPandas→Supabase 데이터 계층) 완료·픽셀
+  단위 완전 일치 검증·커밋 대상.
+- 🔄 **진행 중**: `prediction_report_generator.py`에서 PDF는 `report_render/
+  renderer.py` 직접 호출로 전환, DOCX는 기존 `python-docx` 로직 유지, LibreOffice
+  (DOCX→PDF 변환) subprocess만 제거. `docx_path`/`available_formats`는 그대로 유지.
+- field_survey/control도 동일하게 데이터 계층(GeoPandas→Supabase) 리팩터링
+  필요 여부 확인 필요 (prediction만 진행됨).
+
+**세 보고서 유형별 진행 상황 (2026-07-24)**
+| 유형 | GeoPandas | LibreOffice | 상태 |
+|---|---|---|---|
+| prediction | ✅ 전환 완료 | ✅ 제거 완료 (PDF=reportlab, DOCX=기존 유지) | 완료·검증됨 |
+| control | 원래 없음 | 🔄 진행 중 (`control_report_generator.py` 신규 구현) | pine_area_ha 소스 검증 필요 |
+| field_survey | 🔄 진행 예정 (기존 prediction 테이블 재사용, 새 테이블 불필요) | 🔄 진행 예정 | Codex 다음 작업 |
+
+⚠️ **중요 — 아직 안 끝난 작업**: `apply_prediction_template()`(및 앞으로 만들
+`apply_control_template()`, `apply_field_survey_template()`)가 **아직 실제
+API 엔드포인트(`report_drafts.py`)에 연결되지 않음.** 세 유형 다 백엔드
+전환이 끝나도, 이 연결 작업을 안 하면 사용자는 여전히 구버전(LibreOffice
+경로)을 쓰게 됨. field_survey까지 끝난 뒤 반드시 별도로 처리할 것.
+- **별지(appendix) 데이터 소스 범위 결정**: 실제 데이터(백필 90건의
+  `reports.data` JSONB, 또는 대화형 초안 필드)가 있으면 사용, 없으면 기존
+  배치 스크립트와 동일한 결정론적 더미값/하드코딩 상수로 채움(둘 다 지원).
+  새 랜덤 로직은 설계하지 않고 기존 공식을 재사용.
+- **2026-07-24 이후: Claude Code 세션 한도 소진으로 3단계 나머지 작업은
+  Codex 단독으로 진행.** 지금까지 완료·커밋된 것(본문 렌더러, 폰트,
+  prediction 데이터 계층)은 전부 git에 반영되어 있어 인수인계에 문제없음.
 
 ---
 
