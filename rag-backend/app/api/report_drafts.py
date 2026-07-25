@@ -16,13 +16,29 @@ from app.services.report_draft_service import (
     load_draft,
     update_draft,
 )
+from app.services.control_template_service import apply_control_template
+from app.services.field_survey_template_service import (
+    apply_field_survey_template,
+)
+from app.services.prediction_template_service import (
+    apply_prediction_template,
+)
 from app.services.report_template_service import (
-    apply_report_template,
     get_template_file,
     register_report,
 )
 
 router = APIRouter(prefix="/api/report-drafts", tags=["신규 보고서 생성"])
+
+
+def _apply_template(report_type: str, draft_id: str) -> dict:
+    if report_type == "prediction":
+        return apply_prediction_template(draft_id)
+    if report_type == "field_survey":
+        return apply_field_survey_template(draft_id)
+    if report_type == "control":
+        return apply_control_template(draft_id)
+    raise ValueError(f"지원하지 않는 문서 유형입니다: {report_type}")
 
 
 class IncludeSections(BaseModel):
@@ -70,7 +86,7 @@ def create_new_draft(
 ) -> dict:
     try:
         draft = create_draft(request.model_dump(), created_by=current_user.email)
-        template_output = apply_report_template(draft["draft_id"])
+        template_output = _apply_template(request.report_type, draft["draft_id"])
         draft = load_draft(draft["draft_id"])
         draft["template_output"] = template_output
         return draft
@@ -108,7 +124,7 @@ def save_draft_changes(
 @router.post("/{draft_id}/apply-template")
 def apply_template(draft_id: str, current_user: User = Depends(get_current_user)) -> dict:
     try:
-        output = apply_report_template(draft_id)
+        output = _apply_template(load_draft(draft_id)["report_type"], draft_id)
         return {"draft_id": draft_id, "status": "generated", "template_output": output}
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
