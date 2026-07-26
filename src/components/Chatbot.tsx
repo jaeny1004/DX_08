@@ -26,7 +26,7 @@ function createMessageId(): string {
     typeof crypto !== "undefined" &&
     typeof crypto.randomUUID === "function"
   ) {
-    return createMessageId();
+    return crypto.randomUUID();
   }
 
   return [
