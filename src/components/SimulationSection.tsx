@@ -426,6 +426,8 @@ export default function SimulationSection() {
 
   const featureLayerByIdRef = useRef<Map<string, L.Path>>(new Map());
   const gridCacheRef = useRef<Map<string, GridFeature[]>>(new Map());
+  const gridRequestControllerRef = useRef<AbortController | null>(null);
+  const gridRequestIdRef = useRef(0);
 
   const featuresRef = useRef<GridFeature[]>([]);
   const selectedSigunguRef = useRef<SigunguFeature | null>(null);
@@ -466,6 +468,14 @@ export default function SimulationSection() {
   useEffect(() => {
     selectedSigunguRef.current = selectedSigungu;
   }, [selectedSigungu]);
+
+  useEffect(
+    () => () => {
+      gridRequestControllerRef.current?.abort();
+      gridRequestIdRef.current += 1;
+    },
+    [],
+  );
 
   const derivedById = useMemo(() => {
     const map = new Map<string, DerivedGrid>();
@@ -809,6 +819,12 @@ export default function SimulationSection() {
           });
 
           featureLayer.on("click", async () => {
+            gridRequestControllerRef.current?.abort();
+            const controller = new AbortController();
+            gridRequestControllerRef.current = controller;
+            const requestId = gridRequestIdRef.current + 1;
+            gridRequestIdRef.current = requestId;
+
             const indexItem = indexRef.current?.items.find(
               (item) =>
                 item.code === code ||
@@ -816,6 +832,8 @@ export default function SimulationSection() {
             );
 
             if (!indexItem) {
+              gridRequestControllerRef.current = null;
+              setLoading(false);
               setLoadError(
                 `${name}에 대응하는 시뮬레이션 파일을 index.json에서 찾지 못했습니다.`
               );
@@ -836,7 +854,8 @@ export default function SimulationSection() {
 
               if (!nextFeatures) {
                 const response = await fetch(
-                  `${SIGUNGU_DATA_BASE}/${indexItem.file}`
+                  `${SIGUNGU_DATA_BASE}/${indexItem.file}`,
+                  { signal: controller.signal },
                 );
 
                 if (!response.ok) {
@@ -848,8 +867,16 @@ export default function SimulationSection() {
                 gridCacheRef.current.set(indexItem.code, nextFeatures);
               }
 
+              if (
+                controller.signal.aborted ||
+                requestId !== gridRequestIdRef.current
+              ) {
+                return;
+              }
+
               setFeatures(nextFeatures);
               setLoading(false);
+              gridRequestControllerRef.current = null;
 
               const bounds = L.latLngBounds(
                 L.latLng(indexItem.bounds[1], indexItem.bounds[0]),
@@ -861,6 +888,13 @@ export default function SimulationSection() {
                * 제거된 지도에 fitBounds를 호출하는 문제가 발생하지 않습니다.
                */
               window.requestAnimationFrame(() => {
+                if (
+                  controller.signal.aborted ||
+                  requestId !== gridRequestIdRef.current
+                ) {
+                  return;
+                }
+
                 const currentMap = mapRef.current;
 
                 if (!currentMap) return;
@@ -878,11 +912,19 @@ export default function SimulationSection() {
                 }
               });
             } catch (error) {
+              if (
+                controller.signal.aborted ||
+                requestId !== gridRequestIdRef.current
+              ) {
+                return;
+              }
+
               console.error("시군구 격자 로딩 오류:", error);
               setLoadError(
                 `${name} 격자 파일을 불러오지 못했습니다. 브라우저 Network에서 ${indexItem.file} 응답을 확인하세요.`
               );
               setLoading(false);
+              gridRequestControllerRef.current = null;
             }
           });
         },
