@@ -410,19 +410,16 @@ export default function AuthScreen({
         </div>
 
         <div className="relative z-10 max-w-3xl">
-          <div className="inline-flex rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-extrabold text-emerald-200">
-            산림 행정 의사결정 지원 시스템
-          </div>
           <h1 className="mt-6 text-5xl font-black leading-[1.18] tracking-tight">
-            신규 확산위험 후보를
+            IMPINE :
             <br />
-            더 빠르게 확인하고,
+            더 빠르고 정밀한 지능형
             <br />
-            예찰 우선순위를 결정합니다.
+            소나무재선충 통합 관제 플랫폼
           </h1>
           <p className="mt-6 max-w-2xl text-sm font-semibold leading-7 text-slate-300">
-            500m 격자 기반 위험도 분석과 현장 확인 지원을 통해
-            신규 확산위험 후보 및 우선 예찰 검토지역을 제공합니다.
+            다차원의 데이터에 AI 예측 엔진을 결합하여
+            위험도를 산출하고 최적의 예찰·방제 우선순위를 제시합니다.
           </p>
           <div className="mt-9 grid max-w-2xl grid-cols-3 gap-3">
             <FeatureCard
