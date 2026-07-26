@@ -3,10 +3,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import re
-import shutil
-import subprocess
-import tempfile
 import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -30,14 +26,7 @@ from app.services.report_draft_service import (
     save_draft,
 )
 
-TEMPLATE_ROOT = DATA_ROOT / "report_templates"
 GENERATED_REPORT_ROOT = DATA_ROOT / "generated_reports"
-
-TEMPLATE_FILES = {
-    "prediction": "[양식]소나무재선충병 발생 예측 보고서_빈양식.docx",
-    "field_survey": "[양식]소나무재선충병 현장 예찰 보고서_빈양식.docx",
-    "control": "[양식]소나무재선충병 방제 보고서_빈양식.docx",
-}
 
 REPORT_DIRECTORIES = {
     "prediction": "prediction_30",
@@ -338,63 +327,6 @@ def _replace_docx_media(docx_path: Path, media_name: str, replacement: Path) -> 
     temp_path.replace(docx_path)
 
 
-def apply_report_template(draft_id: str) -> dict[str, Any]:
-    draft = load_draft(draft_id)
-    report_type = draft["report_type"]
-    template_name = TEMPLATE_FILES.get(report_type)
-    if not template_name:
-        raise ValueError(f"지원하지 않는 문서 유형입니다: {report_type}")
-    template_path = TEMPLATE_ROOT / template_name
-    if not template_path.is_file():
-        raise FileNotFoundError(f"행정양식 파일이 없습니다: {template_path}")
-
-    output_dir = DATA_ROOT / "generated_drafts" / draft_id / "template"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    safe_title = re.sub(r'[\\/:*?"<>|]+', "_", draft["title"])
-    docx_path = output_dir / f"{safe_title}.docx"
-    pdf_path = output_dir / f"{safe_title}.pdf"
-
-    document = Document(template_path)
-    replacements = _common_replacements(draft)
-    exact = _prediction_exact(draft) if report_type == "prediction" else _field_exact(draft) if report_type == "field_survey" else _control_exact(draft)
-    for paragraph in _all_paragraphs(document):
-        _replace_paragraph(paragraph, replacements, exact)
-    document.save(docx_path)
-
-    if report_type == "prediction":
-        map_path = output_dir / "selected_grid_map.png"
-        _create_map_image(draft, map_path)
-        _replace_docx_media(docx_path, "image1.png", map_path)
-
-    libreoffice = shutil.which("libreoffice") or shutil.which("soffice")
-    if not libreoffice:
-        raise RuntimeError("LibreOffice가 없어 행정양식 PDF를 생성할 수 없습니다.")
-    completed = subprocess.run(
-        [libreoffice, "--headless", "--convert-to", "pdf", "--outdir", str(output_dir), str(docx_path)],
-        capture_output=True, text=True, timeout=180, check=False,
-    )
-    if completed.returncode != 0 or not pdf_path.is_file():
-        raise RuntimeError(f"행정양식 PDF 변환 실패: {completed.stderr.strip() or completed.stdout.strip()}")
-
-    center = draft["data_summary"].get("center_grid", {})
-    template_output = {
-        "status": "generated",
-        "center_grid_id": center.get("grid_id"),
-        "year": draft["year"],
-        "sido_name": draft["sido_name"],
-        "sigungu_name": draft["sigungu_name"],
-        "risk_score": center.get("risk_score"),
-        "risk_grade": center.get("risk_grade"),
-        "priority_score": center.get("priority_score"),
-        "priority_grade": center.get("priority_grade"),
-        "docx_path": str(docx_path.resolve()),
-        "pdf_path": str(pdf_path.resolve()),
-    }
-    draft["template_output"] = template_output
-    save_draft(draft)
-    return template_output
-
-
 def get_template_storage_key(draft_id: str, file_format: str) -> str:
     if file_format not in {"docx", "pdf"}:
         raise ValueError("행정양식 파일은 DOCX와 PDF만 지원합니다.")
@@ -542,12 +474,7 @@ def copy_storage_file(source_key: str, destination_key: str) -> str:
 
 
 def _upload_report_file(report_type: str, local_path: Path, filename: str) -> None:
-    """생성된 pdf/docx를 Supabase Storage에도 업로드한다.
-
-    로컬 저장(shutil.copy2)은 당장 병행 유지하는 게 목적이라, 여기서 실패해도
-    register_report() 전체를 실패시키지 않는다 — 업로드가 안 되면 preview/download가
-    나중에 404를 내겠지만, 등록 자체(문서번호 발급, draft 상태 갱신)는 막지 않는다.
-    """
+    """기존 로컬 보고서 파일을 Supabase Storage에도 업로드한다."""
     try:
         storage_key = storage_key_for(report_type, filename)
         upload_storage_file(local_path, storage_key)
@@ -575,7 +502,7 @@ def register_report(draft_id: str) -> dict[str, Any]:
         "link_status": "UNLINKED",
         "control_status": "방제 결과 등록",
         "survey_datetime": draft["end_date"],
-        # apply_report_template()이 pdf/docx를 둘 다 만들므로 둘 다 있다고 기록한다.
+        # draft 생성 단계에서 PDF와 DOCX가 모두 Storage에 업로드된다.
         "available_formats": ["pdf", "docx"],
     }
 
