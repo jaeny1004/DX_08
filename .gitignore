@@ -58,6 +58,8 @@ __MACOSX/
 
 # Vercel 번들 용량 측정용 임시 pip install 산출물 (일회성 조사 산출물, 커밋 대상 아님)
 .tmp_vercel_size/
+.uv-tools/
+.vercel-linux-site-packages/
 
 # Root data/ raw source GeoJSON copies (large, regeneratable staging data).
 # Deployed copies used by the app live in public/data/ and rag-backend/data/
