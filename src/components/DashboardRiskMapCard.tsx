@@ -11,6 +11,7 @@ import {
   HAS_VWORLD_KEY,
   MAP_TILE_CONFIG,
 } from "../utils/mapTileConfig";
+import { pickField } from "../utils/pickField";
 
 type BaseMapMode = "base" | "satellite";
 type MapDisplayMode = "priority" | "risk";
@@ -174,9 +175,18 @@ function escapeHtml(value: unknown) {
 
 function normalizeRiskGrade(props: any) {
   const validGrades = new Set(["매우 높음", "높음", "주의", "관찰", "낮음"]);
-  if (validGrades.has(props?.risk_grade)) return props.risk_grade;
+  const selectedGrade = pickField(
+    props,
+    ["risk_grade", "risk_stage_label"],
+    (value, key) =>
+      key === "risk_stage_label" ||
+      validGrades.has(value as string),
+  );
+  if (validGrades.has(selectedGrade as string)) {
+    return selectedGrade as string;
+  }
 
-  switch (props?.risk_stage_label) {
+  switch (selectedGrade) {
     case "고위험 1순위 후보":
       return "매우 높음";
     case "고위험 2순위 후보":
@@ -198,9 +208,21 @@ function normalizePriorityGrade(props: any) {
     "정기 관찰",
     "일반 관리",
   ]);
-  if (validGrades.has(props?.field_priority_grade_v3)) return props.field_priority_grade_v3;
-  if (validGrades.has(props?.priority_grade_v3)) return props.priority_grade_v3;
-  switch (props?.priority_stage_label) {
+  const selectedGrade = pickField(
+    props,
+    [
+      "field_priority_grade_v3",
+      "priority_grade_v3",
+      "priority_stage_label",
+    ],
+    (value, key) =>
+      key === "priority_stage_label" ||
+      validGrades.has(value as string),
+  );
+  if (validGrades.has(selectedGrade as string)) {
+    return selectedGrade as string;
+  }
+  switch (selectedGrade) {
     case "예찰 1순위 후보":
       return "최우선 예찰";
     case "예찰 2순위 후보":
