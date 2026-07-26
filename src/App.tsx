@@ -14,7 +14,6 @@ import {
   Footprints,
   ShieldCheck,
   FileText,
-  Settings,
   FlaskConical,
   AlertTriangle,
   PanelLeftOpen,
@@ -30,7 +29,6 @@ import MonitoringSection from "./components/MonitoringSection";
 import FieldSection from "./components/FieldSection";
 import ControlSection from "./components/ControlSection";
 import AdminSection from "./components/AdminSection";
-import SystemSection from "./components/SystemSection";
 import Chatbot from "./components/Chatbot";
 import SimulationSection from "./components/SimulationSection";
 import AuthScreen from "./components/auth/AuthScreen";
@@ -67,10 +65,9 @@ type ModuleId =
   | "dashboard"
   | "monitoring"
   | "field"
-  | "control"
-  | "admin"
-  | "system"
-  | "simulation";
+  | "control-status"
+  | "control-work"
+  | "admin";
 
 export default function App() {
   const [activeModule, setActiveModule] =
@@ -360,7 +357,7 @@ export default function App() {
     );
   };
 
-  const modules = [
+  const primaryModules = [
     {
       id: "dashboard",
       label: "종합 상황판",
@@ -376,31 +373,44 @@ export default function App() {
       label: "현장 스마트 예찰",
       icon: Footprints,
     },
-    {
-      id: "control",
-      label: "방제 사업 관리",
-      icon: ShieldCheck,
-    },
+  ] as const;
+
+  const controlGroup = {
+    id: "control",
+    label: "방제 사업 관리",
+    icon: ShieldCheck,
+    items: [
+      {
+        id: "control-status",
+        label: "방제 사업 관리",
+        icon: ShieldCheck,
+      },
+      {
+        id: "control-work",
+        label: "확산 시뮬레이션",
+        icon: FlaskConical,
+      },
+    ],
+  } as const;
+
+  const trailingModules = [
     {
       id: "admin",
       label: "행정 기안 지원",
       icon: FileText,
     },
-    {
-      id: "system",
-      label: "시스템 보안 관제",
-      icon: Settings,
-    },
-    {
-      id: "simulation",
-      label: "확산 시뮬레이션",
-      icon: FlaskConical,
-    },
+  ] as const;
+
+  const modules = [
+    ...primaryModules,
+    ...controlGroup.items,
+    ...trailingModules,
   ] as const;
 
   const activeModuleLabel =
     modules.find((module) => module.id === activeModule)?.label ??
     "종합 상황판";
+  const ControlGroupIcon = controlGroup.icon;
 
   if (isAuthChecking) {
     return (
@@ -553,7 +563,124 @@ export default function App() {
                 : "flex flex-1 flex-col items-center gap-2"
             }
           >
-            {modules.map((module) => {
+            {primaryModules.map((module) => {
+              const Icon = module.icon;
+              const active = activeModule === module.id;
+
+              return (
+                <button
+                  key={module.id}
+                  type="button"
+                  onClick={() => setActiveModule(module.id)}
+                  title={module.label}
+                  aria-label={module.label}
+                  className={
+                    isSidebarOpen
+                      ? active
+                        ? "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-100 px-3 text-left text-emerald-900 shadow-sm"
+                        : "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 text-left text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                      : active
+                        ? "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-100 text-emerald-900 shadow-sm"
+                        : "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                  }
+                >
+                  <Icon size={21} className="shrink-0" />
+
+                  {isSidebarOpen ? (
+                    <span className="truncate text-sm font-extrabold">
+                      {module.label}
+                    </span>
+                  ) : (
+                    <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                      {module.label}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
+            <div className="group relative">
+              <div
+                className={
+                  isSidebarOpen
+                    ? controlGroup.items.some(
+                        (item) => item.id === activeModule
+                      )
+                      ? "flex h-12 w-full items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-100 px-3 text-emerald-900 shadow-sm"
+                      : "flex h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                    : controlGroup.items.some(
+                          (item) => item.id === activeModule
+                        )
+                      ? "flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-100 text-emerald-900 shadow-sm"
+                      : "flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                }
+              >
+                <ControlGroupIcon size={21} className="shrink-0" />
+
+                {isSidebarOpen ? (
+                  <span className="truncate text-sm font-extrabold">
+                    {controlGroup.label}
+                  </span>
+                ) : (
+                  <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                    {controlGroup.label}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:grid-rows-[1fr] group-hover:opacity-100">
+                <div className="overflow-hidden">
+                  <div
+                    className={
+                      isSidebarOpen
+                        ? "mt-1 space-y-1 pl-8"
+                        : "mt-1 flex flex-col items-center gap-1"
+                    }
+                  >
+                    {controlGroup.items.map((item) => {
+                      const Icon = item.icon;
+                      const active = activeModule === item.id;
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setActiveModule(item.id)}
+                          title={item.label}
+                          aria-label={item.label}
+                          className={
+                            isSidebarOpen
+                              ? active
+                                ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                                : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                              : active
+                                ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                                : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                          }
+                        >
+                          <Icon
+                            size={isSidebarOpen ? 16 : 18}
+                            className="shrink-0"
+                          />
+
+                          {isSidebarOpen ? (
+                            <span className="truncate text-xs font-extrabold">
+                              {item.label}
+                            </span>
+                          ) : (
+                            <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                              {item.label}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {trailingModules.map((module) => {
               const Icon = module.icon;
               const active = activeModule === module.id;
 
@@ -722,7 +849,7 @@ export default function App() {
                   </div>
                 )}
 
-                {activeModule === "control" && (
+                {activeModule === "control-status" && (
                   <div className="h-full overflow-y-auto pr-1">
                     <ControlSection
                       tasks={tasks}
@@ -739,13 +866,7 @@ export default function App() {
                   </div>
                 )}
 
-                {activeModule === "system" && (
-                  <div className="h-full overflow-y-auto pr-1">
-                    <SystemSection />
-                  </div>
-                )}
-
-                {activeModule === "simulation" && (
+                {activeModule === "control-work" && (
                   <div className="h-full overflow-y-auto pr-1">
                     <SimulationSection />
                   </div>
