@@ -31,7 +31,6 @@ from app.services.prediction_report_generator import (
     ReportRecord,
     ReportSourceData,
     _create_supabase_client,
-    _single_row,
     calculate_metrics,
     geometry_to_image_rings,
     load_report_source_data,
@@ -87,29 +86,11 @@ def load_field_survey_source_data(
     client: Any | None = None,
 ) -> ReportSourceData:
     client = client or _create_supabase_client()
-    source = load_report_source_data(
+    return load_report_source_data(
         center_grid_id,
         year,
         client=client,
     )
-    response = (
-        client.table("prediction_grid_static")
-        .select("grid_id,center_point_5186")
-        .eq("grid_id", center_grid_id)
-        .limit(2)
-        .execute()
-    )
-    extra = _single_row(
-        list(response.data or []),
-        table="prediction_grid_static",
-        grid_id=center_grid_id,
-    )
-    source.static.update(extra)
-    if source.static.get("center_point_5186") is None:
-        raise RuntimeError(
-            f"격자 {center_grid_id}의 center_point_5186이 비어 있습니다."
-        )
-    return source
 
 
 @dataclass

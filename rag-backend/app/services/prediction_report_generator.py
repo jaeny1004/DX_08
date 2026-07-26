@@ -9,7 +9,7 @@ import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import httpx
 from docx import Document
@@ -36,7 +36,6 @@ DEFAULT_OUTPUT_ROOT = (
 MAP_WIDTH = 1024
 MAP_HEIGHT = 704
 DEFAULT_ZOOM = 10
-INFECTION_QUERY_CHUNK_SIZE = 200
 HISTORY_LAST_YEAR = 2021
 
 RISK_COLORS = {
@@ -134,11 +133,6 @@ def _create_supabase_client() -> Any:
     return create_client(url, key)
 
 
-def _chunks(values: Sequence[int], size: int) -> Iterable[list[int]]:
-    for start in range(0, len(values), size):
-        yield list(values[start : start + size])
-
-
 def _single_row(
     rows: list[dict[str, Any]],
     *,
@@ -168,6 +162,7 @@ def load_report_source_data(
         client.table("prediction_grid_static")
         .select(
             "grid_id,risk_candidate_flag,center_point_4326,"
+            "center_point_5186,"
             "cell_geometry_4326,block_geometry_4326,block_grid_ids,"
             "nearby_infection_grid_ids,sido_name,sigungu_name,"
             "block_cell_geometries_4326,block_pine_mean,"
@@ -190,6 +185,7 @@ def load_report_source_data(
 
     required_static = [
         "center_point_4326",
+        "center_point_5186",
         "cell_geometry_4326",
         "block_geometry_4326",
         "block_grid_ids",
@@ -219,24 +215,20 @@ def load_report_source_data(
     nearby_ids = [
         int(value) for value in static.get("nearby_infection_grid_ids") or []
     ]
-    infection_positions: list[dict[str, Any]] = []
-    infection_columns = (
-        "grid_id,geometry_4326,infection_count_2016,"
-        "infection_count_2017,infection_count_2018,"
-        "infection_count_2019,infection_count_2020,"
-        "infection_count_2021,infection_count_2016_2021,"
-        "infection_data_version"
-    )
-    for chunk in _chunks(nearby_ids, INFECTION_QUERY_CHUNK_SIZE):
-        response = (
-            client.table("infection_grid_positions")
-            .select(infection_columns)
-            .in_("grid_id", chunk)
-            .execute()
+    infection_response = client.rpc(
+        "get_infection_grid_positions",
+        {"p_grid_ids": nearby_ids},
+    ).execute()
+    infection_payload = list(infection_response.data or [])
+    if len(infection_payload) != 1:
+        raise RuntimeError(
+            "get_infection_grid_positions RPC가 단일 결과 행을 "
+            f"반환하지 않았습니다: {len(infection_payload)}건"
         )
-        infection_positions.extend(
-            dict(row) for row in (response.data or [])
-        )
+    infection_positions = [
+        dict(row) for row in (infection_payload[0].get("positions") or [])
+    ]
+    infection_positions.sort(key=lambda row: int(row["grid_id"]))
 
     found_ids = {int(row["grid_id"]) for row in infection_positions}
     missing_infection_ids = sorted(set(nearby_ids) - found_ids)
@@ -246,8 +238,6 @@ def load_report_source_data(
             f"{len(missing_infection_ids)}건을 찾지 못했습니다: "
             f"{missing_infection_ids[:20]}"
         )
-
-    infection_positions.sort(key=lambda row: int(row["grid_id"]))
     stats_year = year if 2016 <= year <= HISTORY_LAST_YEAR else HISTORY_LAST_YEAR
     stats_response = (
         client.table("grid_infection_stats")
