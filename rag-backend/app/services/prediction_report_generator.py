@@ -18,8 +18,10 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 from supabase import create_client
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-BACKEND_ROOT = PROJECT_ROOT / "rag-backend"
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+# field_survey/control 생성기의 기존 import 계약을 유지하는 호환 alias.
+# Vercel에서는 프로젝트와 백엔드 루트가 모두 /var/task이다.
+PROJECT_ROOT = BACKEND_ROOT
 TEMPLATE_PATH = (
     BACKEND_ROOT
     / "data"
@@ -121,7 +123,6 @@ def _first_value(
 
 def _create_supabase_client() -> Any:
     load_dotenv(BACKEND_ROOT / ".env")
-    load_dotenv(PROJECT_ROOT / ".env")
     url = os.getenv("SUPABASE_URL", "").strip()
     key = os.getenv("SUPABASE_KEY", "").strip()
 
@@ -1480,7 +1481,6 @@ def generate_single_prediction_report(
         raise ValueError("보고서 연도는 2016~2100 범위여야 합니다.")
 
     load_dotenv(BACKEND_ROOT / ".env")
-    load_dotenv(PROJECT_ROOT / ".env")
     api_key = os.getenv("VWORLD_API_KEY", "").strip()
     domain = os.getenv("VWORLD_API_DOMAIN", "").strip()
     basemap = os.getenv("VWORLD_BASEMAP", "GRAPHIC").strip() or "GRAPHIC"
