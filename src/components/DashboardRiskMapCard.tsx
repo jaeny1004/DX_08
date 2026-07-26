@@ -178,6 +178,9 @@ function escapeHtml(value: unknown) {
 }
 
 function normalizeRiskGrade(props: any) {
+  const validGrades = new Set(["매우 높음", "높음", "주의", "관찰", "낮음"]);
+  if (validGrades.has(props?.risk_grade)) return props.risk_grade;
+
   switch (props?.risk_stage_label) {
     case "고위험 1순위 후보":
       return "매우 높음";
@@ -188,7 +191,7 @@ function normalizeRiskGrade(props: any) {
     case "고위험 4순위 후보":
       return "관찰";
     default:
-      return props?.risk_grade ?? "낮음";
+      return "낮음";
   }
 }
 
