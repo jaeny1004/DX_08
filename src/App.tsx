@@ -914,7 +914,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[9998] cursor-default bg-transparent"
+              className="fixed inset-0 z-[9998] cursor-default bg-slate-950/10 backdrop-blur-[1px]"
             />
 
             <motion.aside
@@ -944,62 +944,84 @@ export default function App() {
             >
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <div>
-                  <div className="text-xs font-extrabold text-rose-600">
-                    REAL-TIME ALERT
-                  </div>
+                  <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-rose-600">
+                    Real-time Alert
+                  </span>
 
-                  <h2 className="mt-1 text-xl font-black text-slate-950">
+                  <h2 className="mt-2 text-xl font-black text-slate-950">
                     실시간 통합 알림
                   </h2>
+
+                  <div className="mt-0.5 text-[11px] font-bold text-slate-400">
+                    전체 {liveAlerts.length}건 · 미확인 {liveAlerts.length}건
+                  </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setIsAlertPanelOpen(false)}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                   aria-label="실시간 알림 닫기"
                 >
                   <X size={19} />
                 </button>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+              <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-4">
                 {liveAlerts.map((alert) => {
                   const Icon = alert.icon;
 
-                  const toneClass =
+                  const accent =
                     alert.tone === "danger"
-                      ? "border-rose-200 bg-rose-50 text-rose-800"
+                      ? {
+                          bar: "bg-rose-500",
+                          chip: "bg-rose-50 text-rose-600",
+                          time: "text-rose-500",
+                        }
                       : alert.tone === "warning"
-                        ? "border-amber-200 bg-amber-50 text-amber-800"
-                        : "border-blue-200 bg-blue-50 text-blue-800";
+                        ? {
+                            bar: "bg-amber-500",
+                            chip: "bg-amber-50 text-amber-600",
+                            time: "text-amber-500",
+                          }
+                        : {
+                            bar: "bg-blue-500",
+                            chip: "bg-blue-50 text-blue-600",
+                            time: "text-blue-500",
+                          };
 
                   return (
                     <article
                       key={alert.id}
-                      className={`rounded-2xl border p-4 ${toneClass}`}
+                      className="flex overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80">
+                      <div className={`w-1 shrink-0 ${accent.bar}`} />
+
+                      <div className="flex flex-1 items-start gap-3 p-3.5">
+                        <div
+                          className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${accent.chip}`}
+                        >
                           <Icon size={18} />
                         </div>
 
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-3">
-                            <h3 className="text-sm font-extrabold">
+                            <h3 className="truncate text-sm font-extrabold text-slate-900">
                               {alert.title}
                             </h3>
 
-                            <span className="shrink-0 text-[10px] font-black opacity-70">
+                            <span
+                              className={`shrink-0 text-[10px] font-black ${accent.time}`}
+                            >
                               {alert.time}
                             </span>
                           </div>
 
-                          <p className="mt-1 text-xs font-semibold leading-5 opacity-80">
+                          <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
                             {alert.description}
                           </p>
 
-                          <div className="mt-2 text-[10px] font-black opacity-60">
+                          <div className="mt-2 text-[10px] font-black text-slate-300">
                             {alert.id}
                           </div>
                         </div>
