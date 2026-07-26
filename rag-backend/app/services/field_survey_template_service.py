@@ -15,28 +15,7 @@ from app.services.report_draft_service import (
 from app.services.report_template_service import (
     upload_storage_file,
 )
-
-
-def _read_single_grid_id(
-    draft: dict[str, Any],
-) -> int:
-    values = [
-        str(value).strip()
-        for value in draft.get("center_grid_ids", [])
-        if str(value).strip()
-    ]
-
-    if len(values) != 1:
-        raise ValueError(
-            "행정양식 적용은 중심 격자 ID 1개만 지원합니다."
-        )
-
-    try:
-        return int(values[0])
-    except ValueError as exc:
-        raise ValueError(
-            f"중심 격자 ID가 숫자가 아닙니다: {values[0]}"
-        ) from exc
+from app.services.template_service_utils import read_single_grid_id
 
 
 def apply_field_survey_template(
@@ -49,7 +28,7 @@ def apply_field_survey_template(
             "이 함수는 현장 예찰 보고서만 지원합니다."
         )
 
-    center_grid_id = _read_single_grid_id(draft)
+    center_grid_id = read_single_grid_id(draft)
     year = int(draft.get("year") or 2026)
 
     data_summary = draft.get("data_summary")
