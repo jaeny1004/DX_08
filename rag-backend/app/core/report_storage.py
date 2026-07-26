@@ -17,3 +17,18 @@ def storage_key_for(report_type: str, filename: str) -> str:
     ext = Path(filename).suffix.lower() or ".pdf"
     digest = hashlib.sha1(filename.encode("utf-8")).hexdigest()[:16]
     return f"{report_type}/{digest}{ext}"
+
+
+def draft_storage_key_for(draft_id: str, filename: str) -> str:
+    """Return the Storage object key for a draft artifact."""
+    safe_draft_id = str(draft_id).strip()
+    safe_filename = Path(filename).name
+    if not safe_draft_id or safe_draft_id in {".", ".."}:
+        raise ValueError("draft_id가 비어 있습니다.")
+    if "/" in safe_draft_id or "\\" in safe_draft_id:
+        raise ValueError(f"잘못된 draft_id입니다: {draft_id}")
+    if not safe_filename or safe_filename in {".", ".."}:
+        raise ValueError("파일명이 비어 있습니다.")
+    ext = Path(safe_filename).suffix.lower() or ".bin"
+    digest = hashlib.sha1(safe_filename.encode("utf-8")).hexdigest()[:16]
+    return f"drafts/{safe_draft_id}/{digest}{ext}"

@@ -5,6 +5,7 @@ import math
 import re
 import uuid
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,6 @@ from app.core.database import SessionLocal
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT = BACKEND_ROOT / "data"
 CANDIDATE_GEOJSON = DATA_ROOT / "final_ui_candidate_v4.geojson"
-DRAFT_ROOT = DATA_ROOT / "generated_drafts"
 
 REPORT_LABELS = {
     "prediction": "신규 확산위험 분석 보고서",
@@ -358,12 +358,10 @@ def update_draft(draft_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     return draft
 
 
-def build_xlsx(draft: dict[str, Any]) -> Path:
-    # draft.json이 이 디렉터리를 미리 만들어 주던 시절의 잔재 —
-    # 초안 메타데이터는 Postgres로 이전됐지만 xlsx 산출물은 아직 로컬 파일이라 유지.
-    directory = DRAFT_ROOT / draft["draft_id"]
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{_safe_name(draft['title'])}.xlsx"
+def build_xlsx(draft: dict[str, Any]) -> BytesIO:
+    # Vercel의 읽기 전용 파일시스템에 쓰지 않고 요청 메모리에서 바로 반환한다.
+    output = BytesIO()
+    output.name = f"{_safe_name(draft['title'])}.xlsx"
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "보고서 요약"
@@ -397,5 +395,7 @@ def build_xlsx(draft: dict[str, Any]) -> Path:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
     sheet.column_dimensions["A"].width = 24
     sheet.column_dimensions["B"].width = 60
-    workbook.save(path)
-    return path
+    workbook.save(output)
+    workbook.close()
+    output.seek(0)
+    return output

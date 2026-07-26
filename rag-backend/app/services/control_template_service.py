@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
+from app.core.report_storage import draft_storage_key_for
 from app.services.control_report_generator import (
     generate_single_control_report,
 )
@@ -10,14 +12,8 @@ from app.services.report_draft_service import (
     load_draft,
     save_draft,
 )
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-GENERATED_DRAFT_ROOT = (
-    PROJECT_ROOT
-    / "rag-backend"
-    / "data"
-    / "generated_drafts"
+from app.services.report_template_service import (
+    upload_storage_file,
 )
 
 
@@ -56,12 +52,6 @@ def apply_control_template(
     center_grid_id = _read_single_grid_id(draft)
     year = int(draft.get("year") or 2026)
 
-    draft_directory = GENERATED_DRAFT_ROOT / draft_id
-    output_directory = draft_directory / "control_template"
-
-    draft_directory.mkdir(parents=True, exist_ok=True)
-    output_directory.mkdir(parents=True, exist_ok=True)
-
     data_summary = draft.get("data_summary")
     center_metrics = (
         data_summary.get("center_grid")
@@ -76,25 +66,36 @@ def apply_control_template(
         "risk_grade": center_metrics.get("risk_grade"),
         "access_score_v3": center_metrics.get("access_score"),
     }
-    result = generate_single_control_report(
-        center_grid_id=center_grid_id,
-        year=year,
-        output_root=output_directory,
-        report_no=1,
-        candidate_metrics=candidate_metrics,
-    )
+    with TemporaryDirectory(prefix=f"{draft_id}-") as temporary_directory:
+        output_directory = Path(temporary_directory) / "control_template"
+        result = generate_single_control_report(
+            center_grid_id=center_grid_id,
+            year=year,
+            output_root=output_directory,
+            report_no=1,
+            candidate_metrics=candidate_metrics,
+        )
 
-    docx_path = Path(result["docx_path"]).resolve()
-    pdf_path = Path(result["pdf_path"]).resolve()
+        docx_path = Path(result["docx_path"]).resolve()
+        pdf_path = Path(result["pdf_path"]).resolve()
 
-    for label, path in {
-        "DOCX": docx_path,
-        "PDF": pdf_path,
-    }.items():
-        if not path.is_file():
-            raise RuntimeError(
-                f"{label} 생성 결과가 없습니다: {path}"
-            )
+        for label, path in {
+            "DOCX": docx_path,
+            "PDF": pdf_path,
+        }.items():
+            if not path.is_file():
+                raise RuntimeError(
+                    f"{label} 생성 결과가 없습니다: {path}"
+                )
+
+        docx_storage_key = upload_storage_file(
+            docx_path,
+            draft_storage_key_for(draft_id, docx_path.name),
+        )
+        pdf_storage_key = upload_storage_file(
+            pdf_path,
+            draft_storage_key_for(draft_id, pdf_path.name),
+        )
 
     template_output = {
         "status": "generated",
@@ -109,8 +110,10 @@ def apply_control_template(
         "suspicious_count": result.get("suspicious_count"),
         "sample_count": result.get("sample_count"),
         "field_survey_linked": result.get("field_survey_linked"),
-        "docx_path": str(docx_path),
-        "pdf_path": str(pdf_path),
+        "docx_storage_key": docx_storage_key,
+        "pdf_storage_key": pdf_storage_key,
+        "docx_filename": docx_path.name,
+        "pdf_filename": pdf_path.name,
     }
 
     draft["template_output"] = template_output

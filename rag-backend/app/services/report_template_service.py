@@ -395,17 +395,19 @@ def apply_report_template(draft_id: str) -> dict[str, Any]:
     return template_output
 
 
-def get_template_file(draft_id: str, file_format: str) -> Path:
+def get_template_storage_key(draft_id: str, file_format: str) -> str:
     if file_format not in {"docx", "pdf"}:
         raise ValueError("행정양식 파일은 DOCX와 PDF만 지원합니다.")
     draft = load_draft(draft_id)
     output = draft.get("template_output")
     if not isinstance(output, dict):
         raise FileNotFoundError("행정양식이 아직 생성되지 않았습니다.")
-    path = Path(str(output.get(f"{file_format}_path", ""))).resolve()
-    if not path.is_file():
-        raise FileNotFoundError(f"생성 파일을 찾을 수 없습니다: {path}")
-    return path
+    storage_key = str(output.get(f"{file_format}_storage_key", "")).strip()
+    if not storage_key:
+        raise FileNotFoundError(
+            f"{file_format.upper()} Storage key를 찾을 수 없습니다: {draft_id}"
+        )
+    return storage_key
 
 
 def _next_document_no(session, report_type: str) -> str:
@@ -493,6 +495,52 @@ def _storage():
     return _storage_client
 
 
+def _content_type_for(path: Path) -> str:
+    return {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".png": "image/png",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }.get(path.suffix.lower(), "application/octet-stream")
+
+
+def upload_storage_file(local_path: Path, storage_key: str) -> str:
+    """Upload one generated artifact and return its object key."""
+    path = Path(local_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"업로드할 파일을 찾을 수 없습니다: {path}")
+    _storage().storage.from_(BUCKET).upload(
+        storage_key,
+        path.read_bytes(),
+        {
+            "content-type": _content_type_for(path),
+            "upsert": "true",
+        },
+    )
+    return storage_key
+
+
+def create_storage_signed_url(
+    storage_key: str,
+    *,
+    expires_in: int = 300,
+    download_filename: str | None = None,
+) -> str:
+    options = {"download": download_filename} if download_filename else None
+    response = (
+        _storage()
+        .storage.from_(BUCKET)
+        .create_signed_url(storage_key, expires_in, options=options)
+    )
+    return response["signedURL"]
+
+
+def copy_storage_file(source_key: str, destination_key: str) -> str:
+    """Copy an object inside the reports bucket without local disk I/O."""
+    _storage().storage.from_(BUCKET).copy(source_key, destination_key)
+    return destination_key
+
+
 def _upload_report_file(report_type: str, local_path: Path, filename: str) -> None:
     """생성된 pdf/docx를 Supabase Storage에도 업로드한다.
 
@@ -500,19 +548,9 @@ def _upload_report_file(report_type: str, local_path: Path, filename: str) -> No
     register_report() 전체를 실패시키지 않는다 — 업로드가 안 되면 preview/download가
     나중에 404를 내겠지만, 등록 자체(문서번호 발급, draft 상태 갱신)는 막지 않는다.
     """
-    content_type = (
-        "application/pdf"
-        if local_path.suffix.lower() == ".pdf"
-        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
     try:
         storage_key = storage_key_for(report_type, filename)
-        data = local_path.read_bytes()
-        _storage().storage.from_(BUCKET).upload(
-            storage_key,
-            data,
-            {"content-type": content_type, "upsert": "true"},
-        )
+        upload_storage_file(local_path, storage_key)
     except Exception as exc:  # noqa: BLE001 - 등록 자체를 막으면 안 되므로 의도적으로 광범위하게 처리
         print(f"[register_report] Storage 업로드 실패 (로컬 등록은 계속 진행): {report_type}/{filename}: {exc}")
 
@@ -523,14 +561,8 @@ def register_report(draft_id: str) -> dict[str, Any]:
         return draft["registered_report"]
 
     report_type = draft["report_type"]
-    directory = GENERATED_REPORT_ROOT / REPORT_DIRECTORIES[report_type]
-    pdf_dir = directory / "pdf"
-    docx_dir = directory / "docx"
-    pdf_dir.mkdir(parents=True, exist_ok=True)
-    docx_dir.mkdir(parents=True, exist_ok=True)
-
-    source_pdf = get_template_file(draft_id, "pdf")
-    source_docx = get_template_file(draft_id, "docx")
+    source_pdf_key = get_template_storage_key(draft_id, "pdf")
+    source_docx_key = get_template_storage_key(draft_id, "docx")
     center = draft["data_summary"].get("center_grid", {})
 
     data_fields = {
@@ -557,11 +589,14 @@ def register_report(draft_id: str) -> dict[str, Any]:
         data_fields=data_fields,
     )
 
-    shutil.copy2(source_pdf, pdf_dir / pdf_name)
-    shutil.copy2(source_docx, docx_dir / docx_name)
-
-    _upload_report_file(report_type, pdf_dir / pdf_name, pdf_name)
-    _upload_report_file(report_type, docx_dir / docx_name, docx_name)
+    copy_storage_file(
+        source_pdf_key,
+        storage_key_for(report_type, pdf_name),
+    )
+    copy_storage_file(
+        source_docx_key,
+        storage_key_for(report_type, docx_name),
+    )
 
     registered = {"report_type": report_type, "document_no": document_no, "file_name": pdf_name}
     draft["status"] = "registered"
