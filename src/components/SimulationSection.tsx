@@ -1048,6 +1048,7 @@ export default function SimulationSection() {
     month,
     viewMode,
     baseMapMode,
+    currentZoom,
   ]);
 
   useEffect(() => {
