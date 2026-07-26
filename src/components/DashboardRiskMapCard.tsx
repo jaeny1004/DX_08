@@ -7,6 +7,10 @@ import {
   DispatchAssignment,
   DispatchTaskType,
 } from "../types/dispatch";
+import {
+  HAS_VWORLD_KEY,
+  MAP_TILE_CONFIG,
+} from "../utils/mapTileConfig";
 
 type BaseMapMode = "base" | "satellite";
 type MapDisplayMode = "priority" | "risk";
@@ -90,15 +94,6 @@ type Recommendation = {
   skillLevel: number;
   reason: string;
 };
-
-const VWORLD_KEY = String(import.meta.env.VITE_VWORLD_API_KEY ?? "").trim();
-const HAS_VWORLD_KEY = VWORLD_KEY.length > 0;
-const VWORLD_BASE_URL = `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Base/{z}/{y}/{x}.png`;
-const VWORLD_SATELLITE_URL = `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Satellite/{z}/{y}/{x}.jpeg`;
-const VWORLD_HYBRID_URL = `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Hybrid/{z}/{y}/{x}.png`;
-const OSM_BASE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-const ESRI_SATELLITE_URL =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
 const GEOJSON_PATH = "/data/final_ui_candidate_v4.geojson";
 const SIGUNGU_BOUNDARY_PATH = "/data/sigungu_boundary.geojson";
@@ -1179,8 +1174,8 @@ export default function DashboardRiskMapCard({
       preferCanvas: true,
       attributionControl: true,
     });
-    const baseLayer = L.tileLayer(HAS_VWORLD_KEY ? VWORLD_BASE_URL : OSM_BASE_URL, {
-      attribution: HAS_VWORLD_KEY ? "© VWorld" : "© OpenStreetMap contributors",
+    const baseLayer = L.tileLayer(MAP_TILE_CONFIG.base.url, {
+      attribution: MAP_TILE_CONFIG.base.attribution,
       minZoom: 6,
       maxZoom: 19,
       bounds: KOREA_BOUNDS,
@@ -1191,9 +1186,9 @@ export default function DashboardRiskMapCard({
       crossOrigin: true,
     });
     const satelliteLayer = L.tileLayer(
-      HAS_VWORLD_KEY ? VWORLD_SATELLITE_URL : ESRI_SATELLITE_URL,
+      MAP_TILE_CONFIG.satellite.url,
       {
-        attribution: HAS_VWORLD_KEY ? "© VWorld" : "Tiles © Esri",
+        attribution: MAP_TILE_CONFIG.satellite.attribution,
         minZoom: 6,
         maxZoom: 19,
         bounds: KOREA_BOUNDS,
@@ -1204,18 +1199,19 @@ export default function DashboardRiskMapCard({
         crossOrigin: true,
       },
     );
-    const hybridLayer = L.tileLayer(VWORLD_HYBRID_URL, {
-      attribution: "© VWorld",
-      minZoom: 6,
-      maxZoom: 19,
-      bounds: KOREA_BOUNDS,
-      noWrap: true,
-      updateWhenIdle: true,
-      updateWhenZooming: false,
-      keepBuffer: 1,
-      crossOrigin: true,
-      opacity: HAS_VWORLD_KEY ? 1 : 0,
-    });
+    const hybridLayer = MAP_TILE_CONFIG.hybrid
+      ? L.tileLayer(MAP_TILE_CONFIG.hybrid.url, {
+          attribution: MAP_TILE_CONFIG.hybrid.attribution,
+          minZoom: 6,
+          maxZoom: 19,
+          bounds: KOREA_BOUNDS,
+          noWrap: true,
+          updateWhenIdle: true,
+          updateWhenZooming: false,
+          keepBuffer: 1,
+          crossOrigin: true,
+        })
+      : null;
     const handleTileLoad = () => {
       if (HAS_VWORLD_KEY) {
         setTileStatus("success");
@@ -1233,6 +1229,7 @@ export default function DashboardRiskMapCard({
       }
     };
     for (const layer of [baseLayer, satelliteLayer, hybridLayer]) {
+      if (!layer) continue;
       layer.on("tileload", handleTileLoad);
       layer.on("tileerror", handleTileError);
     }
@@ -1257,17 +1254,17 @@ export default function DashboardRiskMapCard({
     const base = vworldBaseLayerRef.current;
     const satellite = vworldSatelliteLayerRef.current;
     const hybrid = vworldHybridLayerRef.current;
-    if (!map || !base || !satellite || !hybrid) return;
+    if (!map || !base || !satellite) return;
     tileErrorCountRef.current = 0;
     if (HAS_VWORLD_KEY) setTileStatus("loading");
     if (baseMapMode === "base") {
       map.removeLayer(satellite);
-      map.removeLayer(hybrid);
+      if (hybrid) map.removeLayer(hybrid);
       if (!map.hasLayer(base)) base.addTo(map);
     } else {
       map.removeLayer(base);
       if (!map.hasLayer(satellite)) satellite.addTo(map);
-      if (HAS_VWORLD_KEY && !map.hasLayer(hybrid)) hybrid.addTo(map);
+      if (hybrid && !map.hasLayer(hybrid)) hybrid.addTo(map);
     }
     gridLayerRef.current?.setStyle((feature) =>
       getGridStyle(feature?.properties ?? {}, baseMapMode, mapDisplayMode),

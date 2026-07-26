@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { MAP_TILE_CONFIG } from "../utils/mapTileConfig";
 
 type GridFeature = GeoJSON.Feature<GeoJSON.Geometry, Record<string, unknown>>;
 
@@ -14,7 +15,6 @@ interface ReportGridSelectorProps {
 }
 
 const GEOJSON_PATH = "/data/final_ui_candidate_v4.geojson";
-const OSM_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const KOREA_CENTER: [number, number] = [36.2, 127.8];
 
 const SIDO_KEYS = ["sido_name", "sido", "ctpv_nm", "SIDO_NM"];
@@ -117,9 +117,9 @@ export default function ReportGridSelector({
       zoomControl: true,
     }).setView(KOREA_CENTER, 7);
 
-    L.tileLayer(OSM_URL, {
+    L.tileLayer(MAP_TILE_CONFIG.base.url, {
       maxZoom: 19,
-      attribution: "&copy; OpenStreetMap",
+      attribution: MAP_TILE_CONFIG.base.attribution,
     }).addTo(map);
 
     mapRef.current = map;

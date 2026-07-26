@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { MAP_TILE_CONFIG } from "../utils/mapTileConfig";
 
 type ForecastMonth = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 type ViewMode = "current" | "noControl" | "control" | "effect";
@@ -62,20 +63,6 @@ const MIN_ZOOM = 6;
 const SIGUNGU_MAX_ZOOM = 9;
 const GRID_MIN_ZOOM = 10;
 const MAX_ZOOM = 15;
-
-const VWORLD_KEY = import.meta.env.VITE_VWORLD_API_KEY;
-
-const BASE_URL = VWORLD_KEY
-  ? `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Base/{z}/{y}/{x}.png`
-  : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-
-const SATELLITE_URL = VWORLD_KEY
-  ? `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Satellite/{z}/{y}/{x}.jpeg`
-  : "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-
-const HYBRID_URL = VWORLD_KEY
-  ? `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Hybrid/{z}/{y}/{x}.png`
-  : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
 const KOREA_BOUNDS = L.latLngBounds(
   L.latLng(32.5, 124),
@@ -591,30 +578,28 @@ export default function SimulationSection() {
     map.getPane("controlPane")!.style.zIndex = "470";
     map.getPane("controlPane")!.style.pointerEvents = "none";
 
-    const base = L.tileLayer(BASE_URL, {
+    const base = L.tileLayer(MAP_TILE_CONFIG.base.url, {
       maxZoom: 19,
       noWrap: true,
       bounds: KOREA_BOUNDS,
-      attribution: VWORLD_KEY
-        ? "VWorld"
-        : "© OpenStreetMap contributors",
+      attribution: MAP_TILE_CONFIG.base.attribution,
     });
 
-    const satellite = L.tileLayer(SATELLITE_URL, {
+    const satellite = L.tileLayer(MAP_TILE_CONFIG.satellite.url, {
       maxZoom: 19,
       noWrap: true,
       bounds: KOREA_BOUNDS,
-      attribution: VWORLD_KEY ? "VWorld" : "Esri World Imagery",
+      attribution: MAP_TILE_CONFIG.satellite.attribution,
     });
 
-    const hybrid = L.tileLayer(HYBRID_URL, {
-      maxZoom: 19,
-      noWrap: true,
-      bounds: KOREA_BOUNDS,
-      attribution: VWORLD_KEY
-        ? "VWorld"
-        : "© OpenStreetMap contributors",
-    });
+    const hybrid = MAP_TILE_CONFIG.hybrid
+      ? L.tileLayer(MAP_TILE_CONFIG.hybrid.url, {
+          maxZoom: 19,
+          noWrap: true,
+          bounds: KOREA_BOUNDS,
+          attribution: MAP_TILE_CONFIG.hybrid.attribution,
+        })
+      : null;
 
     base.addTo(map);
 
@@ -746,7 +731,7 @@ export default function SimulationSection() {
 
     if (baseMapMode === "base") {
       map.removeLayer(layers.satellite);
-      map.removeLayer(layers.hybrid);
+      if (layers.hybrid) map.removeLayer(layers.hybrid);
       if (!map.hasLayer(layers.base)) {
         layers.base.addTo(map);
       }
@@ -757,7 +742,7 @@ export default function SimulationSection() {
         layers.satellite.addTo(map);
       }
 
-      if (!map.hasLayer(layers.hybrid)) {
+      if (layers.hybrid && !map.hasLayer(layers.hybrid)) {
         layers.hybrid.addTo(map);
       }
     }
