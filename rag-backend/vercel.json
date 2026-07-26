@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["icn1"],
   "functions": {
     "api/**/*.py": {
-      "maxDuration": 10,
-      "excludeFiles": "{data/chroma/**,data/docs/**,data/generated_drafts/**,data/generated_reports/**,scripts/**,tests/**}"
+      "maxDuration": 10
     }
   },
   "rewrites": [
