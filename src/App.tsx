@@ -9,12 +9,13 @@ import {
   TreePine,
   MessageSquare,
   X,
-  LayoutDashboard,
-  Radar,
+  HomeIcon,
+  TreesIcon,
   Footprints,
   ShieldCheck,
+  ShieldOffIcon,
   FileText,
-  FlaskConical,
+  VideoIcon,
   AlertTriangle,
   PanelLeftOpen,
   PanelLeftClose,
@@ -22,6 +23,7 @@ import {
   MapPinned,
   Radio,
   LogOut,
+  UserRound,
 } from "lucide-react";
 
 import Dashboard from "./components/Dashboard";
@@ -361,12 +363,12 @@ export default function App() {
     {
       id: "dashboard",
       label: "종합 상황판",
-      icon: LayoutDashboard,
+      icon: HomeIcon,
     },
     {
       id: "monitoring",
       label: "병해충 모니터링",
-      icon: Radar,
+      icon: TreesIcon,
     },
     {
       id: "field",
@@ -383,12 +385,12 @@ export default function App() {
       {
         id: "control-status",
         label: "방제 사업 관리",
-        icon: ShieldCheck,
+        icon: ShieldOffIcon,
       },
       {
         id: "control-work",
         label: "확산 시뮬레이션",
-        icon: FlaskConical,
+        icon: VideoIcon,
       },
     ],
   } as const;
@@ -473,8 +475,8 @@ export default function App() {
         className="grid h-full transition-[grid-template-columns] duration-300 ease-out"
         style={{
           gridTemplateColumns: isSidebarOpen
-            ? "260px minmax(0, 1fr)"
-            : "88px minmax(0, 1fr)",
+            ? "240px minmax(0, 1fr)"
+            : "50px minmax(0, 1fr)",
         }}
       >
         <aside className="relative flex h-full min-w-0 flex-col border-r border-slate-200 bg-white py-4 shadow-sm">
@@ -492,17 +494,15 @@ export default function App() {
               }
               className={
                 isAlertPanelOpen
-                  ? "relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-rose-300 bg-rose-100 text-rose-700 shadow-sm"
-                  : "relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm"
+                  ? "relative flex h-10 w-10 shrink-0 items-center justify-center text-rose-700 transition hover:text-rose-900"
+                  : liveAlerts.length > 0
+                    ? "relative flex h-10 w-10 shrink-0 items-center justify-center text-rose-600 transition hover:text-rose-700"
+                    : "relative flex h-10 w-10 shrink-0 items-center justify-center text-emerald-800 transition hover:text-emerald-900"
               }
               aria-label="실시간 알림 열기"
               title="실시간 알림"
             >
-              <AlertTriangle size={25} />
-
-              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1 text-[10px] font-black text-white">
-                {liveAlerts.length}
-              </span>
+              <AlertTriangle size={22} />
             </button>
 
             {isSidebarOpen && (
@@ -529,7 +529,7 @@ export default function App() {
             onClick={() =>
               setIsSidebarOpen((previous) => !previous)
             }
-            className="absolute -right-4 top-[86px] z-30 flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition hover:text-emerald-700"
+            className="absolute -right-4 top-1/2 z-30 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition hover:text-emerald-700"
             aria-label={
               isSidebarOpen
                 ? "사이드바 닫기"
@@ -559,8 +559,8 @@ export default function App() {
           <nav
             className={
               isSidebarOpen
-                ? "flex flex-1 flex-col gap-2 px-3"
-                : "flex flex-1 flex-col items-center gap-2"
+                ? "flex flex-1 flex-col gap-0.5 px-2"
+                : "flex flex-1 flex-col items-center gap-1"
             }
           >
             {primaryModules.map((module) => {
@@ -577,14 +577,14 @@ export default function App() {
                   className={
                     isSidebarOpen
                       ? active
-                        ? "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-100 px-3 text-left text-emerald-900 shadow-sm"
-                        : "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 text-left text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                        ? "group relative flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                        : "group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                       : active
-                        ? "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-100 text-emerald-900 shadow-sm"
-                        : "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                        ? "group relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
+                        : "group relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                   }
                 >
-                  <Icon size={21} className="shrink-0" />
+                  <Icon size={20} className="shrink-0" />
 
                   {isSidebarOpen ? (
                     <span className="truncate text-sm font-extrabold">
@@ -606,16 +606,16 @@ export default function App() {
                     ? controlGroup.items.some(
                         (item) => item.id === activeModule
                       )
-                      ? "flex h-12 w-full items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-100 px-3 text-emerald-900 shadow-sm"
-                      : "flex h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                      ? "flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-emerald-900"
+                      : "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                     : controlGroup.items.some(
                           (item) => item.id === activeModule
                         )
-                      ? "flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-100 text-emerald-900 shadow-sm"
-                      : "flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                      ? "flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
+                      : "flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                 }
               >
-                <ControlGroupIcon size={21} className="shrink-0" />
+                <ControlGroupIcon size={20} className="shrink-0" />
 
                 {isSidebarOpen ? (
                   <span className="truncate text-sm font-extrabold">
@@ -651,8 +651,8 @@ export default function App() {
                           className={
                             isSidebarOpen
                               ? active
-                                ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
-                                : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                                ? "flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                                : "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                               : active
                                 ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
                                 : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
@@ -694,14 +694,14 @@ export default function App() {
                   className={
                     isSidebarOpen
                       ? active
-                        ? "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-100 px-3 text-left text-emerald-900 shadow-sm"
-                        : "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 text-left text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                        ? "group relative flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                        : "group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                       : active
-                        ? "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-100 text-emerald-900 shadow-sm"
-                        : "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                        ? "group relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
+                        : "group relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                   }
                 >
-                  <Icon size={21} className="shrink-0" />
+                  <Icon size={20} className="shrink-0" />
 
                   {isSidebarOpen ? (
                     <span className="truncate text-sm font-extrabold">
@@ -716,6 +716,72 @@ export default function App() {
               );
             })}
           </nav>
+
+          <div
+            className={
+              isSidebarOpen
+                ? "mx-3 mt-3 flex flex-col gap-2 border-t border-slate-200 pt-3"
+                : "mx-auto mt-3 flex flex-col items-center gap-2 border-t border-slate-200 pt-3"
+            }
+          >
+            {isSidebarOpen && (
+              <div className="flex items-center gap-2 px-1 text-[11px] font-bold text-slate-500">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  행정망 연동 정상
+                </span>
+                <span className="rounded-full bg-slate-100 px-2 py-1">
+                  PR-AUC 0.3183
+                </span>
+              </div>
+            )}
+
+            <div
+              className={
+                isSidebarOpen
+                  ? "flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3"
+                  : "flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-slate-50"
+              }
+              title={
+                isSidebarOpen
+                  ? undefined
+                  : `${authUser.name} · ${authUser.organization}`
+              }
+            >
+              <UserRound size={20} className="shrink-0 text-emerald-800" />
+              {isSidebarOpen && (
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-extrabold text-slate-800">
+                    {authUser.name}
+                  </div>
+                  <div className="mt-0.5 max-w-[140px] truncate text-[10px] font-bold text-slate-400">
+                    {authUser.organization}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                logout();
+                setAuthUser(null);
+                setSelectedGrid(null);
+                setIsChatOpen(false);
+                setIsAlertPanelOpen(false);
+              }}
+              className={
+                isSidebarOpen
+                  ? "flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                  : "flex h-10 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+              }
+              aria-label="로그아웃"
+              title="로그아웃"
+            >
+              <LogOut size={16} />
+              {isSidebarOpen && <span>로그아웃</span>}
+            </button>
+          </div>
 
           <div
             className={
@@ -740,7 +806,7 @@ export default function App() {
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-col">
-          <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
+          <header className="flex h-[72px] shrink-0 items-center border-b border-slate-200 bg-white px-5">
             <div className="flex min-w-0 items-center gap-4">
               <div>
                 <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-700">
@@ -759,45 +825,6 @@ export default function App() {
               <div className="hidden max-w-[560px] truncate text-xs font-semibold text-slate-500 xl:block">
                 AI 기반 소나무재선충병 신규 확산위험 후보 분석 및 우선 예찰 의사결정 지원
               </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="hidden items-center gap-4 text-[11px] font-bold text-slate-500 xl:flex">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  행정망 연동 정상
-                </span>
-
-                <span className="rounded-full bg-slate-100 px-3 py-1.5">
-                  PR-AUC 0.3183
-                </span>
-              </div>
-
-              <div className="hidden text-right sm:block">
-                <div className="text-xs font-extrabold text-slate-800">
-                  {authUser.name}
-                </div>
-                <div className="mt-0.5 max-w-[180px] truncate text-[10px] font-bold text-slate-400">
-                  {authUser.organization}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  logout();
-                  setAuthUser(null);
-                  setSelectedGrid(null);
-                  setIsChatOpen(false);
-                  setIsAlertPanelOpen(false);
-                }}
-                className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-              >
-                <LogOut size={16} />
-                <span className="hidden md:inline">
-                  로그아웃
-                </span>
-              </button>
             </div>
           </header>
 
@@ -910,7 +937,7 @@ export default function App() {
                 duration: 0.18,
               }}
               style={{
-                left: isSidebarOpen ? 276 : 104,
+                left: isSidebarOpen ? 256 : 66,
                 top: 16,
               }}
               className="fixed z-[9999] flex max-h-[calc(100vh-32px)] w-[390px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
