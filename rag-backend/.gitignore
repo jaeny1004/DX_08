@@ -17,3 +17,6 @@ data/chroma/
 
 # 중요: 아래 GeoJSON은 GitHub 업로드 대상이므로 제외하지 않음
 # data/final_ui_candidate_v4.geojson
+
+.vercel
+.env*
