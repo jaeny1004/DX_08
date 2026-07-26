@@ -1063,26 +1063,33 @@ export default function App() {
       </AnimatePresence>
 
       {!isChatOpen && (
-        <div className="fixed bottom-6 right-6 z-50">
-          <motion.button
-            type="button"
-            onClick={() => setIsChatOpen(true)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="group relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-emerald-400/35 bg-emerald-800 text-white shadow-xl transition-colors hover:bg-emerald-900"
-            aria-label="AI 챗봇 열기"
-          >
-            <MessageSquare size={22} />
-
-            <span className="absolute -right-1 -top-1 animate-bounce rounded-full border border-white bg-amber-400 px-1.5 py-0.5 text-[9px] font-black text-emerald-950">
+        <motion.button
+          type="button"
+          onClick={() => setIsChatOpen(true)}
+          initial={{ x: 8, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          whileHover={{ x: -4 }}
+          className="group fixed right-0 top-1/2 z-50 flex -translate-y-1/2 flex-col items-center gap-2 rounded-l-2xl border border-r-0 border-emerald-400/35 bg-emerald-800 px-2.5 py-4 text-white shadow-xl transition-colors hover:bg-emerald-900"
+          aria-label="AI 챗봇 열기"
+        >
+          <span className="relative">
+            <MessageSquare size={20} />
+            <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full border border-white bg-amber-400 px-1 text-[8px] font-black text-emerald-950">
               AI
             </span>
+          </span>
 
-            <span className="pointer-events-none absolute right-16 whitespace-nowrap rounded-xl bg-slate-900/90 px-2.5 py-1 text-[10px] font-bold text-white opacity-0 shadow transition-all group-hover:opacity-100">
-              위험격자·백서 통합 질의 비서
-            </span>
-          </motion.button>
-        </div>
+          <span
+            className="text-[11px] font-black tracking-widest"
+            style={{ writingMode: "vertical-rl" }}
+          >
+            AI 챗봇
+          </span>
+
+          <span className="pointer-events-none absolute right-full mr-3 whitespace-nowrap rounded-xl bg-slate-900/90 px-2.5 py-1 text-[10px] font-bold text-white opacity-0 shadow transition-all group-hover:opacity-100">
+            위험격자·백서 통합 질의 비서
+          </span>
+        </motion.button>
       )}
     </div>
   );
