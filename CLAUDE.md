@@ -83,6 +83,9 @@ AI 결과를 예찰 우선순위·방제 검토·인력배정·현장보고·행
   자기 자신을 재귀 호출하는 버그가 있음 (무한 재귀 위험).
 - `rag-backend_backup_before_sqlite/`, `docs/legacy/` 폴더는 SQLite 전환 전 백업/레거시로 추정됨.
   삭제 전 반드시 실제 참조 여부를 grep으로 확인하고 목록으로 먼저 보고할 것.
+- `ROBOFLOW_API_KEY`는 `api/roboflow.ts`(프로젝트 루트 Vercel Node 함수, `FieldSection.tsx`의
+  'Roboflow 정밀 판독 실행' 버튼이 호출)에서 실제 사용 중 — 삭제 금지. 단, 이 API가 실제로
+  어느 배포 환경에 연결돼 있는지는 별도 확인 필요(2026-07-26 기준).
 
 ## 데이터 저장 규칙 (신규 데이터 추가 시 필수)
 
