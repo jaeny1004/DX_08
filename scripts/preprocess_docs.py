@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = PROJECT_ROOT / "rag-backend"
-DEFAULT_DOCS_DIR = BACKEND_ROOT / "data" / "docs"
+DEFAULT_DOCS_DIR = PROJECT_ROOT / "data" / "docs"
 DEFAULT_CACHE_DIR = BACKEND_ROOT / "data" / "docs_text_cache"
 sys.path.insert(0, str(BACKEND_ROOT))
 load_dotenv(BACKEND_ROOT / ".env")

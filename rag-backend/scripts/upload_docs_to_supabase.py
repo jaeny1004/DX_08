@@ -1,4 +1,4 @@
-"""data/docs/*.pdf를 Supabase Storage의 'docs' 비공개 버킷으로 업로드하는 1회성 스크립트.
+"""프로젝트 루트 data/docs/*.pdf를 Supabase Storage에 업로드하는 1회성 스크립트.
 
 무료 플랜 기준 파일당 50MB 제한을 넘는 파일은 업로드에서 제외하고 목록으로만 보고한다.
 버킷이 없으면 생성한다(비공개). 실행: python scripts/upload_docs_to_supabase.py
@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.core.doc_storage import BUCKET, storage_key_for  # noqa: E402
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-DOCS_DIR = BACKEND_ROOT / "data" / "docs"
+PROJECT_ROOT = BACKEND_ROOT.parent
+DOCS_DIR = PROJECT_ROOT / "data" / "docs"
 MAX_BYTES = 50 * 1024 * 1024  # 50MB
 
 

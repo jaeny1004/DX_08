@@ -64,6 +64,7 @@ __MACOSX/
 # only — this pattern is anchored to the top-level data/ folder and does not
 # touch those two directories.
 /data/**/*.geojson
+/data/docs/*.pdf
 
 # GitHub upload exclusions for very large source artifacts
 /data/admin/BND_ADM_DONG_PG.shp

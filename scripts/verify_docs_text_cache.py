@@ -14,7 +14,9 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = PROJECT_ROOT / "rag-backend"
-DOCS_DIR = BACKEND_ROOT / "data" / "docs"
+DOCS_DIR = PROJECT_ROOT / "data" / "docs"
+CACHE_DIR = BACKEND_ROOT / "data" / "docs_text_cache"
+LEGACY_DOCS_DIR = BACKEND_ROOT / "data" / "docs"
 RESULT_PATH = (
     PROJECT_ROOT
     / "data"
@@ -87,14 +89,14 @@ def main() -> int:
     order_checks: list[dict[str, Any]] = []
     for source in sources:
         cache_payload = json.loads(
-            parsers.cache_path_for(source).read_text(encoding="utf-8")
+            (CACHE_DIR / f"{source.name}.json").read_text(encoding="utf-8")
         )
         raw_pages = [
             PageText(page=int(row["page"]), text=str(row["text"]))
             for row in cache_payload["pages"]
         ]
         expected_pages = parsers._strip_boilerplate(raw_pages)
-        actual_pages = parsers.parse(str(source))
+        actual_pages = parsers.parse(str(LEGACY_DOCS_DIR / source.name))
         exact_pages = [
             (page.page, page.text) for page in expected_pages
         ] == [

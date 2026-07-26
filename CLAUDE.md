@@ -107,7 +107,7 @@ AI 결과를 예찰 우선순위·방제 검토·인력배정·현장보고·행
 
 ## RAG 문서 전처리
 
-- 새 PDF 또는 HWP 문서를 `rag-backend/data/docs/`에 추가하면 배포 전에
+- 새 PDF 또는 HWP 문서를 `data/docs/`에 추가하면 배포 전에
   반드시 로컬에서 `scripts/preprocess_docs.py`를 실행한다.
 - Windows PowerShell:
   `.\rag-backend\venv\Scripts\python.exe .\scripts\preprocess_docs.py`
