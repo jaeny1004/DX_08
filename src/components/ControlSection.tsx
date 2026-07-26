@@ -15,8 +15,10 @@ import {
   AlertCircle 
 } from "lucide-react";
 import { ControlTask, GridCell } from "../types";
+import SectionTitle from "./SectionTitle";
 
 interface ControlSectionProps {
+  title: string;
   tasks: ControlTask[];
   grids: GridCell[];
   onAddTask: (task: ControlTask) => void;
@@ -24,6 +26,7 @@ interface ControlSectionProps {
 }
 
 export default function ControlSection({
+  title,
   tasks,
   grids,
   onAddTask,
@@ -109,6 +112,8 @@ export default function ControlSection({
 
   return (
     <div className="space-y-6">
+      <SectionTitle title={title} />
+
       {/* Category Tabs */}
       <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 text-sm font-bold text-slate-600 max-w-lg">
         <button 

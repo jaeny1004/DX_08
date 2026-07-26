@@ -412,6 +412,8 @@ export default function App() {
   const activeModuleLabel =
     modules.find((module) => module.id === activeModule)?.label ??
     "종합 상황판";
+  const sectionTitle =
+    activeModule === "dashboard" ? "홈" : activeModuleLabel;
   const ControlGroupIcon = controlGroup.icon;
 
   if (isAuthChecking) {
@@ -806,29 +808,7 @@ export default function App() {
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-col">
-          <header className="flex h-[72px] shrink-0 items-center border-b border-slate-200 bg-white px-5">
-            <div className="flex min-w-0 items-center gap-4">
-              <div>
-                <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-700">
-                  Pine Wilt Control Center
-                </div>
-
-                <h1 className="mt-0.5 text-3xl font-black tracking-tight text-slate-950">
-                  {activeModule === "dashboard"
-                    ? "홈"
-                    : activeModuleLabel}
-                </h1>
-              </div>
-
-              <div className="hidden h-9 w-px bg-slate-200 xl:block" />
-
-              <div className="hidden max-w-[560px] truncate text-xs font-semibold text-slate-500 xl:block">
-                AI 기반 소나무재선충병 신규 확산위험 후보 분석 및 우선 예찰 의사결정 지원
-              </div>
-            </div>
-          </header>
-
-          <main className="min-h-0 flex-1 overflow-hidden p-3 xl:p-4">
+          <main className="min-h-0 flex-1 overflow-hidden p-3 pt-5 xl:p-4 xl:pt-6">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeModule}
@@ -840,6 +820,7 @@ export default function App() {
               >
                 {activeModule === "dashboard" && (
                   <Dashboard
+                    title={sectionTitle}
                     grids={grids}
                     trees={trees}
                     workers={workers}
@@ -854,6 +835,7 @@ export default function App() {
                 {activeModule === "monitoring" && (
                   <div className="h-full overflow-y-auto pr-1">
                     <MonitoringSection
+                      title={sectionTitle}
                       trees={trees}
                       onAddTree={handleAddTree}
                       onUpdateTreeStatus={handleUpdateTreeStatus}
@@ -864,6 +846,7 @@ export default function App() {
                 {activeModule === "field" && (
                   <div className="h-full overflow-y-auto pr-1">
                     <FieldSection
+                      title={sectionTitle}
                       workers={workers}
                       reports={reports}
                       dispatchAssignments={dispatchAssignments}
@@ -879,6 +862,7 @@ export default function App() {
                 {activeModule === "control-status" && (
                   <div className="h-full overflow-y-auto pr-1">
                     <ControlSection
+                      title={sectionTitle}
                       tasks={tasks}
                       grids={grids}
                       onAddTask={handleAddTask}
@@ -889,7 +873,7 @@ export default function App() {
 
                 {activeModule === "admin" && (
                   <div className="h-full overflow-y-auto pr-1">
-                    <AdminSection />
+                    <AdminSection title={sectionTitle} />
                   </div>
                 )}
 

@@ -20,8 +20,10 @@ import {
 import { AuthUser } from "../types/auth";
 
 import DashboardRiskMapCard from "./DashboardRiskMapCard";
+import SectionTitle from "./SectionTitle";
 
 interface DashboardProps {
+  title: string;
   grids: GridCell[];
   trees: TreeRecord[];
   workers: WorkerStatus[];
@@ -33,6 +35,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({
+  title,
   grids,
   trees,
   workers,
@@ -109,62 +112,65 @@ export default function Dashboard({
   ];
 
   return (
-    <div
-      className="grid min-h-0 gap-3"
-      style={{
-        height: "calc(100vh - 178px)",
-        gridTemplateRows: "108px minmax(0, 1fr)",
-      }}
-    >
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((kpi, index) => {
-          const Icon = kpi.icon;
+    <div className="flex h-full min-h-0 flex-col">
+      <SectionTitle title={title} />
 
-          return (
-            <motion.article
-              key={kpi.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.04 }}
-              className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-shadow hover:shadow-md"
-            >
-              <div
-                className={`absolute right-0 top-0 h-20 w-20 translate-x-7 -translate-y-7 rounded-full transition-transform duration-300 group-hover:scale-110 ${kpi.accentClass}`}
-              />
+      <div
+        className="grid min-h-0 flex-1 gap-3"
+        style={{
+          gridTemplateRows: "108px minmax(0, 1fr)",
+        }}
+      >
+        <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {kpis.map((kpi, index) => {
+            const Icon = kpi.icon;
 
-              <div className="relative flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                    {kpi.label}
-                  </div>
-                  <div className="mt-1 text-2xl font-black tracking-tight text-slate-900">
-                    {kpi.value}
-                  </div>
-                  <div
-                    className={`mt-1.5 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${kpi.badgeClass}`}
-                  >
-                    {kpi.caption}
-                  </div>
-                </div>
-
+            return (
+              <motion.article
+                key={kpi.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.04 }}
+                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-shadow hover:shadow-md"
+              >
                 <div
-                  className={`rounded-xl p-2.5 text-white shadow-sm ${kpi.iconClass}`}
-                >
-                  <Icon size={20} />
-                </div>
-              </div>
-            </motion.article>
-          );
-        })}
-      </section>
+                  className={`absolute right-0 top-0 h-20 w-20 translate-x-7 -translate-y-7 rounded-full transition-transform duration-300 group-hover:scale-110 ${kpi.accentClass}`}
+                />
 
-      <DashboardRiskMapCard
-        dispatchAssignments={dispatchAssignments}
-        onAssignWorker={onAssignWorker}
-        onGridSelect={onGridSelect}
-        initialSigunguCode={authUser.sigunguCode}
-        initialSigunguName={authUser.sigunguName}
-      />
+                <div className="relative flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                      {kpi.label}
+                    </div>
+                    <div className="mt-1 text-2xl font-black tracking-tight text-slate-900">
+                      {kpi.value}
+                    </div>
+                    <div
+                      className={`mt-1.5 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${kpi.badgeClass}`}
+                    >
+                      {kpi.caption}
+                    </div>
+                  </div>
+
+                  <div
+                    className={`rounded-xl p-2.5 text-white shadow-sm ${kpi.iconClass}`}
+                  >
+                    <Icon size={20} />
+                  </div>
+                </div>
+              </motion.article>
+            );
+          })}
+        </section>
+
+        <DashboardRiskMapCard
+          dispatchAssignments={dispatchAssignments}
+          onAssignWorker={onAssignWorker}
+          onGridSelect={onGridSelect}
+          initialSigunguCode={authUser.sigunguCode}
+          initialSigunguName={authUser.sigunguName}
+        />
+      </div>
     </div>
   );
 }

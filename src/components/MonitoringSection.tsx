@@ -15,17 +15,20 @@ import {
   Trash2 
 } from "lucide-react";
 import { TreeRecord } from "../types";
+import SectionTitle from "./SectionTitle";
 
 interface MonitoringSectionProps {
+  title: string;
   trees: TreeRecord[];
   onAddTree: (newTree: TreeRecord) => void;
   onUpdateTreeStatus: (id: string, newStatus: TreeRecord["status"]) => void;
 }
 
-export default function MonitoringSection({ 
-  trees, 
-  onAddTree, 
-  onUpdateTreeStatus 
+export default function MonitoringSection({
+  title,
+  trees,
+  onAddTree,
+  onUpdateTreeStatus
 }: MonitoringSectionProps) {
   const [activeTab, setActiveLayer] = useState<"list" | "drone" | "emergence">("list");
   
@@ -94,6 +97,8 @@ export default function MonitoringSection({
 
   return (
     <div className="space-y-6">
+      <SectionTitle title={title} />
+
       {/* Category Tabs */}
       <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200/80 text-sm font-bold text-slate-600 max-w-lg">
         <button 

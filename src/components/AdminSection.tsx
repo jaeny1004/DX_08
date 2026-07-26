@@ -28,6 +28,11 @@ import {
   type ReportType,
 } from "../services/reportApi";
 import NewReportGenerator from "./NewReportGenerator";
+import SectionTitle from "./SectionTitle";
+
+interface AdminSectionProps {
+  title: string;
+}
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   prediction: "발생 예측",
@@ -61,7 +66,7 @@ function scoreText(value: number | null | undefined): string {
 }
 
 
-export default function AdminSection() {
+export default function AdminSection({ title }: AdminSectionProps) {
   const [activeTab, setActiveTab] =
   useState<"new-report" | "reports" | "species">("new-report");
   const [reportsRefreshKey, setReportsRefreshKey] = useState(0);
@@ -329,6 +334,8 @@ export default function AdminSection() {
 
   return (
     <div className="space-y-6">
+      <SectionTitle title={title} />
+
       {/* 탭 선택 */}
       <div className="flex max-w-3xl rounded-2xl border border-slate-200 bg-slate-100 p-1 text-sm font-bold text-slate-600">
         <button
