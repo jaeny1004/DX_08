@@ -100,15 +100,15 @@ const OSM_BASE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const ESRI_SATELLITE_URL =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
-const GEOJSON_PATH = "/data/final_ui_candidate_v4.geojson";
-const SIGUNGU_BOUNDARY_PATH = "/data/sigungu_boundary.geojson";
-const INFECTION_HISTORY_PATH = "/data/infection_history_2016_2021.geojson";
-const WORKERS_PATH = "/data/workforce_v2/workers.json";
-const WORKER_CAPABILITIES_PATH = "/data/workforce_v2/worker_capabilities.json";
-const WORKER_SERVICE_AREAS_PATH = "/data/workforce_v2/worker_service_areas.json";
-const WORKER_AVAILABILITY_PATH = "/data/workforce_v2/worker_availability.json";
-const WORKER_CURRENT_STATUS_PATH = "/data/workforce_v2/worker_current_status.json";
-const REGION_WORKFORCE_CAPACITY_PATH = "/data/workforce_v2/region_workforce_capacity.json";
+const GEOJSON_PATH = `${import.meta.env.BASE_URL}data/final_ui_candidate_v4.geojson`;
+const SIGUNGU_BOUNDARY_PATH = `${import.meta.env.BASE_URL}data/sigungu_boundary.geojson`;
+const INFECTION_HISTORY_PATH = `${import.meta.env.BASE_URL}data/infection_history_2016_2021.geojson`;
+const WORKERS_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/workers.json`;
+const WORKER_CAPABILITIES_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/worker_capabilities.json`;
+const WORKER_SERVICE_AREAS_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/worker_service_areas.json`;
+const WORKER_AVAILABILITY_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/worker_availability.json`;
+const WORKER_CURRENT_STATUS_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/worker_current_status.json`;
+const REGION_WORKFORCE_CAPACITY_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/region_workforce_capacity.json`;
 
 const KOREA_BOUNDS = L.latLngBounds(L.latLng(32.5, 124.0), L.latLng(39.8, 132.2));
 const GRID_RENDERER = L.canvas({ padding: 0.25, tolerance: 4 });

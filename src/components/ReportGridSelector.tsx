@@ -13,7 +13,7 @@ interface ReportGridSelectorProps {
   onGridSelect: (gridId: string) => void;
 }
 
-const GEOJSON_PATH = "/data/final_ui_candidate_v4.geojson";
+const GEOJSON_PATH = `${import.meta.env.BASE_URL}data/final_ui_candidate_v4.geojson`;
 const OSM_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const KOREA_CENTER: [number, number] = [36.2, 127.8];
 

@@ -54,9 +54,9 @@ type ControlArea = {
   selectedIds: Set<string>;
 };
 
-const SIGUNGU_BOUNDARY_PATH = "/data/sigungu_boundary.geojson";
-const SIGUNGU_INDEX_PATH = "/data/simulation_sigungu/index.json";
-const SIGUNGU_DATA_BASE = "/data/simulation_sigungu";
+const SIGUNGU_BOUNDARY_PATH = `${import.meta.env.BASE_URL}data/sigungu_boundary.geojson`;
+const SIGUNGU_INDEX_PATH = `${import.meta.env.BASE_URL}data/simulation_sigungu/index.json`;
+const SIGUNGU_DATA_BASE = `${import.meta.env.BASE_URL}data/simulation_sigungu`;
 
 const MIN_ZOOM = 6;
 const SIGUNGU_MAX_ZOOM = 9;
