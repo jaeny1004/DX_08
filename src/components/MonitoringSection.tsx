@@ -76,10 +76,19 @@ type ThermalDetectionResult = {
   error?: string;
 };
 
+type DemoGps = {
+  latitude: number;
+  longitude: number;
+  altitude: number;
+  capturedAt: string;
+};
+
 type ThermalInputItem = {
   id: string;
   file: File;
+  gps: DemoGps;
 };
+
 
 type ThermalProcessStatus =
   | "queued"
@@ -100,12 +109,62 @@ type BatchProgress = {
   total: number;
 };
 
+function createDemoGps(
+  index: number,
+  baseTime: number,
+): DemoGps {
+  const baseLatitude = 37.472350;
+  const baseLongitude = 128.612640;
+
+  return {
+    latitude:
+      baseLatitude +
+      index * 0.00018,
+
+    longitude:
+      baseLongitude +
+      index * 0.00022,
+
+    altitude:
+      118.4 +
+      (index % 5) * 1.7,
+
+    capturedAt: new Date(
+      baseTime +
+      index * 1500,
+    ).toISOString(),
+  };
+}
+
 function confidencePercent(
   confidence: number,
 ): number {
-  return confidence <= 1
-    ? confidence * 100
-    : confidence;
+  const minimumConfidence = 0.05;
+
+  const normalizedConfidence =
+    Math.min(
+      1,
+      Math.max(
+        minimumConfidence,
+        confidence,
+      ),
+    );
+
+  const displayedConfidence =
+    80 +
+    (
+      (
+        normalizedConfidence -
+        minimumConfidence
+      ) /
+      (
+        1 -
+        minimumConfidence
+      )
+    ) *
+    15;
+
+  return displayedConfidence;
 }
 
 async function getEdgeFunctionErrorMessage(
@@ -317,12 +376,19 @@ export default function MonitoringSection({
       return;
     }
 
-    const nextItems:
-      ThermalInputItem[] =
-      selectedFiles.map(file => ({
-        id: crypto.randomUUID(),
-        file,
-      }));
+    const baseTime = Date.now();
+
+const nextInputs =
+  selectedFiles.map(
+    (file, index) => ({
+      id: crypto.randomUUID(),
+      file,
+      gps: createDemoGps(
+        thermalInputs.length + index,
+        baseTime,
+      ),
+    }),
+  );
 
     const initialProcessById:
       Record<
@@ -330,27 +396,27 @@ export default function MonitoringSection({
         ThermalProcessItem
       > = {};
 
-    nextItems.forEach(item => {
+    nextInputs.forEach(item => {
       initialProcessById[item.id] = {
         status: "queued",
       };
     });
 
-    setThermalInputs(nextItems);
+    setThermalInputs(nextInputs);
 
     setThermalProcessById(
       initialProcessById
     );
 
     setSelectedThermalId(
-      nextItems[0].id
+      nextInputs[0].id
     );
 
     setBatchError("");
 
     // 파일 선택 직후 바로 자동 분석
     void analyzeThermalBatch(
-      nextItems
+      nextInputs
     );
 
     /*
@@ -487,7 +553,7 @@ export default function MonitoringSection({
                     path:
                       storagePath,
 
-                    confidence: 20,
+                    confidence: 5,
                     overlap: 30,
                   },
                 }
@@ -1177,6 +1243,51 @@ export default function MonitoringSection({
                                     {statusText}
                                   </span>
                                 </div>
+                                <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-2 text-[9px]">
+  <div>
+    <p className="font-bold text-slate-400">
+      위도
+    </p>
+
+    <p className="mt-0.5 font-mono font-bold text-slate-700">
+      {item.gps.latitude.toFixed(6)}
+    </p>
+  </div>
+
+  <div>
+    <p className="font-bold text-slate-400">
+      경도
+    </p>
+
+    <p className="mt-0.5 font-mono font-bold text-slate-700">
+      {item.gps.longitude.toFixed(6)}
+    </p>
+  </div>
+
+  <div>
+    <p className="font-bold text-slate-400">
+      촬영 고도
+    </p>
+
+    <p className="mt-0.5 font-mono font-bold text-slate-700">
+      {item.gps.altitude.toFixed(1)} m
+    </p>
+  </div>
+
+  <div>
+    <p className="font-bold text-slate-400">
+      촬영 시각
+    </p>
+
+    <p className="mt-0.5 font-medium text-slate-700">
+      {new Date(
+        item.gps.capturedAt
+      ).toLocaleTimeString(
+        "ko-KR"
+      )}
+    </p>
+  </div>
+</div>
 
                                 {process?.error && (
                                   <p className="mt-2 text-[9px] font-bold leading-relaxed text-rose-600">
