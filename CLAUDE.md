@@ -106,6 +106,21 @@ AI 결과를 예찰 우선순위·방제 검토·인력배정·현장보고·행
 - 지도(`simulation_sigungu` 등) 데이터는 시군구당 0.15~2MB 수준으로 이미 경량화되어
   있으므로, 인증이 걸린 백엔드 API로 옮기지 않고 정적 파일 서빙을 유지한다.
 
+## 로컬 개발 서버(dev) 종료 규칙
+
+- Windows에서 `npm run dev`는 `bash → bash → node(npm-cli) → cmd.exe → node(vite) → esbuild.exe`
+  형태의 깊은 프로세스 트리를 만든다. 최상위 프로세스만 종료하면 Windows는 자식 프로세스를
+  자동으로 정리하지 않아서, vite(node.exe)가 포트(5173 등)를 붙잡은 채 orphan으로 계속
+  살아남는다 (2026-07-26 실측으로 원인 확인, `TECH_DEBT_CLEANUP_PLAN.md` 등 참고 불필요 —
+  이 문서가 근거).
+- 반대로 포트를 실제로 점유 중인 프로세스(트리 맨 아래, vite node.exe)를 직접 종료하면
+  부모 프로세스들이 자식 종료를 감지하고 연쇄적으로 함께 종료된다 (실측 확인됨).
+- 그래서 **dev 서버를 시작하기 전, 그리고 세션을 끝낼 때 항상 `npm run devkill`을 실행한다.**
+  (`kill-port`로 4173/5173/8788/9222 포트를 직접 정리 — 포트 기준이라 프로세스 트리 깊이와
+  무관하게 항상 동작한다.)
+- 종료 후에는 `netstat -ano | findstr "4173 5173 8788 9222"` (PowerShell:
+  `Get-NetTCPConnection -LocalPort 4173,5173,8788,9222`)로 실제로 비어있는지 확인한다.
+
 ## Git / 서버 배포 절차
 
 ## RAG 문서 전처리
