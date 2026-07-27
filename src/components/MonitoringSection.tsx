@@ -4,6 +4,9 @@ import React, {
 } from "react";
 import {
   createClient,
+  FunctionsFetchError,
+  FunctionsHttpError,
+  FunctionsRelayError,
 } from "@supabase/supabase-js";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -73,12 +76,67 @@ type ThermalDetectionResult = {
   error?: string;
 };
 
+type ThermalInputItem = {
+  id: string;
+  file: File;
+};
+
+type ThermalProcessStatus =
+  | "queued"
+  | "uploading"
+  | "analyzing"
+  | "completed"
+  | "error";
+
+type ThermalProcessItem = {
+  status: ThermalProcessStatus;
+  storagePath?: string;
+  result?: ThermalDetectionResult;
+  error?: string;
+};
+
+type BatchProgress = {
+  completed: number;
+  total: number;
+};
+
 function confidencePercent(
   confidence: number,
 ): number {
   return confidence <= 1
     ? confidence * 100
     : confidence;
+}
+
+async function getEdgeFunctionErrorMessage(
+  error: unknown
+): Promise<string> {
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const payload =
+        await error.context.json();
+
+      return (
+        payload?.error ??
+        payload?.message ??
+        JSON.stringify(payload)
+      );
+    } catch {
+      return error.message;
+    }
+  }
+
+  if (error instanceof FunctionsRelayError) {
+    return `Supabase 중계 오류: ${error.message}`;
+  }
+
+  if (error instanceof FunctionsFetchError) {
+    return `Edge Function 연결 오류: ${error.message}`;
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "알 수 없는 분석 오류입니다.";
 }
 
 interface MonitoringSectionProps {
@@ -103,85 +161,80 @@ export default function MonitoringSection({
   const [inspector, setInspector] = useState("김지원");
   const [isRegistering, setIsRegistering] = useState(false);
 
-  // Drone Spectral simulation options (FR-MON-004, FR-MON-005)
-  const [droneMode, setDroneMode] =
-    useState<"rgb" | "thermal">("rgb");
 
-  const [rgbFile, setRgbFile] =
-    useState<File | null>(null);
-
-  const [thermalFile, setThermalFile] =
-    useState<File | null>(null);
-
-  const [rgbPreviewUrl, setRgbPreviewUrl] =
-    useState("");
-
+  // 사용자가 선택한 열화상 파일 목록
   const [
-    thermalPreviewUrl,
-    setThermalPreviewUrl,
+    thermalInputs,
+    setThermalInputs,
+  ] = useState<ThermalInputItem[]>([]);
+
+  // 파일별 미리보기 URL
+  const [
+    thermalPreviewById,
+    setThermalPreviewById,
+  ] = useState<Record<string, string>>({});
+
+  // 파일별 업로드·AI 분석 상태
+  const [
+    thermalProcessById,
+    setThermalProcessById,
+  ] = useState<
+    Record<string, ThermalProcessItem>
+  >({});
+
+  // 현재 왼쪽 화면에서 보고 있는 파일
+  const [
+    selectedThermalId,
+    setSelectedThermalId,
   ] = useState("");
 
+  // 전체 일괄 처리 여부
   const [
-    aiAnalysisRunning,
-    setAiAnalysisRunning,
+    isBatchAnalyzing,
+    setIsBatchAnalyzing,
   ] = useState(false);
 
+  // 전체 진행률
   const [
-    thermalResult,
-    setThermalResult,
-  ] =
-    useState<ThermalDetectionResult | null>(
-      null,
+    batchProgress,
+    setBatchProgress,
+  ] = useState<BatchProgress>({
+    completed: 0,
+    total: 0,
+  });
+
+  // 일괄 처리 공통 오류
+  const [
+    batchError,
+    setBatchError,
+  ] = useState("");
+
+
+
+  useEffect(() => {
+    const nextPreviewById:
+      Record<string, string> = {};
+
+    thermalInputs.forEach(item => {
+      nextPreviewById[item.id] =
+        URL.createObjectURL(item.file);
+    });
+
+    setThermalPreviewById(
+      nextPreviewById
     );
 
-  const [
-    analysisError,
-    setAnalysisError,
-  ] = useState("");
-
-  const [
-    rgbStoragePath,
-    setRgbStoragePath,
-  ] = useState("");
-
-  const [
-    thermalStoragePath,
-    setThermalStoragePath,
-  ] = useState("");
-
-  // RGB 파일이 선택될 때 미리보기 주소 생성
-  useEffect(() => {
-    if (!rgbFile) {
-      setRgbPreviewUrl("");
-      return;
-    }
-
-    const objectUrl =
-      URL.createObjectURL(rgbFile);
-
-    setRgbPreviewUrl(objectUrl);
-
     return () => {
-      URL.revokeObjectURL(objectUrl);
+      Object.values(
+        nextPreviewById
+      ).forEach(previewUrl => {
+        URL.revokeObjectURL(
+          previewUrl
+        );
+      });
     };
-  }, [rgbFile]);
+  }, [thermalInputs]);
 
-  // 열화상 파일이 선택될 때 미리보기 주소 생성
-  useEffect(() => {
-    if (!thermalFile) {
-      setThermalPreviewUrl("");
-      return;
-    }
-
-    const objectUrl =
-      URL.createObjectURL(thermalFile);
-
-    setThermalPreviewUrl(objectUrl);
-
-    return () => {
-      URL.revokeObjectURL(objectUrl);
-    };
-  }, [thermalFile]);
 
   // Emergence simulation state (FR-MON-007)
   const [windDirection, setWindDirection] = useState<"NE" | "SW" | "NW" | "SE">("SW");
@@ -221,16 +274,96 @@ export default function MonitoringSection({
     setIsRegistering(false);
   };
 
+  const updateThermalProcess = (
+    id: string,
+    patch: Partial<ThermalProcessItem>
+  ) => {
+    setThermalProcessById(
+      previous => ({
+        ...previous,
+
+        [id]: {
+          ...(previous[id] ?? {
+            status: "queued",
+          }),
+
+          ...patch,
+        },
+      })
+    );
+  };
 
 
+  const handleThermalFilesSelect = (
+    event:
+      React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const selectedFiles =
+      Array.from(
+        event.target.files ?? []
+      ).filter(file =>
+        file.type.startsWith(
+          "image/"
+        )
+      );
+
+    if (
+      selectedFiles.length === 0
+    ) {
+      setBatchError(
+        "분석할 열화상 이미지를 선택해 주세요."
+      );
+
+      return;
+    }
+
+    const nextItems:
+      ThermalInputItem[] =
+      selectedFiles.map(file => ({
+        id: crypto.randomUUID(),
+        file,
+      }));
+
+    const initialProcessById:
+      Record<
+        string,
+        ThermalProcessItem
+      > = {};
+
+    nextItems.forEach(item => {
+      initialProcessById[item.id] = {
+        status: "queued",
+      };
+    });
+
+    setThermalInputs(nextItems);
+
+    setThermalProcessById(
+      initialProcessById
+    );
+
+    setSelectedThermalId(
+      nextItems[0].id
+    );
+
+    setBatchError("");
+
+    // 파일 선택 직후 바로 자동 분석
+    void analyzeThermalBatch(
+      nextItems
+    );
+
+    /*
+     * 동일한 파일을 다시 선택해도
+     * onChange가 실행되도록 초기화
+     */
+    event.target.value = "";
+  };
   const selectedTree = trees.find(t => t.id === selectedTreeId) || trees[0];
 
-  const uploadDroneImage =
+  const uploadThermalImage =
     async (
-      folder:
-        | "rgb"
-        | "thermal",
-      file: File,
+      file: File
     ): Promise<string> => {
       const originalExtension =
         file.name
@@ -245,9 +378,7 @@ export default function MonitoringSection({
             "jpeg",
             "png",
             "webp",
-          ].includes(
-            originalExtension,
-          )
+          ].includes(originalExtension)
           ? originalExtension
           : "jpg";
 
@@ -257,7 +388,7 @@ export default function MonitoringSection({
           .slice(0, 10);
 
       const filePath =
-        `${folder}/${uploadDate}/` +
+        `thermal/${uploadDate}/` +
         `${crypto.randomUUID()}.` +
         extension;
 
@@ -278,135 +409,196 @@ export default function MonitoringSection({
               "3600",
 
             upsert: false,
-          },
+          }
         );
 
       if (error) {
         throw new Error(
-          `${folder} 이미지 업로드 실패: ${error.message}`,
+          `열화상 이미지 업로드 실패: ${error.message}`
         );
       }
 
       return filePath;
     };
 
-  const handleRunAiAnalysis =
-    async () => {
-      if (!rgbFile) {
-        setAnalysisError(
-          "RGB 이미지를 선택해 주세요.",
-        );
+
+
+  const analyzeThermalBatch =
+    async (
+      items: ThermalInputItem[]
+    ) => {
+      if (items.length === 0) {
         return;
       }
 
-      if (!thermalFile) {
-        setAnalysisError(
-          "열화상 이미지를 선택해 주세요.",
-        );
-        return;
+      setIsBatchAnalyzing(true);
+      setBatchError("");
+
+      setBatchProgress({
+        completed: 0,
+        total: items.length,
+      });
+
+
+      /*
+       * 우선 안정성을 위해 한 장씩 순차 처리합니다.
+       * 한 파일의 업로드와 분석이 끝난 후
+       * 다음 파일로 넘어갑니다.
+       */
+      for (const item of items) {
+        try {
+          updateThermalProcess(
+            item.id,
+            {
+              status: "uploading",
+              error: undefined,
+              result: undefined,
+            }
+          );
+
+          // 1. Supabase Storage 업로드
+          const storagePath =
+            await uploadThermalImage(
+              item.file
+            );
+
+          updateThermalProcess(
+            item.id,
+            {
+              status: "analyzing",
+              storagePath,
+            }
+          );
+
+          // 2. 기존 thermal-detection 호출
+          const {
+            data,
+            error,
+          } =
+            await supabase
+              .functions
+              .invoke<ThermalDetectionResult>(
+                "thermal-detection",
+                {
+                  body: {
+                    bucket:
+                      DRONE_BUCKET,
+
+                    path:
+                      storagePath,
+
+                    confidence: 20,
+                    overlap: 30,
+                  },
+                }
+              );
+
+          if (error) {
+            const detail =
+              await getEdgeFunctionErrorMessage(
+                error
+              );
+
+            throw new Error(detail);
+          }
+
+          if (!data?.ok) {
+            throw new Error(
+              data?.error ??
+              "Roboflow 분석에 실패했습니다."
+            );
+          }
+
+          // 3. 파일별 결과 저장
+          updateThermalProcess(
+            item.id,
+            {
+              status: "completed",
+              storagePath,
+              result: data,
+              error: undefined,
+            }
+          );
+        } catch (error) {
+          console.error(
+            `열화상 파일 분석 실패: ${item.file.name}`,
+            error
+          );
+
+          updateThermalProcess(
+            item.id,
+            {
+              status: "error",
+
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "분석 중 오류가 발생했습니다.",
+            }
+          );
+        } finally {
+          setBatchProgress(
+            previous => ({
+              ...previous,
+              completed:
+                previous.completed + 1,
+            })
+          );
+        }
       }
 
-      setAiAnalysisRunning(true);
-      setAnalysisError("");
-      setThermalResult(null);
-
-      try {
-        /*
-         * 이미 Storage에 올라간 파일이면
-         * 재업로드하지 않습니다.
-         */
-        let nextRgbPath =
-          rgbStoragePath;
-
-        if (!nextRgbPath) {
-          nextRgbPath =
-            await uploadDroneImage(
-              "rgb",
-              rgbFile,
-            );
-
-          setRgbStoragePath(
-            nextRgbPath,
-          );
-        }
-
-        let nextThermalPath =
-          thermalStoragePath;
-
-        if (!nextThermalPath) {
-          nextThermalPath =
-            await uploadDroneImage(
-              "thermal",
-              thermalFile,
-            );
-
-          setThermalStoragePath(
-            nextThermalPath,
-          );
-        }
-
-        /*
-         * Edge Function에는 파일 자체가 아니라
-         * Storage 경로만 전달합니다.
-         */
-        const {
-          data,
-          error,
-        } =
-          await supabase
-            .functions
-            .invoke<ThermalDetectionResult>(
-              "thermal-detection",
-              {
-                body: {
-                  bucket:
-                    DRONE_BUCKET,
-
-                  path:
-                    nextThermalPath,
-
-                  confidence:
-                    50,
-
-                  overlap:
-                    30,
-                },
-              },
-            );
-
-        if (error) {
-          throw new Error(
-            `Edge Function 호출 실패: ${error.message}`,
-          );
-        }
-
-        if (!data?.ok) {
-          throw new Error(
-            data?.error ??
-            "Roboflow 분석에 실패했습니다.",
-          );
-        }
-
-        setThermalResult(data);
-
-        /*
-         * 분석 후 열화상 탭으로 자동 전환
-         */
-        setDroneMode(
-          "thermal",
-        );
-      } catch (error) {
-        console.error(error);
-
-        setAnalysisError(
-          error instanceof Error
-            ? error.message
-            : "분석 중 오류가 발생했습니다.",
-        );
-      } finally {
-        setAiAnalysisRunning(false);
-      }
+      setIsBatchAnalyzing(false);
     };
+
+  const selectedThermalInput =
+    thermalInputs.find(
+      item =>
+        item.id ===
+        selectedThermalId
+    );
+
+  const selectedPreviewUrl =
+    thermalPreviewById[
+    selectedThermalId
+    ] ?? "";
+
+  const selectedProcess =
+    thermalProcessById[
+    selectedThermalId
+    ];
+
+  const selectedResult =
+    selectedProcess?.result;
+
+  const completedResults =
+    Object.values(
+      thermalProcessById
+    ).filter(
+      process =>
+        process.status ===
+        "completed" &&
+        process.result
+    );
+
+  const totalInfectedCount =
+    completedResults.reduce(
+      (sum, process) =>
+        sum +
+        (
+          process.result
+            ?.infectedCount ?? 0
+        ),
+      0
+    );
+
+  const progressPercent =
+    batchProgress.total > 0
+      ? (
+        batchProgress.completed /
+        batchProgress.total
+      ) * 100
+      : 0;
+
   return (
     <div className="space-y-6">
       {/* Category Tabs */}
@@ -421,7 +613,7 @@ export default function MonitoringSection({
           onClick={() => setActiveLayer("drone")}
           className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "drone" ? "bg-white text-emerald-950 shadow-sm" : "hover:text-slate-900"}`}
         >
-          🚁 AI 드론 스펙트럴 분석
+          🚁 AI 드론 열화상 일괄 분석
         </button>
         <button
           onClick={() => setActiveLayer("emergence")}
@@ -672,161 +864,128 @@ export default function MonitoringSection({
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-1.5">
-                  🚁 드론 텔레메트리 멀티스펙트럴 분광 뷰어
+                  🚁 드론 열화상 일괄 AI 분석 뷰어
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  RGB 실사 이미지와 열화상 이미지를 비교하고,
-                  열 이상 의심목을 AI로 탐지합니다.
+                  비행 후 수집된 열화상 이미지를 일괄 업로드하고,
+                  파일별 감염 의심목을 자동 탐지합니다.
                 </p>
               </div>
 
-              {/* Spectral toggles */}
-              <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold text-slate-600">
-                <button
-                  onClick={() => setDroneMode("rgb")}
-                  className={`px-3 py-1.5 rounded-lg transition-all ${droneMode === "rgb" ? "bg-white text-slate-950 shadow-sm" : ""}`}
-                >
-                  RGB 실사
-                </button>
-                <button
-                  onClick={() => setDroneMode("thermal")}
-                  className={`px-3 py-1.5 rounded-lg transition-all ${droneMode === "thermal" ? "bg-white text-slate-950 shadow-sm" : ""}`}
-                >
-                  열화상 분광
-                </button>
-              </div>
             </div>
+
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-8">
                 {/* Simulated Camera Feed Grid Canvas */}
                 <div className="bg-slate-900 rounded-3xl aspect-[16/9] w-full relative overflow-hidden flex items-center justify-center border border-slate-800">
 
-                  {droneMode === "rgb" && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-slate-950">
-                      {rgbPreviewUrl ? (
-                        <img
-                          src={rgbPreviewUrl}
-                          alt="드론 RGB 실사 이미지"
-                          className="h-full w-full object-contain"
-                        />
-                      ) : (
-                        <div className="text-center text-slate-400">
-                          <Camera
-                            size={40}
-                            className="mx-auto mb-3 opacity-70"
-                          />
+                  {selectedPreviewUrl ? (
+                    <div className="relative h-full w-full">
+                      <img
+                        src={selectedPreviewUrl}
+                        alt={
+                          selectedThermalInput
+                            ?.file.name ??
+                          "드론 열화상 이미지"
+                        }
+                        className="h-full w-full object-fill"
+                      />
 
-                          <p className="text-xs font-bold">
-                            RGB 이미지를 선택해 주세요.
-                          </p>
+                      {selectedResult?.predictions.map(
+                        (
+                          prediction,
+                          index
+                        ) => {
+                          const imageWidth =
+                            selectedResult.image
+                              ?.width ?? 1;
 
-                          <p className="mt-1 text-[10px]">
-                            오른쪽 분석 패널에서 업로드할 수 있습니다.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                          const imageHeight =
+                            selectedResult.image
+                              ?.height ?? 1;
 
-                  {droneMode === "thermal" && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-slate-950">
-                      {thermalPreviewUrl ? (
-                        <div className="relative h-full w-full">
-                          <img
-                            src={thermalPreviewUrl}
-                            alt="드론 열화상 이미지"
-                            className="h-full w-full object-fill"
-                          />
-
-                          {thermalResult?.predictions.map(
+                          const left =
                             (
-                              prediction,
-                              index,
-                            ) => {
-                              const imageWidth =
-                                thermalResult.image
-                                  ?.width ?? 1;
+                              (
+                                prediction.x -
+                                prediction.width / 2
+                              ) /
+                              imageWidth
+                            ) * 100;
 
-                              const imageHeight =
-                                thermalResult.image
-                                  ?.height ?? 1;
+                          const top =
+                            (
+                              (
+                                prediction.y -
+                                prediction.height / 2
+                              ) /
+                              imageHeight
+                            ) * 100;
 
-                              const left =
-                                (
-                                  (
-                                    prediction.x -
-                                    prediction.width /
-                                    2
-                                  ) /
-                                  imageWidth
-                                ) *
-                                100;
+                          const width =
+                            (
+                              prediction.width /
+                              imageWidth
+                            ) * 100;
 
-                              const top =
-                                (
-                                  (
-                                    prediction.y -
-                                    prediction.height /
-                                    2
-                                  ) /
-                                  imageHeight
-                                ) *
-                                100;
+                          const height =
+                            (
+                              prediction.height /
+                              imageHeight
+                            ) * 100;
 
-                              const width =
-                                (
-                                  prediction.width /
-                                  imageWidth
-                                ) *
-                                100;
-
-                              const height =
-                                (
-                                  prediction.height /
-                                  imageHeight
-                                ) *
-                                100;
-
-                              return (
-                                <div
-                                  key={`${prediction.x}-${prediction.y}-${index}`}
-                                  className="absolute rounded-md border-2 border-yellow-300 bg-yellow-300/10"
-                                  style={{
-                                    left: `${left}%`,
-                                    top: `${top}%`,
-                                    width: `${width}%`,
-                                    height: `${height}%`,
-                                  }}
-                                >
-                                  <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-yellow-300 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
-                                    #{index + 1}{" "}
-                                    {confidencePercent(
-                                      prediction.confidence,
-                                    ).toFixed(1)}
-                                    %
-                                  </span>
-                                </div>
-                              );
-                            },
-                          )}
-                        </div>
-                      ) : (
-                        <div className="text-center text-slate-400">
-                          <Thermometer
-                            size={40}
-                            className="mx-auto mb-3 opacity-70"
-                          />
-
-                          <p className="text-xs font-bold">
-                            열화상 이미지를 선택해 주세요.
-                          </p>
-
-                          <p className="mt-1 text-[10px]">
-                            AI 판독에는 열화상 이미지가 사용됩니다.
-                          </p>
-                        </div>
+                          return (
+                            <div
+                              key={`${prediction.x}-${prediction.y}-${index}`}
+                              className="absolute rounded-md border-2 border-yellow-300 bg-yellow-300/10"
+                              style={{
+                                left: `${left}%`,
+                                top: `${top}%`,
+                                width: `${width}%`,
+                                height: `${height}%`,
+                              }}
+                            >
+                              <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-yellow-300 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
+                                #{index + 1}{" "}
+                                {confidencePercent(
+                                  prediction.confidence
+                                ).toFixed(1)}
+                                %
+                              </span>
+                            </div>
+                          );
+                        }
                       )}
+
+                      {selectedProcess?.status ===
+                        "uploading" && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/55 text-xs font-black text-white">
+                            Supabase Storage 업로드 중...
+                          </div>
+                        )}
+
+                      {selectedProcess?.status ===
+                        "analyzing" && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/55 text-xs font-black text-white">
+                            Roboflow AI 분석 중...
+                          </div>
+                        )}
+                    </div>
+                  ) : (
+                    <div className="text-center text-slate-400">
+                      <Thermometer
+                        size={42}
+                        className="mx-auto mb-3 opacity-70"
+                      />
+
+                      <p className="text-xs font-bold">
+                        열화상 이미지 묶음을 선택해 주세요.
+                      </p>
+
+                      <p className="mt-1 text-[10px]">
+                        여러 장을 한 번에 선택할 수 있습니다.
+                      </p>
                     </div>
                   )}
 
@@ -852,159 +1011,228 @@ export default function MonitoringSection({
               {/* AI analysis result sidebar (FR-MON-005) */}
               <div className="lg:col-span-4 space-y-4">
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">AI 이미지 병변 분석 모델</h4>
-                  {/* RGB·열화상 이미지 선택 */}
-                  <div className="space-y-3">
-                    {/* RGB 이미지 */}
-                    <div className="space-y-1.5">
+                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    AI 열화상 일괄 분석 모델
+                  </h4>
+
+                  <div className="space-y-4">
+                    {/* 다중 열화상 파일 선택 */}
+                    <div className="space-y-2">
                       <label className="block text-[11px] font-bold text-slate-600">
-                        RGB 실사 이미지
+                        비가시 열화상 이미지 일괄 업로드
                       </label>
 
                       <input
                         type="file"
-                        accept="image/*"
-                        onChange={(event) => {
-                          const selectedFile =
-                            event.target.files?.[0] ??
-                            null;
-
-                          setRgbFile(
-                            selectedFile,
-                          );
-
-                          setRgbStoragePath("");
-                          setThermalResult(null);
-                          setAnalysisError("");
-                        }}
-                        className="block w-full rounded-xl border border-slate-200 bg-white p-2 text-[11px] text-slate-600"
+                        multiple
+                        accept="image/jpeg,image/png,image/webp"
+                        disabled={isBatchAnalyzing}
+                        onChange={handleThermalFilesSelect}
+                        className="block w-full rounded-xl border border-slate-200 bg-white p-2 text-[11px] text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                       />
 
-                      {rgbFile && (
-                        <p className="truncate text-[10px] font-bold text-emerald-700">
-                          선택됨: {rgbFile.name}
-                        </p>
-                      )}
+                      <p className="text-[10px] font-medium leading-relaxed text-slate-400">
+                        여러 장을 한 번에 선택할 수 있습니다. 파일을 선택하면
+                        별도의 실행 버튼 없이 업로드와 AI 분석이 자동으로 시작됩니다.
+                      </p>
                     </div>
 
-                    {/* 열화상 이미지 */}
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-600">
-                        열화상 이미지
-                      </label>
+                    {/* 전체 진행률 */}
+                    {batchProgress.total > 0 && (
+                      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="flex items-center justify-between text-[11px] font-bold">
+                          <span className="text-slate-600">
+                            일괄 분석 진행률
+                          </span>
 
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) => {
-                          const selectedFile =
-                            event.target.files?.[0] ??
-                            null;
-
-                          setThermalFile(
-                            selectedFile,
-                          );
-
-                          setThermalStoragePath("");
-                          setThermalResult(null);
-                          setAnalysisError("");
-                        }}
-                        className="block w-full rounded-xl border border-slate-200 bg-white p-2 text-[11px] text-slate-600"
-                      />
-
-                      {thermalFile && (
-                        <p className="truncate text-[10px] font-bold text-amber-700">
-                          선택됨: {thermalFile.name}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-
-                    <button
-                      onClick={handleRunAiAnalysis}
-                      disabled={
-                        aiAnalysisRunning ||
-                        !rgbFile ||
-                        !thermalFile
-                      }
-                      className="w-full bg-emerald-800 text-white rounded-xl py-3 text-xs font-bold flex items-center justify-center gap-2 hover:bg-emerald-900 transition-colors disabled:bg-slate-300"
-                    >
-                      {aiAnalysisRunning
-                        ? "Storage 업로드 및 AI 분석 중..."
-                        : "AI 감염 정밀 판독 실행"}
-                    </button>
-
-                    {aiAnalysisRunning && (
-                      <div className="space-y-1">
-                        <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                          <div className="bg-emerald-600 h-full w-[60%] animate-pulse" />
+                          <span className="font-mono text-emerald-700">
+                            {batchProgress.completed}/{batchProgress.total}
+                          </span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-bold block text-center">전기 전도성 및 분광 밴드 화소 연산 중...</span>
-                      </div>
-                    )}
 
-                    {analysisError && (
-                      <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-[11px] font-bold leading-relaxed text-rose-700">
-                        분석 오류: {analysisError}
-                      </div>
-                    )}
-
-                    {thermalResult && (
-                      <motion.div
-                        initial={{
-                          opacity: 0,
-                          y: 5,
-                        }}
-                        animate={{
-                          opacity: 1,
-                          y: 0,
-                        }}
-                        className="space-y-3 rounded-xl border border-slate-200 bg-white p-4"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-600">
-                            분석 상태
-                          </span>
-
-                          <span
-                            className={`rounded px-2 py-1 text-[10px] font-black ${thermalResult.status ===
-                                "INFECTED"
-                                ? "bg-rose-100 text-rose-700"
-                                : "bg-emerald-100 text-emerald-700"
-                              }`}
-                          >
-                            {thermalResult.status}
-                          </span>
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-emerald-600 transition-all duration-300"
+                            style={{
+                              width: `${progressPercent}%`,
+                            }}
+                          />
                         </div>
 
                         <div className="grid grid-cols-2 gap-2">
                           <div className="rounded-lg bg-slate-50 p-2.5">
-                            <p className="text-[10px] font-bold text-slate-400">
-                              감염 의심목
+                            <p className="text-[9px] font-bold text-slate-400">
+                              업로드 이미지
                             </p>
 
                             <p className="mt-1 text-lg font-black text-slate-900">
-                              {thermalResult.infectedCount}개
+                              {thermalInputs.length}장
                             </p>
                           </div>
 
                           <div className="rounded-lg bg-slate-50 p-2.5">
+                            <p className="text-[9px] font-bold text-slate-400">
+                              감염 의심목 합계
+                            </p>
+
+                            <p className="mt-1 text-lg font-black text-rose-600">
+                              {totalInfectedCount}개
+                            </p>
+                          </div>
+                        </div>
+
+                        {isBatchAnalyzing && (
+                          <p className="text-center text-[10px] font-bold text-amber-600">
+                            이미지를 한 장씩 순차 분석하고 있습니다.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 공통 오류 */}
+                    {batchError && (
+                      <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-[11px] font-bold leading-relaxed text-rose-700">
+                        분석 오류: {batchError}
+                      </div>
+                    )}
+
+                    {/* 파일별 분석 결과 */}
+                    {thermalInputs.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                          파일별 분석 결과
+                        </div>
+
+                        <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                          {thermalInputs.map((item, index) => {
+                            const process =
+                              thermalProcessById[item.id];
+
+                            const result =
+                              process?.result;
+
+                            let statusText = "대기";
+                            let statusClass =
+                              "bg-slate-100 text-slate-600";
+
+                            if (process?.status === "uploading") {
+                              statusText = "업로드 중";
+                              statusClass =
+                                "bg-sky-100 text-sky-700";
+                            }
+
+                            if (process?.status === "analyzing") {
+                              statusText = "AI 분석 중";
+                              statusClass =
+                                "bg-amber-100 text-amber-700";
+                            }
+
+                            if (process?.status === "completed") {
+                              if (result?.status === "INFECTED") {
+                                statusText =
+                                  `감염 ${result.infectedCount}개`;
+
+                                statusClass =
+                                  "bg-rose-100 text-rose-700";
+                              } else {
+                                statusText = "정상";
+                                statusClass =
+                                  "bg-emerald-100 text-emerald-700";
+                              }
+                            }
+
+                            if (process?.status === "error") {
+                              statusText = "오류";
+                              statusClass =
+                                "bg-rose-100 text-rose-700";
+                            }
+
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedThermalId(item.id)
+                                }
+                                className={`w-full rounded-xl border p-3 text-left transition-colors ${selectedThermalId === item.id
+                                    ? "border-emerald-300 bg-emerald-50"
+                                    : "border-slate-200 bg-white hover:bg-slate-50"
+                                  }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-[11px] font-black text-slate-800">
+                                      {index + 1}. {item.file.name}
+                                    </p>
+
+                                    <p className="mt-1 text-[9px] font-mono text-slate-400">
+                                      {(item.file.size / 1024 / 1024).toFixed(2)}
+                                      MB
+                                    </p>
+                                  </div>
+
+                                  <span
+                                    className={`shrink-0 rounded px-2 py-0.5 text-[9px] font-black ${statusClass}`}
+                                  >
+                                    {statusText}
+                                  </span>
+                                </div>
+
+                                {process?.error && (
+                                  <p className="mt-2 text-[9px] font-bold leading-relaxed text-rose-600">
+                                    {process.error}
+                                  </p>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 현재 선택한 이미지의 상세 결과 */}
+                    {selectedResult && (
+                      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-600">
+                            선택 이미지 분석
+                          </span>
+
+                          <span
+                            className={`rounded px-2 py-1 text-[9px] font-black ${selectedResult.status === "INFECTED"
+                                ? "bg-rose-100 text-rose-700"
+                                : "bg-emerald-100 text-emerald-700"
+                              }`}
+                          >
+                            {selectedResult.status}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-lg bg-slate-50 p-3">
+                            <p className="text-[10px] font-bold text-slate-400">
+                              감염 의심목
+                            </p>
+
+                            <p className="mt-1 text-xl font-black text-slate-900">
+                              {selectedResult.infectedCount}개
+                            </p>
+                          </div>
+
+                          <div className="rounded-lg bg-slate-50 p-3">
                             <p className="text-[10px] font-bold text-slate-400">
                               최고 신뢰도
                             </p>
 
-                            <p className="mt-1 text-lg font-black text-rose-600">
-                              {thermalResult.predictions.length >
-                                0
+                            <p className="mt-1 text-xl font-black text-rose-600">
+                              {selectedResult.predictions.length > 0
                                 ? Math.max(
-                                  ...thermalResult.predictions.map(
+                                  ...selectedResult.predictions.map(
                                     prediction =>
                                       confidencePercent(
-                                        prediction.confidence,
-                                      ),
-                                  ),
+                                        prediction.confidence
+                                      )
+                                  )
                                 ).toFixed(1)
                                 : "0.0"}
                               %
@@ -1012,18 +1240,14 @@ export default function MonitoringSection({
                           </div>
                         </div>
 
-                        {thermalResult.status ===
-                          "NORMAL" ? (
+                        {selectedResult.status === "NORMAL" ? (
                           <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-[11px] font-bold text-emerald-700">
                             열 이상 의심목이 탐지되지 않았습니다.
                           </div>
                         ) : (
                           <div className="max-h-48 space-y-2 overflow-y-auto">
-                            {thermalResult.predictions.map(
-                              (
-                                prediction,
-                                index,
-                              ) => (
+                            {selectedResult.predictions.map(
+                              (prediction, index) => (
                                 <div
                                   key={`${prediction.x}-${prediction.y}-${index}`}
                                   className="rounded-lg border border-slate-100 bg-slate-50 p-2.5 text-[10px]"
@@ -1035,7 +1259,7 @@ export default function MonitoringSection({
 
                                     <span className="text-rose-600">
                                       {confidencePercent(
-                                        prediction.confidence,
+                                        prediction.confidence
                                       ).toFixed(1)}
                                       %
                                     </span>
@@ -1043,22 +1267,21 @@ export default function MonitoringSection({
 
                                   <div className="mt-1 font-mono text-slate-500">
                                     중심 픽셀: (
-                                    {prediction.x.toFixed(1)},
-                                    {" "}
+                                    {prediction.x.toFixed(1)},{" "}
                                     {prediction.y.toFixed(1)})
                                   </div>
                                 </div>
-                              ),
+                              )
                             )}
                           </div>
                         )}
 
                         <p className="border-t border-slate-100 pt-2 text-[9px] leading-relaxed text-slate-400">
-                          실제 열화상 이미지와 Roboflow 탐지
-                          결과입니다. 드론 GPS·고도·화각은 이후
-                          데모 텔레메트리와 결합합니다.
+                          실제 열화상 이미지와 Roboflow 객체 탐지 결과입니다.
+                          파일별 결과를 선택하면 왼쪽 화면의 이미지와 Bounding
+                          Box가 함께 변경됩니다.
                         </p>
-                      </motion.div>
+                      </div>
                     )}
                   </div>
                 </div>
