@@ -76,3 +76,5 @@ __MACOSX/
 
 # IMPORTANT: keep this project data file tracked
 !/rag-backend/data/final_ui_candidate_v4.geojson
+.vercel
+.env*

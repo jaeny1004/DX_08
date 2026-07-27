@@ -1,0 +1,32 @@
+# pine-wilt-frontend (Vite 프론트엔드) Vercel 배포용 — rag-backend와 별개.
+# 참고: Vercel CLI 업로드는 .gitignore를 따르지 않으므로, 이미 .gitignore에
+# 있는 항목도 여기 다시 명시해야 실제로 제외됩니다 (2026-07-27 실측 확인).
+
+# 진짜 시크릿 — 절대 업로드 금지
+.env
+
+# 백엔드 전용 (별도 Vercel 프로젝트인 rag-backend에서 관리)
+/rag-backend/
+
+# 원본 소스 데이터(대용량) — 프론트는 public/data/의 경량 산출물만 사용
+# 반드시 루트 기준으로 앵커링(/) — 안 그러면 public/data/까지 같이 제외됨
+/data/
+/data.zip
+/docs/
+
+# 로컬 전용 Python 가상환경
+/precompute-venv/
+/precompute-venv312/
+/.vercel-uv-venv/
+
+# 데이터 전처리/집계 스크립트 — 프론트 빌드에 불필요
+/scripts/
+
+# Vite 빌드에 안 쓰이는 레거시 Node 서버 스크립트
+/server.ts
+
+# 로컬 개발 도구 설정
+/.claude/
+
+# Vercel 빌드 서버가 자체적으로 새로 설치함 — 로컬 것 업로드 불필요
+node_modules/
