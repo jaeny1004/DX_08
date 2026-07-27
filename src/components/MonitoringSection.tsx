@@ -553,7 +553,7 @@ const nextInputs =
                     path:
                       storagePath,
 
-                    confidence: 5,
+                    confidence: 10,
                     overlap: 30,
                   },
                 }
