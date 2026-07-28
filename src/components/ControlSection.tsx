@@ -78,7 +78,7 @@ export default function ControlSection({
               <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
                 <div className="flex justify-between items-center mb-6">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <h3 className="text-base font-black text-slate-950 flex items-center gap-2">
                       📋 감염목 방제 작업 리스트
                     </h3>
                     <p className="text-xs text-slate-500 mt-1">
@@ -229,7 +229,7 @@ export default function ControlSection({
             {/* 2행: 약제 및 방제 소모품 재고 (전체 폭) */}
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
               <div>
-                <h3 className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5">
+                <h3 className="text-base font-black text-slate-950 flex items-center gap-1.5">
                   <Database size={16} className="text-emerald-700" />
                   <span>약제 및 방제 소모품 재고</span>
                 </h3>

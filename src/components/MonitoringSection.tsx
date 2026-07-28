@@ -90,7 +90,7 @@ export default function MonitoringSection({
     <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
-          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+          <h3 className="text-base font-black text-slate-950 flex items-center gap-2">
             📋 확진목 리스트
           </h3>
           <p className="text-xs text-slate-500 mt-1">
@@ -274,7 +274,7 @@ export default function MonitoringSection({
     <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm min-h-[400px]">
       <div className="border-b border-slate-100 pb-3 mb-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-extrabold text-slate-800">
+          <h3 className="text-base font-black text-slate-950">
             🧬 감염목 상세 타임라인
           </h3>
           <div className="text-xs font-bold text-slate-400">
@@ -356,7 +356,7 @@ export default function MonitoringSection({
       className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden h-fit"
     >
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+        <h3 className="text-base font-black text-slate-950 flex items-center gap-2">
           🚁 AI 드론 판독 영상
         </h3>
         <button

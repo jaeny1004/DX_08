@@ -402,7 +402,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
             {/* 왼쪽: 보고서 필터·다운로드 */}
             <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 text-xs font-semibold shadow-sm lg:col-span-5">
               <div>
-                <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                <h3 className="flex items-center gap-2 text-base font-black text-slate-950">
                   <FileText size={19} className="text-emerald-800" />
                   실제 행정 보고서 조회·다운로드
                 </h3>
@@ -781,7 +781,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
           >
             <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 text-xs font-semibold shadow-sm lg:col-span-5">
               <div>
-                <h3 className="flex items-center gap-1.5 text-lg font-bold text-slate-900">
+                <h3 className="flex items-center gap-1.5 text-base font-black text-slate-950">
                   🌱 피해지 친환경 AI 수종 전환 분석 (ADM-004)
                 </h3>
                 <p className="mt-0.5 text-xs text-slate-500">
@@ -836,7 +836,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
 
             <div className="lg:col-span-7">
               <div className="flex min-h-[420px] flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="mb-4 border-b border-slate-100 pb-3 text-sm font-extrabold text-slate-800">
+                <h3 className="mb-4 border-b border-slate-100 pb-3 text-base font-black text-slate-950">
                   📃 AI 추천 활엽 대체 수종 및 예산 분석서 (FR-ADM-004)
                 </h3>
 

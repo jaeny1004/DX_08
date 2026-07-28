@@ -1958,7 +1958,7 @@ export default function DashboardRiskMapCard({
         >
           <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
             <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-slate-900">
+              <h3 className="text-base font-black text-slate-950">
                 👥 지역 인력풀 및 출동 배정
               </h3>
               <span className="rounded-full bg-emerald-50 px-2 py-1 text-3xs font-bold text-emerald-700">
@@ -2090,7 +2090,7 @@ export default function DashboardRiskMapCard({
           <div className="grid min-h-0 min-w-0 grid-cols-2 gap-3">
             <section className="flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="font-extrabold text-slate-900">
+                <h3 className="text-base font-black text-slate-950">
                   📋 지역별 위험후보 및 우선순위
                 </h3>
                 <span className="text-2xs font-bold text-slate-400">
@@ -2121,7 +2121,7 @@ export default function DashboardRiskMapCard({
 
             <section className="min-h-0 overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="font-extrabold text-slate-900">
+                <h3 className="text-base font-black text-slate-950">
                   📈 주간 예찰 제보 및 현장 확인 추이
                 </h3>
                 <span className="text-2xs font-bold text-slate-400">
