@@ -1267,7 +1267,18 @@ export default function DashboardRiskMapCard({
     vworldSatelliteLayerRef.current = satelliteLayer;
     vworldHybridLayerRef.current = hybridLayer;
     window.setTimeout(() => map.invalidateSize(), 200);
+
+    // 사이드바 접힘/펼침 등으로 지도 컨테이너 크기가 CSS로만 바뀌는 경우,
+    // Leaflet은 이를 스스로 감지하지 못해 타일이 잘못된 위치/크기로 남는다.
+    // ResizeObserver로 실제 크기 변화를 감지해서 invalidateSize()를 호출한다.
+    const resizeTarget = mapRef.current;
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    resizeObserver.observe(resizeTarget);
+
     return () => {
+      resizeObserver.disconnect();
       map.remove();
       leafletMapRef.current = null;
       gridLayerRef.current = null;
