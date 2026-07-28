@@ -103,7 +103,7 @@ export default function ControlSection({
                   >
                     <div className="text-xs font-bold text-slate-800 border-b border-slate-200 pb-2 flex items-center gap-1">
                       <Settings size={14} className="text-emerald-700" />
-                      <span>신규 방제 명령 등록 및 작업 구역 확정 (FR-CTR-003)</span>
+                      <span>신규 방제 명령 등록 및 작업 구역 확정</span>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

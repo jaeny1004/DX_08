@@ -66,7 +66,7 @@ export default function MonitoringSection({
       inspector,
       timeline: [
         {
-          stage: "현장 제보 등록 (MON-002)",
+          stage: "현장 제보 등록",
           date: new Date().toLocaleString(),
           note: `GPS 등록 완료 (EPSG:5186 가상 투영변화 완료). 피해정도: ${severity}`,
           actor: inspector

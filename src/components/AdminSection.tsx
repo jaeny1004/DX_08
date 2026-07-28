@@ -782,7 +782,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
             <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 text-xs font-semibold shadow-sm lg:col-span-5">
               <div>
                 <h3 className="flex items-center gap-1.5 text-base font-black text-slate-950">
-                  🌱 피해지 친환경 AI 수종 전환 분석 (ADM-004)
+                  🌱 피해지 친환경 AI 수종 전환 분석
                 </h3>
                 <p className="mt-0.5 text-xs text-slate-500">
                   재선충 피해 극심지를 활엽수 등 대체 수림대로 개조하는
@@ -837,7 +837,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
             <div className="lg:col-span-7">
               <div className="flex min-h-[420px] flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="mb-4 border-b border-slate-100 pb-3 text-base font-black text-slate-950">
-                  📃 AI 추천 활엽 대체 수종 및 예산 분석서 (FR-ADM-004)
+                  📃 AI 추천 활엽 대체 수종 및 예산 분석서
                 </h3>
 
                 {reforestLoading ? (
