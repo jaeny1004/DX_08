@@ -2052,11 +2052,11 @@ export default function DashboardRiskMapCard({
                             <div className="min-w-0">
                               <div className="truncate text-xs font-extrabold text-slate-800">
                                 {item.worker.worker_name}
-                                <span className="ml-1 text-[9px] font-bold text-slate-400">
+                                <span className="ml-1 text-3xs font-bold text-slate-400">
                                   {item.worker.worker_id}
                                 </span>
                               </div>
-                              <div className="mt-1 truncate text-[9px] font-semibold text-slate-500">
+                              <div className="mt-1 truncate text-3xs font-semibold text-slate-500">
                                 {capabilityText}
                               </div>
                               <div className="mt-1 text-[9px] font-semibold text-emerald-700">
@@ -2185,7 +2185,7 @@ function WorkforceMetric({
 }) {
   return (
     <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-      <div className="text-[9px] font-bold text-slate-400">{label}</div>
+      <div className="text-3xs font-bold text-slate-400">{label}</div>
       <div
         className={`mt-1 text-lg font-black ${danger ? "text-rose-600" : "text-slate-800"}`}
       >

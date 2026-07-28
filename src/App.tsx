@@ -1075,7 +1075,7 @@ export default function App() {
         >
           <span className="relative">
             <MessageSquare size={20} />
-            <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full border border-white bg-amber-400 px-1 text-[8px] font-black text-emerald-950">
+            <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full border border-white bg-amber-400 px-1 text-3xs font-black text-emerald-950">
               AI
             </span>
           </span>
