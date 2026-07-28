@@ -379,17 +379,17 @@ export default function App() {
 
   const controlGroup = {
     id: "control",
-    label: "방제 사업 관리",
+    label: "실시간 방제 현황",
     icon: ShieldCheck,
     items: [
       {
         id: "control-status",
-        label: "방제 사업 관리",
+        label: "작업 현황",
         icon: ShieldOffIcon,
       },
       {
         id: "control-work",
-        label: "확산 시뮬레이션",
+        label: "시뮬레이션",
         icon: VideoIcon,
       },
     ],
