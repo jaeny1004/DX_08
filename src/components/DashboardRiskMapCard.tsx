@@ -107,6 +107,12 @@ const WORKER_CURRENT_STATUS_PATH = "/data/workforce_v2/worker_current_status.jso
 const REGION_WORKFORCE_CAPACITY_PATH = "/data/workforce_v2/region_workforce_capacity.json";
 
 const KOREA_BOUNDS = L.latLngBounds(L.latLng(32.5, 124.0), L.latLng(39.8, 132.2));
+// final_ui_candidate_v4.geojson 전수 스캔 기준 실제 격자 분포 범위(제주특별자치도 제외).
+// 지역 미선택 시 초기 뷰 전용 — maxBounds/타일 bounds(KOREA_BOUNDS)는 그대로 전국 유지.
+const DATA_BOUNDS = L.latLngBounds(
+  L.latLng(34.585872, 126.199519),
+  L.latLng(38.186753, 129.585322),
+);
 const GRID_RENDERER = L.canvas({ padding: 0.25, tolerance: 4 });
 
 const priorityColors: Record<string, string> = {
@@ -1354,7 +1360,7 @@ export default function DashboardRiskMapCard({
     onGridSelectRef.current?.(null);
 
     if (!selectedAdminSummary) {
-      map.fitBounds(KOREA_BOUNDS, { padding: [20, 20], animate: false, maxZoom: 7 });
+      map.fitBounds(DATA_BOUNDS, { padding: [20, 20], animate: false, maxZoom: 7 });
       return;
     }
 
