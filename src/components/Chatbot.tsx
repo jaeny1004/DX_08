@@ -309,7 +309,7 @@ export default function Chatbot({
           text:
             "지식엔진에 연결하지 못했습니다.\n\n" +
             `${errorMessage}\n\n` +
-            "RAG 백엔드가 8788 포트에서 실행 중인지 확인해 주세요.",
+            "AI 챗봇 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.",
           sources: [],
           error: true,
         },
@@ -359,7 +359,7 @@ export default function Chatbot({
             size={11}
             className="text-emerald-600"
           />
-          <span>RAG 지식엔진</span>
+          <span>백서 기반</span>
         </div>
       </div>
 
