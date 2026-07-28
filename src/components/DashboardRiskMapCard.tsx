@@ -1773,12 +1773,6 @@ export default function DashboardRiskMapCard({
             >
               선택 초기화
             </button>
-
-            <div className="hidden text-xs font-bold text-slate-400 xl:block">
-              {selectedGridId
-                ? `선택 격자 GRID-${selectedGridId}`
-                : `선택 지역 ${regionName}`}
-            </div>
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -1858,6 +1852,17 @@ export default function DashboardRiskMapCard({
         </div>
 
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+          <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-4 pt-4 pb-3">
+            <h3 className="font-extrabold text-slate-900">
+              🗺️ 소나무재선충 AI 예측 지도
+            </h3>
+            <div className="hidden text-xs font-bold text-slate-400 xl:block">
+              {selectedGridId
+                ? `선택 격자 GRID-${selectedGridId}`
+                : `선택 지역 ${regionName}`}
+            </div>
+          </div>
+
           {[
             geojsonError,
             boundaryError,
@@ -1881,7 +1886,7 @@ export default function DashboardRiskMapCard({
             </div>
           )}
 
-          <div className="relative min-h-0 flex-1">
+          <div className="relative mt-3 min-h-0 flex-1">
             <div
               ref={mapRef}
               className="h-full w-full bg-[#EEF7F3]"
