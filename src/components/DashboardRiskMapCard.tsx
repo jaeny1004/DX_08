@@ -1733,32 +1733,7 @@ export default function DashboardRiskMapCard({
           gridTemplateRows: "auto minmax(0, 1fr)",
         }}
       >
-        <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-3">
-          <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-            <button
-              type="button"
-              onClick={() => setMapDisplayMode("priority")}
-              className={
-                mapDisplayMode === "priority"
-                  ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-emerald-700 shadow-sm"
-                  : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-              }
-            >
-              예찰 우선순위
-            </button>
-            <button
-              type="button"
-              onClick={() => setMapDisplayMode("risk")}
-              className={
-                mapDisplayMode === "risk"
-                  ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-rose-700 shadow-sm"
-                  : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-              }
-            >
-              AI 위험도
-            </button>
-          </div>
-        </div>
+        <div className="col-span-2" />
 
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
           {[
@@ -1875,6 +1850,31 @@ export default function DashboardRiskMapCard({
                 }
               >
                 위성지도
+              </button>
+            </div>
+
+            <div className="absolute right-3 top-14 z-[1000] flex gap-1 rounded-xl bg-slate-100 p-1 shadow">
+              <button
+                type="button"
+                onClick={() => setMapDisplayMode("priority")}
+                className={
+                  mapDisplayMode === "priority"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-emerald-700 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                예찰 우선순위
+              </button>
+              <button
+                type="button"
+                onClick={() => setMapDisplayMode("risk")}
+                className={
+                  mapDisplayMode === "risk"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-rose-700 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                AI 위험도
               </button>
             </div>
 
