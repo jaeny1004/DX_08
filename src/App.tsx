@@ -731,9 +731,6 @@ export default function App() {
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   행정망 연동 정상
                 </span>
-                <span className="rounded-full bg-slate-100 px-2 py-1">
-                  PR-AUC 0.3183
-                </span>
               </div>
             )}
 
@@ -795,9 +792,6 @@ export default function App() {
 
             {isSidebarOpen && (
               <div className="min-w-0">
-                <div className="truncate text-xs font-extrabold">
-                  PWD-ISCP
-                </div>
                 <div className="truncate text-[9px] font-bold text-slate-400">
                   의사결정 지원 플랫폼
                 </div>

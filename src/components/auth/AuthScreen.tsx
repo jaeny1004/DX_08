@@ -402,9 +402,6 @@ export default function AuthScreen({
               <div className="text-sm font-black">
                 소나무재선충병 통합 예찰·방제지원 플랫폼
               </div>
-              <div className="mt-1 text-2xs font-semibold text-emerald-200">
-                Pine Wilt Disease Integrated Surveillance &amp; Control Platform
-              </div>
             </div>
           </div>
         </div>
@@ -425,7 +422,7 @@ export default function AuthScreen({
             <FeatureCard
               icon={Radar}
               title="위험도 분석"
-              description="AI 앙상블 기반 신규 확산위험 후보"
+              description="AI 기반 신규 확산위험 후보"
             />
             <FeatureCard
               icon={MapPinned}
@@ -440,10 +437,6 @@ export default function AuthScreen({
           </div>
         </div>
 
-        <div className="relative z-10 flex items-center justify-between text-2xs font-semibold text-slate-400">
-          <span>PWD-ISCP · AI Decision Support</span>
-          <span>PR-AUC 0.3183</span>
-        </div>
       </section>
 
       <section className="flex min-h-screen items-center justify-center overflow-y-auto bg-slate-50 px-5 py-8 sm:px-10">
