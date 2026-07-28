@@ -367,7 +367,7 @@ export default function App() {
     },
     {
       id: "monitoring",
-      label: "병해충 모니터링",
+      label: "확진목 모니터링",
       icon: TreesIcon,
     },
     {
