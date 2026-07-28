@@ -309,8 +309,7 @@ export default function App() {
       timeline: [
         {
           stage:
-            "시민 제보 확진 대장 전환 완료 " +
-            "(FR-FLD-006)",
+            "시민 제보 확진 대장 전환 완료",
           date:
             new Date().toLocaleString(),
           note:
