@@ -1774,81 +1774,6 @@ export default function DashboardRiskMapCard({
               선택 초기화
             </button>
           </div>
-
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-              <button
-                type="button"
-                onClick={() => setMapDisplayMode("priority")}
-                className={
-                  mapDisplayMode === "priority"
-                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-emerald-700 shadow-sm"
-                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-                }
-              >
-                예찰 우선순위
-              </button>
-              <button
-                type="button"
-                onClick={() => setMapDisplayMode("risk")}
-                className={
-                  mapDisplayMode === "risk"
-                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-rose-700 shadow-sm"
-                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-                }
-              >
-                AI 위험도
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowInfectionHistory((value) => !value)}
-              disabled={infectionHistoryLoading || Boolean(infectionHistoryError)}
-              className={
-                showInfectionHistory
-                  ? "rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-extrabold text-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
-                  : "rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-              }
-              title={
-                infectionHistoryLoading
-                  ? "감염 발생 이력 데이터를 불러오는 중입니다."
-                  : infectionHistoryError ||
-                    "2016~2021년 감염 발생 이력 레이어를 켜거나 끕니다."
-              }
-            >
-              {infectionHistoryLoading
-                ? "감염 이력 로딩 중"
-                : showInfectionHistory
-                  ? `감염 발생 이력 ON (${formatNumber(visibleInfectionHistoryFeatures.length, 0)}개)`
-                  : "감염 발생 이력 OFF"}
-            </button>
-
-            <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-              <button
-                type="button"
-                onClick={() => setBaseMapMode("base")}
-                className={
-                  baseMapMode === "base"
-                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900 shadow-sm"
-                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-                }
-              >
-                일반지도
-              </button>
-              <button
-                type="button"
-                onClick={() => setBaseMapMode("satellite")}
-                className={
-                  baseMapMode === "satellite"
-                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900 shadow-sm"
-                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-                }
-              >
-                위성지도
-              </button>
-            </div>
-          </div>
         </div>
 
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
@@ -1892,6 +1817,87 @@ export default function DashboardRiskMapCard({
               className="h-full w-full bg-[#EEF7F3]"
             />
 
+            <div className="absolute left-3 top-1/2 z-[1000] flex -translate-y-1/2 flex-col gap-1 rounded-xl bg-slate-100 p-1 shadow">
+              <button
+                type="button"
+                onClick={() => setMapDisplayMode("priority")}
+                className={
+                  mapDisplayMode === "priority"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-emerald-700 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                예찰 우선순위
+              </button>
+              <button
+                type="button"
+                onClick={() => setMapDisplayMode("risk")}
+                className={
+                  mapDisplayMode === "risk"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-rose-700 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                AI 위험도
+              </button>
+            </div>
+
+            <div className="absolute right-3 top-3 z-[1000] flex gap-1 rounded-xl bg-slate-100 p-1 shadow">
+              <button
+                type="button"
+                onClick={() => setBaseMapMode("base")}
+                className={
+                  baseMapMode === "base"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                일반지도
+              </button>
+              <button
+                type="button"
+                onClick={() => setBaseMapMode("satellite")}
+                className={
+                  baseMapMode === "satellite"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                위성지도
+              </button>
+            </div>
+
+            <div className="absolute bottom-3 right-3 z-[1000] flex flex-col items-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowInfectionHistory((value) => !value)}
+                disabled={infectionHistoryLoading || Boolean(infectionHistoryError)}
+                className={
+                  showInfectionHistory
+                    ? "rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-extrabold text-violet-800 shadow disabled:cursor-not-allowed disabled:opacity-50"
+                    : "rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-500 shadow disabled:cursor-not-allowed disabled:opacity-50"
+                }
+                title={
+                  infectionHistoryLoading
+                    ? "감염 발생 이력 데이터를 불러오는 중입니다."
+                    : infectionHistoryError ||
+                      "2016~2021년 감염 발생 이력 레이어를 켜거나 끕니다."
+                }
+              >
+                {infectionHistoryLoading
+                  ? "감염 이력 로딩 중"
+                  : showInfectionHistory
+                    ? `감염 발생 이력 ON (${formatNumber(visibleInfectionHistoryFeatures.length, 0)}개)`
+                    : "감염 발생 이력 OFF"}
+              </button>
+
+              {showInfectionHistory && selectedSigunguCode && !infectionHistoryError && (
+                <div className="rounded-lg border border-violet-200 bg-white/95 px-3 py-2 text-xs font-extrabold text-violet-800 shadow">
+                  감염 발생 이력 {formatNumber(visibleInfectionHistoryFeatures.length, 0)}개 표시
+                </div>
+              )}
+            </div>
+
             {tileStatus === "loading" && (
               <div className="absolute left-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-bold text-slate-600 shadow">
                 VWorld 지도 불러오는 중...
@@ -1901,12 +1907,6 @@ export default function DashboardRiskMapCard({
             {!selectedSigunguCode && (
               <div className="absolute bottom-3 left-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-bold text-slate-600 shadow">
                 지도에서 시군구를 클릭하거나 상단 목록에서 선택하세요.
-              </div>
-            )}
-
-            {showInfectionHistory && selectedSigunguCode && !infectionHistoryError && (
-              <div className="absolute bottom-3 right-3 z-[1000] rounded-lg border border-violet-200 bg-white/95 px-3 py-2 text-xs font-extrabold text-violet-800 shadow">
-                감염 발생 이력 {formatNumber(visibleInfectionHistoryFeatures.length, 0)}개 표시
               </div>
             )}
           </div>
@@ -1933,7 +1933,7 @@ export default function DashboardRiskMapCard({
                 ? "상위 10% 우선 예찰 검토지역 표시"
                 : "상위 10% AI 신규 확산위험 후보 표시"}
               {showInfectionHistory && !infectionHistoryError
-                ? " · 보라색 사각형은 2016~2021년 감염 발생 이력"
+                ? " · 보라색 사각형은 감염 발생 이력"
                 : ""}
             </div>
           </div>
