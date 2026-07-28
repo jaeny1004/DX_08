@@ -579,7 +579,7 @@ function createGridPopupHtml(
         <tr><td style="padding:5px 0;color:#64748b">격자 ID</td><td style="text-align:right;font-weight:700">${escapeHtml(props.grid_id ?? props.id ?? "-")}</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">AI 위험도</td><td style="text-align:right;font-weight:700">${formatNumber(props.risk_score, 2)}점 / ${escapeHtml(riskGrade)}</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">예찰 우선순위</td><td style="text-align:right;font-weight:700">${formatNumber(props.field_priority_score_v3, 2)}점 / ${escapeHtml(priorityGrade)}</td></tr>
-        <tr><td style="padding:5px 0;color:#64748b">2016~2021년 감염 발생 이력</td><td style="text-align:right;font-weight:800;color:${hasInfectionHistory ? INFECTION_HISTORY_COLOR : "#64748b"}">${hasInfectionHistory ? "있음" : "없음"}</td></tr>
+        <tr><td style="padding:5px 0;color:#64748b">감염 발생 이력</td><td style="text-align:right;font-weight:800;color:${hasInfectionHistory ? INFECTION_HISTORY_COLOR : "#64748b"}">${hasInfectionHistory ? "있음" : "없음"}</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">누적 발생 건수</td><td style="text-align:right;font-weight:700">${formatNumber(infectionCount, 0)}건</td></tr>
         ${
           hasInfectionHistory
@@ -594,7 +594,6 @@ function createGridPopupHtml(
         <tr><td style="padding:5px 0;color:#64748b">도로까지 거리</td><td style="text-align:right;font-weight:700">${formatNumber(props.distance_to_nearest_road_m_v3 ?? props.road_dist_m, 1)}m</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">환경주의</td><td style="text-align:right;font-weight:700">${safeNumber(props.environment_caution_flag_v3 ?? props.env_flag) === 1 ? "현장 확인 필요" : "해당 없음"}</td></tr>
       </table>
-      <div style="margin-top:9px;padding:7px 9px;border-radius:8px;background:#f5f3ff;color:#4c1d95;font-size:10px;line-height:1.5">감염 발생 이력은 2016~2021년 조사자료 기준이며, 2022년 이후는 예측·검증·평가 구간으로 별도 관리합니다.</div>
     </div>`;
 }
 
@@ -646,6 +645,7 @@ export default function DashboardRiskMapCard({
   const [mapDisplayMode, setMapDisplayMode] =
     useState<MapDisplayMode>("priority");
   const [showInfectionHistory, setShowInfectionHistory] = useState(true);
+  const [zoomLevel, setZoomLevel] = useState(7);
   const [selectedSigunguCode, setSelectedSigunguCode] = useState("");
   const [selectedEmdCode, setSelectedEmdCode] = useState("");
   const [selected, setSelected] = useState<any>(null);
@@ -1277,7 +1277,12 @@ export default function DashboardRiskMapCard({
     });
     resizeObserver.observe(resizeTarget);
 
+    setZoomLevel(map.getZoom());
+    const handleZoomEnd = () => setZoomLevel(map.getZoom());
+    map.on("zoomend", handleZoomEnd);
+
     return () => {
+      map.off("zoomend", handleZoomEnd);
       resizeObserver.disconnect();
       map.remove();
       leafletMapRef.current = null;
@@ -1493,7 +1498,7 @@ export default function DashboardRiskMapCard({
         const path = featureLayer as L.Path;
 
         path.bindTooltip(
-          `2016~2021년 감염 발생 이력 · 누적 ${formatNumber(
+          `감염 발생 이력 · 누적 ${formatNumber(
             props.infection_count_2016_2021,
             0,
           )}건`,
@@ -1514,14 +1519,14 @@ export default function DashboardRiskMapCard({
             .setLatLng(event.latlng)
             .setContent(`
               <div style="min-width:220px;font-family:Pretendard,Arial,sans-serif;color:#0f172a">
-                <div style="font-size:15px;font-weight:800;color:${INFECTION_HISTORY_COLOR};margin-bottom:9px">2016~2021년 감염 발생 이력</div>
+                <div style="font-size:15px;font-weight:800;color:${INFECTION_HISTORY_COLOR};margin-bottom:9px">감염 발생 이력</div>
                 <table style="width:100%;border-collapse:collapse;font-size:12px">
                   <tr><td style="padding:5px 0;color:#64748b">격자 ID</td><td style="text-align:right;font-weight:700">${escapeHtml(props.id ?? props.grid_id ?? "-")}</td></tr>
                   <tr><td style="padding:5px 0;color:#64748b">누적 발생 건수</td><td style="text-align:right;font-weight:800;color:${INFECTION_HISTORY_COLOR}">${formatNumber(props.infection_count_2016_2021, 0)}건</td></tr>
                   <tr><td style="padding:5px 0;color:#64748b">최초 발생 이력</td><td style="text-align:right;font-weight:700">${formatNumber(props.infection_first_year, 0)}년</td></tr>
                   <tr><td style="padding:5px 0;color:#64748b">최근 발생 이력</td><td style="text-align:right;font-weight:700">${formatNumber(props.infection_last_year, 0)}년</td></tr>
                 </table>
-                <div style="margin-top:9px;padding:8px;border-radius:8px;background:#f5f3ff;color:#5b21b6;font-size:11px;line-height:1.5">학습 기준기간인 2016~2021년 감염 발생 이력 격자입니다.</div>
+                <div style="margin-top:9px;padding:8px;border-radius:8px;background:#f5f3ff;color:#5b21b6;font-size:11px;line-height:1.5">감염 발생 이력 격자입니다.</div>
               </div>
             `)
             .openOn(map);
@@ -1728,66 +1733,34 @@ export default function DashboardRiskMapCard({
           gridTemplateRows: "auto minmax(0, 1fr)",
         }}
       >
-        <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <select
-              value={selectedSigunguCode}
-              onChange={(event) => {
-                setSelectedSigunguCode(event.target.value);
-                setSelectedEmdCode("");
-                setSelected(null);
-                setAssignmentMessage("");
-              }}
-              className="min-w-[220px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 outline-none focus:border-emerald-700"
-            >
-              <option value="">위치(시/군/구) 선택</option>
-              {sigunguOptions.map((option) => (
-                <option key={option.code} value={option.code}>
-                  {option.sidoName} {option.sigunguName}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={selectedEmdCode}
-              onChange={(event) => {
-                setSelectedEmdCode(event.target.value);
-                setSelected(null);
-                setAssignmentMessage("");
-              }}
-              disabled={!selectedSigunguCode}
-              className="min-w-[180px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-            >
-              <option value="">읍면동 전체</option>
-              {emdOptions.map((option) => (
-                <option key={option.code} value={option.code}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-
+        <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-3">
+          <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
             <button
               type="button"
-              onClick={handleResetAdmin}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50"
+              onClick={() => setMapDisplayMode("priority")}
+              className={
+                mapDisplayMode === "priority"
+                  ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-emerald-700 shadow-sm"
+                  : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+              }
             >
-              선택 초기화
+              예찰 우선순위
+            </button>
+            <button
+              type="button"
+              onClick={() => setMapDisplayMode("risk")}
+              className={
+                mapDisplayMode === "risk"
+                  ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-rose-700 shadow-sm"
+                  : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+              }
+            >
+              AI 위험도
             </button>
           </div>
         </div>
 
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-          <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-4 pt-4 pb-3">
-            <h3 className="font-extrabold text-slate-900">
-              🗺️ 소나무재선충 AI 예측 지도
-            </h3>
-            <div className="hidden text-xs font-bold text-slate-400 xl:block">
-              {selectedGridId
-                ? `선택 격자 GRID-${selectedGridId}`
-                : `선택 지역 ${regionName}`}
-            </div>
-          </div>
-
           {[
             geojsonError,
             boundaryError,
@@ -1811,35 +1784,73 @@ export default function DashboardRiskMapCard({
             </div>
           )}
 
-          <div className="relative mt-3 min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1">
             <div
               ref={mapRef}
               className="h-full w-full bg-[#EEF7F3]"
             />
 
-            <div className="absolute left-3 top-1/2 z-[1000] flex -translate-y-1/2 flex-col gap-1 rounded-xl bg-slate-100 p-1 shadow">
+            <div className="absolute left-3 top-20 z-[1000] flex flex-wrap items-center gap-2">
+              <select
+                value={selectedSigunguCode}
+                onChange={(event) => {
+                  setSelectedSigunguCode(event.target.value);
+                  setSelectedEmdCode("");
+                  setSelected(null);
+                  setAssignmentMessage("");
+                }}
+                className="min-w-[200px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 shadow outline-none focus:border-emerald-700"
+              >
+                <option value="">위치(시/군/구) 선택</option>
+                {sigunguOptions.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.sidoName} {option.sigunguName}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedEmdCode}
+                onChange={(event) => {
+                  setSelectedEmdCode(event.target.value);
+                  setSelected(null);
+                  setAssignmentMessage("");
+                }}
+                disabled={!selectedSigunguCode}
+                className="min-w-[150px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow outline-none focus:border-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                <option value="">읍면동 전체</option>
+                {emdOptions.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+
               <button
                 type="button"
-                onClick={() => setMapDisplayMode("priority")}
-                className={
-                  mapDisplayMode === "priority"
-                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-emerald-700 shadow-sm"
-                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-                }
+                onClick={handleResetAdmin}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow hover:bg-slate-50"
               >
-                예찰 우선순위
+                선택 초기화
               </button>
-              <button
-                type="button"
-                onClick={() => setMapDisplayMode("risk")}
-                className={
-                  mapDisplayMode === "risk"
-                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-rose-700 shadow-sm"
-                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-                }
-              >
-                AI 위험도
-              </button>
+            </div>
+
+            <div className="absolute left-14 top-3 z-[1000] flex h-[58px] w-8 items-center justify-center rounded-lg bg-white/95 shadow">
+              <input
+                type="range"
+                min={leafletMapRef.current?.getMinZoom() ?? 6}
+                max={leafletMapRef.current?.getMaxZoom() ?? 19}
+                step={1}
+                value={zoomLevel}
+                onChange={(event) => {
+                  const nextZoom = Number(event.target.value);
+                  setZoomLevel(nextZoom);
+                  leafletMapRef.current?.setZoom(nextZoom);
+                }}
+                aria-label="지도 확대/축소"
+                className="h-1 w-12 -rotate-90 accent-emerald-700"
+              />
             </div>
 
             <div className="absolute right-3 top-3 z-[1000] flex gap-1 rounded-xl bg-slate-100 p-1 shadow">
@@ -1881,7 +1892,7 @@ export default function DashboardRiskMapCard({
                   infectionHistoryLoading
                     ? "감염 발생 이력 데이터를 불러오는 중입니다."
                     : infectionHistoryError ||
-                      "2016~2021년 감염 발생 이력 레이어를 켜거나 끕니다."
+                      "감염 발생 이력 레이어를 켜거나 끕니다."
                 }
               >
                 {infectionHistoryLoading
@@ -1942,7 +1953,7 @@ export default function DashboardRiskMapCard({
         <aside
           className="grid min-h-0 min-w-0 gap-3"
           style={{
-            gridTemplateRows: "1.4fr 1fr 1fr",
+            gridTemplateRows: "1.8fr 1fr",
           }}
         >
           <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
@@ -1960,7 +1971,7 @@ export default function DashboardRiskMapCard({
                 시군구를 선택하면 지역별 등록요원과 업무별 가용인원을 표시합니다.
               </div>
             ) : !selected ? (
-              <div className="mt-3 grid flex-1 grid-cols-2 gap-2 overflow-y-auto">
+              <div className="mt-3 grid flex-1 grid-cols-3 gap-2 overflow-y-auto">
                 <WorkforceMetric
                   label="등록요원"
                   value={selectedRegionCapacity?.registered_worker_count ?? 0}
@@ -1986,7 +1997,7 @@ export default function DashboardRiskMapCard({
                   value={selectedRegionCapacity?.shortage_worker_count ?? 0}
                   danger={(selectedRegionCapacity?.shortage_worker_count ?? 0) > 0}
                 />
-                <div className="col-span-2 rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-semibold leading-5 text-slate-500">
+                <div className="col-span-3 rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-semibold leading-5 text-slate-500">
                   지도에서 격자를 클릭하면 예찰·드론·방제 업무별 추천요원을 확인하고 출동 배정할 수 있습니다.
                 </div>
               </div>
@@ -2076,90 +2087,87 @@ export default function DashboardRiskMapCard({
             )}
           </section>
 
-          <section className="min-h-0 overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-slate-900">
-                📈 주간 예찰 제보 및 현장 확인 추이
-              </h3>
-              <span className="text-[11px] font-bold text-slate-400">
-                최근 7주
-              </span>
-            </div>
+          <div className="grid min-h-0 min-w-0 grid-cols-2 gap-3">
+            <section className="flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="font-extrabold text-slate-900">
+                  📋 지역별 위험후보 및 우선순위
+                </h3>
+                <span className="text-[11px] font-bold text-slate-400">
+                  실시간 집계
+                </span>
+              </div>
 
-            <div className="mt-3 flex h-[118px] items-end justify-between gap-2 px-1">
-              {weeklyTrend.map((item) => (
-                <div
-                  key={item.label}
-                  className="flex flex-1 flex-col items-center gap-2"
-                >
-                  <div className="flex h-[92px] items-end gap-1">
-                    <div
-                      className="w-3 rounded-t bg-sky-400"
-                      style={{
-                        height: `${Math.max(
-                          12,
-                          (item.report / maxTrendValue) * 88,
-                        )}px`,
-                      }}
-                    />
-                    <div
-                      className="w-3 rounded-t bg-rose-500"
-                      style={{
-                        height: `${Math.max(
-                          8,
-                          (item.field / maxTrendValue) * 88,
-                        )}px`,
-                      }}
-                    />
+              <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-[11px] text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2.5 text-left">구분</th>
+                      <th className="px-3 py-2.5 text-right">후보 격자</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {controlRows.map((row) => (
+                      <ControlRow
+                        key={row.label}
+                        label={row.label}
+                        candidate={row.candidate}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="min-h-0 overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="font-extrabold text-slate-900">
+                  📈 주간 예찰 제보 및 현장 확인 추이
+                </h3>
+                <span className="text-[11px] font-bold text-slate-400">
+                  최근 4주
+                </span>
+              </div>
+
+              <div className="mt-3 flex h-[118px] items-end justify-between gap-2 px-1">
+                {weeklyTrend.slice(-4).map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex flex-1 flex-col items-center gap-2"
+                  >
+                    <div className="flex h-[92px] items-end gap-1">
+                      <div
+                        className="w-3 rounded-t bg-sky-400"
+                        style={{
+                          height: `${Math.max(
+                            12,
+                            (item.report / maxTrendValue) * 88,
+                          )}px`,
+                        }}
+                      />
+                      <div
+                        className="w-3 rounded-t bg-rose-500"
+                        style={{
+                          height: `${Math.max(
+                            8,
+                            (item.field / maxTrendValue) * 88,
+                          )}px`,
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-500">
+                      {item.label}
+                    </span>
                   </div>
-                  <span className="text-[10px] font-bold text-slate-500">
-                    {item.label}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
 
-            <div className="mt-1 flex justify-center gap-4 text-[10px] font-bold text-slate-500">
-              <Legend color="#38bdf8" label="예찰 제보" />
-              <Legend color="#f43f5e" label="현장 확인" />
-            </div>
-          </section>
-
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-slate-900">
-                📋 지역별 위험후보 및 우선순위
-              </h3>
-              <span className="text-[11px] font-bold text-slate-400">
-                실시간 집계
-              </span>
-            </div>
-
-            <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-[11px] text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2.5 text-left">구분</th>
-                    <th className="px-3 py-2.5 text-right">후보 격자</th>
-                    <th className="px-3 py-2.5 text-right">최우선 예찰</th>
-                    <th className="px-3 py-2.5 text-right">상태</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {controlRows.map((row) => (
-                    <ControlRow
-                      key={row.label}
-                      label={row.label}
-                      candidate={row.candidate}
-                      priority={row.priority}
-                      status={row.status}
-                      tone={row.tone}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+              <div className="mt-1 flex justify-center gap-4 text-[10px] font-bold text-slate-500">
+                <Legend color="#38bdf8" label="예찰 제보" />
+                <Legend color="#f43f5e" label="현장 확인" />
+              </div>
+            </section>
+          </div>
         </aside>
       </div>
     </div>
@@ -2190,38 +2198,15 @@ function WorkforceMetric({
 function ControlRow({
   label,
   candidate,
-  priority,
-  status,
-  tone,
 }: {
   label: string;
   candidate: number;
-  priority: number;
-  status: string;
-  tone: "danger" | "warning" | "success" | "neutral";
 }) {
-  const badge =
-    tone === "danger"
-      ? "bg-rose-50 text-rose-600"
-      : tone === "warning"
-        ? "bg-amber-50 text-amber-600"
-        : tone === "success"
-          ? "bg-emerald-50 text-emerald-600"
-          : "bg-slate-100 text-slate-600";
-
   return (
     <tr>
       <td className="px-3 py-2.5 font-semibold text-slate-700">{label}</td>
       <td className="px-3 py-2.5 text-right text-slate-600">
         {formatNumber(candidate, 0)}개
-      </td>
-      <td className="px-3 py-2.5 text-right text-slate-600">
-        {formatNumber(priority, 0)}개
-      </td>
-      <td className="px-3 py-2.5 text-right">
-        <span className={`rounded-md px-2 py-1 text-[10px] font-bold ${badge}`}>
-          {status}
-        </span>
       </td>
     </tr>
   );
