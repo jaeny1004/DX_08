@@ -228,49 +228,51 @@ export default function ControlSection({
 
             {/* 2행: 약제 및 방제 소모품 재고 (전체 폭) */}
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
-              <h3 className="text-sm font-extrabold text-slate-800 border-b border-slate-100 pb-3 flex items-center gap-1.5">
-                <Database size={16} className="text-emerald-700" />
-                <span>약제 및 방제 소모품 재고 통합 센서 (CTR-006)</span>
-              </h3>
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5">
+                  <Database size={16} className="text-emerald-700" />
+                  <span>약제 및 방제 소모품 재고</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  실시간 재고 및 방제 장비 가동 현황을 확인합니다.
+                </p>
+              </div>
 
-              <div className="space-y-4 text-xs font-semibold">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-semibold border-t border-slate-100 pt-4">
                 <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl flex gap-3">
                   <AlertCircle className="text-rose-500 shrink-0" size={18} />
                   <div className="space-y-1">
-                    <div className="font-bold text-rose-900">훈증 천막 (노란색 타프) 재고 소진 임계치 접근</div>
-                    <p className="text-[10px] text-rose-700">포항 보관 창고에 잔여 천막 12개 검출됨. 긴급 훈증 수요 급증에 의한 자동 수급 경보 (FR-CTR-006 부합)</p>
+                    <div className="font-bold text-rose-900">훈증 천막 재고 소진</div>
+                    <p className="text-[10px] text-rose-700">포항 보관 창고 잔여 12개 · 긴급 발주 권장</p>
                   </div>
                 </div>
 
-                <div className="space-y-3 pt-2">
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-slate-600">
-                      <span>아바멕틴 주사 수간 주입제</span>
-                      <span className="text-slate-900 font-mono">840 리터 (84%)</span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-emerald-600 h-full rounded-full" style={{ width: "84%" }} />
-                    </div>
+                <div className="space-y-1">
+                  <div className="text-slate-600">아바멕틴 주사 수간 주입제</div>
+                  <div className="text-slate-900 font-mono">840 리터 (84%)</div>
+                  <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-emerald-600 h-full rounded-full" style={{ width: "84%" }} />
                   </div>
+                </div>
 
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-slate-600">
-                      <span>메탐소듐 훈증 전용 액제</span>
-                      <span className="text-slate-900 font-mono">1,200 리터 (91%)</span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-emerald-600 h-full rounded-full" style={{ width: "91%" }} />
-                    </div>
+                <div className="space-y-1">
+                  <div className="text-slate-600">메탐소듐 훈증 전용 액제</div>
+                  <div className="text-slate-900 font-mono">1,200 리터 (91%)</div>
+                  <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                    <div className="bg-emerald-600 h-full rounded-full" style={{ width: "91%" }} />
                   </div>
+                </div>
 
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-slate-600">
-                      <span>목재 자주식 파쇄기 가용도</span>
-                      <span className="text-slate-900 font-mono">8대 가동 가능 / 총 12대</span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-emerald-500 h-full rounded-full" style={{ width: "66%" }} />
-                    </div>
+                <div className="space-y-1">
+                  <div className="text-slate-600">목재 자주식 파쇄기 가동도</div>
+                  <div className="text-slate-900 font-mono">8 / 12대</div>
+                  <div className="grid grid-cols-6 gap-1 pt-1">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`h-3 rounded-sm ${i < 8 ? "bg-emerald-500" : "bg-slate-100"}`}
+                      />
+                    ))}
                   </div>
                 </div>
               </div>
