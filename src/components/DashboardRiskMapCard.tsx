@@ -1907,7 +1907,7 @@ export default function DashboardRiskMapCard({
               {showInfectionHistory && !infectionHistoryError && (
                 <FilledSquareLegend
                   color={INFECTION_HISTORY_COLOR}
-                  label="2016~2021년 감염 발생 이력"
+                  label="감염 발생 이력"
                 />
               )}
             </div>
