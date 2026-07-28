@@ -519,7 +519,7 @@ export default function App() {
                   실시간 알림
                 </div>
 
-                <div className="mt-0.5 truncate text-[10px] font-bold text-slate-400">
+                <div className="mt-0.5 truncate text-3xs font-bold text-slate-400">
                   미확인 {liveAlerts.length}건
                 </div>
               </button>
@@ -593,7 +593,7 @@ export default function App() {
                       {module.label}
                     </span>
                   ) : (
-                    <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                    <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white shadow-lg group-hover:block">
                       {module.label}
                     </span>
                   )}
@@ -624,7 +624,7 @@ export default function App() {
                     {controlGroup.label}
                   </span>
                 ) : (
-                  <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                  <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white shadow-lg group-hover:block">
                     {controlGroup.label}
                   </span>
                 )}
@@ -670,7 +670,7 @@ export default function App() {
                               {item.label}
                             </span>
                           ) : (
-                            <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                            <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
                               {item.label}
                             </span>
                           )}
@@ -710,7 +710,7 @@ export default function App() {
                       {module.label}
                     </span>
                   ) : (
-                    <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                    <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white shadow-lg group-hover:block">
                       {module.label}
                     </span>
                   )}
@@ -727,7 +727,7 @@ export default function App() {
             }
           >
             {isSidebarOpen && (
-              <div className="flex items-center gap-2 px-1 text-[11px] font-bold text-slate-500">
+              <div className="flex items-center gap-2 px-1 text-2xs font-bold text-slate-500">
                 <span className="flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   행정망 연동 정상
@@ -756,7 +756,7 @@ export default function App() {
                   <div className="truncate text-xs font-extrabold text-slate-800">
                     {authUser.name}
                   </div>
-                  <div className="mt-0.5 max-w-[140px] truncate text-[10px] font-bold text-slate-400">
+                  <div className="mt-0.5 max-w-[140px] truncate text-3xs font-bold text-slate-400">
                     {authUser.organization}
                   </div>
                 </div>
@@ -929,7 +929,7 @@ export default function App() {
             >
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <div>
-                  <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-rose-600">
+                  <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 text-3xs font-black uppercase tracking-[0.14em] text-rose-600">
                     Real-time Alert
                   </span>
 
@@ -937,7 +937,7 @@ export default function App() {
                     실시간 통합 알림
                   </h2>
 
-                  <div className="mt-0.5 text-[11px] font-bold text-slate-400">
+                  <div className="mt-0.5 text-2xs font-bold text-slate-400">
                     전체 {liveAlerts.length}건 · 미확인 {liveAlerts.length}건
                   </div>
                 </div>
@@ -996,7 +996,7 @@ export default function App() {
                             </h3>
 
                             <span
-                              className={`shrink-0 text-[10px] font-black ${accent.time}`}
+                              className={`shrink-0 text-3xs font-black ${accent.time}`}
                             >
                               {alert.time}
                             </span>
@@ -1006,7 +1006,7 @@ export default function App() {
                             {alert.description}
                           </p>
 
-                          <div className="mt-2 text-[10px] font-black text-slate-300">
+                          <div className="mt-2 text-3xs font-black text-slate-300">
                             {alert.id}
                           </div>
                         </div>
@@ -1016,7 +1016,7 @@ export default function App() {
                 })}
               </div>
 
-              <div className="border-t border-slate-100 bg-slate-50 px-5 py-3 text-[11px] font-semibold leading-5 text-slate-500">
+              <div className="border-t border-slate-100 bg-slate-50 px-5 py-3 text-2xs font-semibold leading-5 text-slate-500">
                 알림은 감염 확정이 아닌 신규 확산위험 후보와 현장 확인 필요사항을 안내합니다.
               </div>
             </motion.aside>
@@ -1081,13 +1081,13 @@ export default function App() {
           </span>
 
           <span
-            className="text-[11px] font-black tracking-widest"
+            className="text-2xs font-black tracking-widest"
             style={{ writingMode: "vertical-rl" }}
           >
             AI 챗봇
           </span>
 
-          <span className="pointer-events-none absolute right-full mr-3 whitespace-nowrap rounded-xl bg-slate-900/90 px-2.5 py-1 text-[10px] font-bold text-white opacity-0 shadow transition-all group-hover:opacity-100">
+          <span className="pointer-events-none absolute right-full mr-3 whitespace-nowrap rounded-xl bg-slate-900/90 px-2.5 py-1 text-3xs font-bold text-white opacity-0 shadow transition-all group-hover:opacity-100">
             위험격자·백서 통합 질의 비서
           </span>
         </motion.button>

@@ -191,14 +191,14 @@ export default function ControlSection({
                           <td className="py-4 px-3 font-mono font-bold text-emerald-950">{task.id}</td>
                           <td className="py-4 px-3 max-w-[140px] truncate">{task.area}</td>
                           <td className="py-4 px-3">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getMethodBadge(task.method)}`}>
+                            <span className={`px-2 py-0.5 rounded text-3xs font-bold border ${getMethodBadge(task.method)}`}>
                               {task.method}
                             </span>
                           </td>
                           <td className="py-4 px-3 truncate text-slate-500 max-w-[120px]">{task.company}</td>
                           <td className="py-4 px-3">
                             <div className="space-y-1 max-w-[120px]">
-                              <div className="flex justify-between text-[10px] font-bold">
+                              <div className="flex justify-between text-3xs font-bold">
                                 <span>진척도</span>
                                 <span>{task.progress}%</span>
                               </div>
@@ -243,7 +243,7 @@ export default function ControlSection({
                   <AlertCircle className="text-rose-500 shrink-0" size={18} />
                   <div className="space-y-1">
                     <div className="font-bold text-rose-900">훈증 천막 재고 소진</div>
-                    <p className="text-[10px] text-rose-700">포항 보관 창고 잔여 12개 · 긴급 발주 권장</p>
+                    <p className="text-3xs text-rose-700">포항 보관 창고 잔여 12개 · 긴급 발주 권장</p>
                   </div>
                 </div>
 

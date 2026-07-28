@@ -505,7 +505,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <label className="text-slate-600">연결 보고서 선택</label>
-                    <span className="text-[10px] text-slate-400">
+                    <span className="text-3xs text-slate-400">
                       {reportsLoading ? "조회 중" : `${reports.length}건`}
                     </span>
                   </div>
@@ -544,7 +544,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
                 {selectedReport && (
                   <div className="grid grid-cols-2 gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
                     <div>
-                      <span className="block text-[10px] text-emerald-700">
+                      <span className="block text-3xs text-emerald-700">
                         신규 확산위험
                       </span>
                       <strong className="text-sm text-emerald-950">
@@ -554,7 +554,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
                     </div>
 
                     <div>
-                      <span className="block text-[10px] text-emerald-700">
+                      <span className="block text-3xs text-emerald-700">
                         예찰 우선순위
                       </span>
                       <strong className="text-sm text-emerald-950">
@@ -564,7 +564,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
                     </div>
 
                     <div>
-                      <span className="block text-[10px] text-emerald-700">
+                      <span className="block text-3xs text-emerald-700">
                         중심 격자
                       </span>
                       <strong className="text-sm text-emerald-950">
@@ -573,7 +573,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
                     </div>
 
                     <div>
-                      <span className="block text-[10px] text-emerald-700">
+                      <span className="block text-3xs text-emerald-700">
                         기준 지역
                       </span>
                       <strong className="text-sm text-emerald-950">
@@ -655,11 +655,11 @@ export default function AdminSection({ title }: AdminSectionProps) {
               <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-sm">
                 <div className="flex min-h-[520px] flex-col">
                   <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
-                    <span className="text-[10px] font-bold tracking-[0.18em] text-slate-500">
+                    <span className="text-3xs font-bold tracking-[0.18em] text-slate-500">
                       OFFICIAL FORESTRY REPORT PREVIEW
                     </span>
                     {previewUrl && (
-                      <span className="rounded-full bg-emerald-900/50 px-2.5 py-1 text-[10px] font-bold text-emerald-300">
+                      <span className="rounded-full bg-emerald-900/50 px-2.5 py-1 text-3xs font-bold text-emerald-300">
                         실제 PDF
                       </span>
                     )}
@@ -741,7 +741,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
                               {label}
                             </span>
                           </div>
-                          <p className="mt-1 text-[10px] text-slate-500">
+                          <p className="mt-1 text-3xs text-slate-500">
                             {complete
                               ? "연결 완료"
                               : item.exists
@@ -855,7 +855,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
                     className="flex-1 space-y-4 text-xs font-semibold leading-relaxed text-slate-700"
                   >
                     <div className="rounded-2xl border border-emerald-100/60 bg-emerald-50 p-4">
-                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-emerald-800">
+                      <span className="mb-1 block text-3xs font-black uppercase tracking-wider text-emerald-800">
                         추천 활엽 및 친환경 침엽수종
                       </span>
                       <div className="flex flex-wrap gap-2">
@@ -874,7 +874,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                        <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <span className="mb-1 block text-3xs font-black uppercase tracking-wider text-slate-400">
                           지구당 수림 조림 추정 비용
                         </span>
                         <p className="text-xs font-extrabold text-slate-900">
@@ -883,7 +883,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
                       </div>
 
                       <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                        <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <span className="mb-1 block text-3xs font-black uppercase tracking-wider text-slate-400">
                           고도 생존률 적합 평가
                         </span>
                         <p className="mt-0.5 font-medium leading-relaxed text-slate-600">
@@ -893,7 +893,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
                     </div>
 
                     <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-400">
+                      <span className="mb-1 block text-3xs font-black uppercase tracking-wider text-slate-400">
                         토양 지질 점착 타당성 원리
                       </span>
                       <p className="mt-0.5 font-medium leading-relaxed text-slate-600">
@@ -901,7 +901,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
                       </p>
                     </div>
 
-                    <div className="border-t border-slate-100 pt-2 text-right text-[10px] font-bold text-slate-400">
+                    <div className="border-t border-slate-100 pt-2 text-right text-3xs font-bold text-slate-400">
                       본 결과는 연계된 AI 분석 서비스의 응답을 기반으로 생성되었습니다.
                     </div>
                   </motion.div>

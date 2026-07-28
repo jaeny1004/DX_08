@@ -1422,7 +1422,7 @@ function Metric(props: {
 function SmallMetric(props: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-white border p-3">
-      <div className="text-[11px] text-[#64748B]">{props.label}</div>
+      <div className="text-2xs text-[#64748B]">{props.label}</div>
       <div className="text-sm font-extrabold">{props.value}</div>
     </div>
   );

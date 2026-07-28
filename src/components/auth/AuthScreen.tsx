@@ -402,7 +402,7 @@ export default function AuthScreen({
               <div className="text-sm font-black">
                 소나무재선충병 통합 예찰·방제지원 플랫폼
               </div>
-              <div className="mt-1 text-[11px] font-semibold text-emerald-200">
+              <div className="mt-1 text-2xs font-semibold text-emerald-200">
                 Pine Wilt Disease Integrated Surveillance &amp; Control Platform
               </div>
             </div>
@@ -440,7 +440,7 @@ export default function AuthScreen({
           </div>
         </div>
 
-        <div className="relative z-10 flex items-center justify-between text-[11px] font-semibold text-slate-400">
+        <div className="relative z-10 flex items-center justify-between text-2xs font-semibold text-slate-400">
           <span>PWD-ISCP · AI Decision Support</span>
           <span>PR-AUC 0.3183</span>
         </div>
@@ -740,7 +740,7 @@ export default function AuthScreen({
               </button>
             </form>
 
-            <div className="mt-5 flex items-start gap-2 rounded-xl bg-slate-50 px-3.5 py-3 text-[11px] font-semibold leading-5 text-slate-500">
+            <div className="mt-5 flex items-start gap-2 rounded-xl bg-slate-50 px-3.5 py-3 text-2xs font-semibold leading-5 text-slate-500">
               <ShieldCheck
                 size={16}
                 className="mt-0.5 shrink-0 text-emerald-700"
@@ -799,7 +799,7 @@ function FeatureCard({
       <div className="mt-3 text-sm font-extrabold">
         {title}
       </div>
-      <div className="mt-1 text-[11px] font-semibold leading-5 text-slate-400">
+      <div className="mt-1 text-2xs font-semibold leading-5 text-slate-400">
         {description}
       </div>
     </div>

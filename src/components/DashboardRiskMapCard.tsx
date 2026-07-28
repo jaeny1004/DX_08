@@ -1939,7 +1939,7 @@ export default function DashboardRiskMapCard({
               )}
             </div>
 
-            <div className="text-[11px] font-semibold text-slate-400">
+            <div className="text-2xs font-semibold text-slate-400">
               {mapDisplayMode === "priority"
                 ? "상위 10% 우선 예찰 검토지역 표시"
                 : "상위 10% AI 신규 확산위험 후보 표시"}
@@ -1961,7 +1961,7 @@ export default function DashboardRiskMapCard({
               <h3 className="font-extrabold text-slate-900">
                 👥 지역 인력풀 및 출동 배정
               </h3>
-              <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+              <span className="rounded-full bg-emerald-50 px-2 py-1 text-3xs font-bold text-emerald-700">
                 복수 역량
               </span>
             </div>
@@ -1997,7 +1997,7 @@ export default function DashboardRiskMapCard({
                   value={selectedRegionCapacity?.shortage_worker_count ?? 0}
                   danger={(selectedRegionCapacity?.shortage_worker_count ?? 0) > 0}
                 />
-                <div className="col-span-3 rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-semibold leading-5 text-slate-500">
+                <div className="col-span-3 rounded-xl bg-slate-50 px-3 py-2 text-3xs font-semibold leading-5 text-slate-500">
                   지도에서 격자를 클릭하면 예찰·드론·방제 업무별 추천요원을 확인하고 출동 배정할 수 있습니다.
                 </div>
               </div>
@@ -2019,8 +2019,8 @@ export default function DashboardRiskMapCard({
                         onClick={() => setSelectedTaskType(taskType)}
                         className={
                           selectedTaskType === taskType
-                            ? "rounded-md bg-white px-2.5 py-1.5 text-[10px] font-extrabold text-emerald-700 shadow-sm"
-                            : "rounded-md px-2.5 py-1.5 text-[10px] font-bold text-slate-500"
+                            ? "rounded-md bg-white px-2.5 py-1.5 text-3xs font-extrabold text-emerald-700 shadow-sm"
+                            : "rounded-md px-2.5 py-1.5 text-3xs font-bold text-slate-500"
                         }
                       >
                         {label}
@@ -2030,7 +2030,7 @@ export default function DashboardRiskMapCard({
                 </div>
 
                 {assignmentMessage && (
-                  <div className="shrink-0 rounded-lg bg-emerald-50 px-3 py-2 text-[10px] font-bold text-emerald-700">
+                  <div className="shrink-0 rounded-lg bg-emerald-50 px-3 py-2 text-3xs font-bold text-emerald-700">
                     {assignmentMessage}
                   </div>
                 )}
@@ -2069,7 +2069,7 @@ export default function DashboardRiskMapCard({
                             <button
                               type="button"
                               onClick={() => handleAssignRecommendedWorker(item)}
-                              className="shrink-0 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-[10px] font-extrabold text-white hover:bg-emerald-800"
+                              className="shrink-0 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-3xs font-extrabold text-white hover:bg-emerald-800"
                             >
                               배정
                             </button>
@@ -2078,7 +2078,7 @@ export default function DashboardRiskMapCard({
                       );
                     })
                   ) : (
-                    <div className="rounded-xl bg-amber-50 px-3 py-3 text-center text-[10px] font-semibold text-amber-700">
+                    <div className="rounded-xl bg-amber-50 px-3 py-3 text-center text-3xs font-semibold text-amber-700">
                       선택 업무에 배정 가능한 요원이 없습니다. 인접지역 또는 광역 지원 인력을 확인하세요.
                     </div>
                   )}
@@ -2093,14 +2093,14 @@ export default function DashboardRiskMapCard({
                 <h3 className="font-extrabold text-slate-900">
                   📋 지역별 위험후보 및 우선순위
                 </h3>
-                <span className="text-[11px] font-bold text-slate-400">
+                <span className="text-2xs font-bold text-slate-400">
                   실시간 집계
                 </span>
               </div>
 
               <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-[11px] text-slate-500">
+                  <thead className="bg-slate-50 text-2xs text-slate-500">
                     <tr>
                       <th className="px-3 py-2.5 text-left">구분</th>
                       <th className="px-3 py-2.5 text-right">후보 격자</th>
@@ -2124,7 +2124,7 @@ export default function DashboardRiskMapCard({
                 <h3 className="font-extrabold text-slate-900">
                   📈 주간 예찰 제보 및 현장 확인 추이
                 </h3>
-                <span className="text-[11px] font-bold text-slate-400">
+                <span className="text-2xs font-bold text-slate-400">
                   최근 4주
                 </span>
               </div>
@@ -2155,14 +2155,14 @@ export default function DashboardRiskMapCard({
                         }}
                       />
                     </div>
-                    <span className="text-[10px] font-bold text-slate-500">
+                    <span className="text-3xs font-bold text-slate-500">
                       {item.label}
                     </span>
                   </div>
                 ))}
               </div>
 
-              <div className="mt-1 flex justify-center gap-4 text-[10px] font-bold text-slate-500">
+              <div className="mt-1 flex justify-center gap-4 text-3xs font-bold text-slate-500">
                 <Legend color="#38bdf8" label="예찰 제보" />
                 <Legend color="#f43f5e" label="현장 확인" />
               </div>
@@ -2231,7 +2231,7 @@ function ControlNotice({
   return (
     <div className={`rounded-xl border px-3 py-2.5 ${className}`}>
       <div className="text-xs font-extrabold">{title}</div>
-      <div className="mt-1 text-[10px] font-semibold opacity-80">
+      <div className="mt-1 text-3xs font-semibold opacity-80">
         {description}
       </div>
     </div>

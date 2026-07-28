@@ -239,7 +239,7 @@ export default function MonitoringSection({
                 <td className="py-3 px-3 truncate max-w-[150px]">{t.region}</td>
                 <td className="py-3 px-3 text-slate-500">{t.species}</td>
                 <td className="py-3 px-3 text-center">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                  <span className={`px-2 py-0.5 rounded text-3xs font-black ${
                     t.severity === "심" ? "bg-rose-100 text-rose-700" : t.severity === "중" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
                   }`}>
                     {t.severity}
@@ -250,7 +250,7 @@ export default function MonitoringSection({
                     value={t.status}
                     onChange={(e) => onUpdateTreeStatus(t.id, e.target.value as any)}
                     onClick={(e) => e.stopPropagation()}
-                    className="text-[11px] font-bold border border-slate-200 rounded-lg p-1 outline-none bg-white"
+                    className="text-2xs font-bold border border-slate-200 rounded-lg p-1 outline-none bg-white"
                   >
                     <option value="예찰의심">예찰의심</option>
                     <option value="현장확인">현장확인</option>
@@ -284,7 +284,7 @@ export default function MonitoringSection({
             </span>
           </div>
         </div>
-        <p className="text-[11px] text-slate-400 font-medium mt-1">
+        <p className="text-2xs text-slate-400 font-medium mt-1">
           해당 확진목의 타임라인과 상세 정보를 제공합니다.
         </p>
       </div>
@@ -307,30 +307,30 @@ export default function MonitoringSection({
                         <button
                           type="button"
                           onClick={handleOpenVideoPanel}
-                          className="flex items-center gap-1 rounded-lg bg-emerald-800 px-2 py-1 text-[10px] font-bold text-white hover:bg-emerald-900 transition-colors"
+                          className="flex items-center gap-1 rounded-lg bg-emerald-800 px-2 py-1 text-3xs font-bold text-white hover:bg-emerald-900 transition-colors"
                         >
                           <Video size={11} />
                           <span>영상 보기</span>
                         </button>
                       )}
                     </div>
-                    <span className="text-[10px] text-slate-400 font-mono font-medium shrink-0">{step.date}</span>
+                    <span className="text-3xs text-slate-400 font-mono font-medium shrink-0">{step.date}</span>
                   </div>
-                  <p className="text-[11px] text-slate-500 font-medium leading-relaxed">{step.note}</p>
+                  <p className="text-2xs text-slate-500 font-medium leading-relaxed">{step.note}</p>
 
                   {isDroneStep ? (
                     <div className="flex flex-wrap gap-1.5 pt-0.5">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-3xs font-bold text-sky-700">
                         <User size={10} />
                         <span>{step.actor}</span>
                       </span>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-3xs font-bold text-emerald-700">
                         <Check size={10} />
                         <span>AI 분석 완료</span>
                       </span>
                     </div>
                   ) : (
-                    <div className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                    <div className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-3xs font-bold text-emerald-700">
                       <User size={10} />
                       <span>{step.actor}</span>
                     </div>
@@ -380,11 +380,11 @@ export default function MonitoringSection({
         </div>
 
         <div>
-          <div className="flex items-center gap-1.5 text-[10px] font-black text-rose-600">
+          <div className="flex items-center gap-1.5 text-3xs font-black text-rose-600">
             <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse" />
             <span>DRONE REPLAY</span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">
+          <p className="text-2xs text-slate-500 mt-1">
             선택된 확진목의 AI 드론 예찰 영상입니다.
           </p>
         </div>
@@ -402,13 +402,13 @@ export default function MonitoringSection({
 
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-            <div className="text-[10px] font-bold text-slate-400">수종</div>
+            <div className="text-3xs font-bold text-slate-400">수종</div>
             <div className="mt-1 text-sm font-black text-slate-800">
               {isDroneReplayAnalyzed ? DRONE_REPLAY_DUMMY.species : "-"}
             </div>
           </div>
           <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-            <div className="text-[10px] font-bold text-slate-400">심각도</div>
+            <div className="text-3xs font-bold text-slate-400">심각도</div>
             <div className="mt-1 text-sm font-black text-slate-800">
               {isDroneReplayAnalyzed ? DRONE_REPLAY_DUMMY.severity : "-"}
             </div>
@@ -416,14 +416,14 @@ export default function MonitoringSection({
         </div>
 
         <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-          <div className="text-[10px] font-bold text-slate-400">촬영 위치</div>
+          <div className="text-3xs font-bold text-slate-400">촬영 위치</div>
           <div className="mt-1 text-xs font-bold text-slate-800">
             {isDroneReplayAnalyzed ? DRONE_REPLAY_DUMMY.capturedLocation : "-"}
           </div>
         </div>
 
         <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-          <div className="text-[10px] font-bold text-slate-400">중부원점좌표 (EPSG:5186)</div>
+          <div className="text-3xs font-bold text-slate-400">중부원점좌표 (EPSG:5186)</div>
           <div className="mt-1 flex gap-4 font-mono text-sm font-black text-slate-800">
             <span>X {isDroneReplayAnalyzed ? DRONE_REPLAY_DUMMY.coordX : "-"}</span>
             <span>Y {isDroneReplayAnalyzed ? DRONE_REPLAY_DUMMY.coordY : "-"}</span>

@@ -169,7 +169,7 @@ export default function Dashboard({
                 </div>
 
                 <div className="flex min-w-0 flex-1 items-baseline gap-2">
-                  <span className="truncate text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                  <span className="truncate text-3xs font-extrabold uppercase tracking-wider text-slate-500">
                     {kpi.label}
                   </span>
                   <span className="shrink-0 text-lg font-black tracking-tight text-slate-900">
@@ -178,7 +178,7 @@ export default function Dashboard({
                 </div>
 
                 <div
-                  className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${kpi.badgeClass}`}
+                  className={`shrink-0 rounded-full border px-2 py-0.5 text-3xs font-bold ${kpi.badgeClass}`}
                 >
                   {kpi.caption}
                 </div>
@@ -205,7 +205,7 @@ export default function Dashboard({
             </div>
           </div>
 
-          <div className="shrink-0 text-[11px] font-bold text-slate-400">
+          <div className="shrink-0 text-2xs font-bold text-slate-400">
             {nowLabel}
           </div>
         </div>
