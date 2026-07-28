@@ -1724,11 +1724,11 @@ export default function DashboardRiskMapCard({
       <div
         className="grid h-full min-h-0 gap-4"
         style={{
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gridTemplateColumns: "minmax(0, 2fr) minmax(320px, 1fr)",
           gridTemplateRows: "auto minmax(0, 1fr)",
         }}
       >
-        <div className="col-span-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <select
               value={selectedSigunguCode}
@@ -1942,98 +1942,9 @@ export default function DashboardRiskMapCard({
         <aside
           className="grid min-h-0 min-w-0 gap-3"
           style={{
-            gridTemplateRows: "minmax(0, 1fr) minmax(0, 1fr)",
+            gridTemplateRows: "1.4fr 1fr 1fr",
           }}
         >
-          <section className="min-h-0 overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-slate-900">
-                📈 주간 예찰 제보 및 현장 확인 추이
-              </h3>
-              <span className="text-[11px] font-bold text-slate-400">
-                최근 7주
-              </span>
-            </div>
-
-            <div className="mt-3 flex h-[118px] items-end justify-between gap-2 px-1">
-              {weeklyTrend.map((item) => (
-                <div
-                  key={item.label}
-                  className="flex flex-1 flex-col items-center gap-2"
-                >
-                  <div className="flex h-[92px] items-end gap-1">
-                    <div
-                      className="w-3 rounded-t bg-sky-400"
-                      style={{
-                        height: `${Math.max(
-                          12,
-                          (item.report / maxTrendValue) * 88,
-                        )}px`,
-                      }}
-                    />
-                    <div
-                      className="w-3 rounded-t bg-rose-500"
-                      style={{
-                        height: `${Math.max(
-                          8,
-                          (item.field / maxTrendValue) * 88,
-                        )}px`,
-                      }}
-                    />
-                  </div>
-                  <span className="text-[10px] font-bold text-slate-500">
-                    {item.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-1 flex justify-center gap-4 text-[10px] font-bold text-slate-500">
-              <Legend color="#38bdf8" label="예찰 제보" />
-              <Legend color="#f43f5e" label="현장 확인" />
-            </div>
-          </section>
-
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-slate-900">
-                📋 지역별 위험후보 및 우선순위
-              </h3>
-              <span className="text-[11px] font-bold text-slate-400">
-                실시간 집계
-              </span>
-            </div>
-
-            <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-[11px] text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2.5 text-left">구분</th>
-                    <th className="px-3 py-2.5 text-right">후보 격자</th>
-                    <th className="px-3 py-2.5 text-right">최우선 예찰</th>
-                    <th className="px-3 py-2.5 text-right">상태</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {controlRows.map((row) => (
-                    <ControlRow
-                      key={row.label}
-                      label={row.label}
-                      candidate={row.candidate}
-                      priority={row.priority}
-                      status={row.status}
-                      tone={row.tone}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-
-        </aside>
-
-        <aside className="min-h-0 min-w-0">
           <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
             <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-extrabold text-slate-900">
@@ -2163,6 +2074,91 @@ export default function DashboardRiskMapCard({
                 </div>
               </div>
             )}
+          </section>
+
+          <section className="min-h-0 overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-extrabold text-slate-900">
+                📈 주간 예찰 제보 및 현장 확인 추이
+              </h3>
+              <span className="text-[11px] font-bold text-slate-400">
+                최근 7주
+              </span>
+            </div>
+
+            <div className="mt-3 flex h-[118px] items-end justify-between gap-2 px-1">
+              {weeklyTrend.map((item) => (
+                <div
+                  key={item.label}
+                  className="flex flex-1 flex-col items-center gap-2"
+                >
+                  <div className="flex h-[92px] items-end gap-1">
+                    <div
+                      className="w-3 rounded-t bg-sky-400"
+                      style={{
+                        height: `${Math.max(
+                          12,
+                          (item.report / maxTrendValue) * 88,
+                        )}px`,
+                      }}
+                    />
+                    <div
+                      className="w-3 rounded-t bg-rose-500"
+                      style={{
+                        height: `${Math.max(
+                          8,
+                          (item.field / maxTrendValue) * 88,
+                        )}px`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-500">
+                    {item.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-1 flex justify-center gap-4 text-[10px] font-bold text-slate-500">
+              <Legend color="#38bdf8" label="예찰 제보" />
+              <Legend color="#f43f5e" label="현장 확인" />
+            </div>
+          </section>
+
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-extrabold text-slate-900">
+                📋 지역별 위험후보 및 우선순위
+              </h3>
+              <span className="text-[11px] font-bold text-slate-400">
+                실시간 집계
+              </span>
+            </div>
+
+            <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-[11px] text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2.5 text-left">구분</th>
+                    <th className="px-3 py-2.5 text-right">후보 격자</th>
+                    <th className="px-3 py-2.5 text-right">최우선 예찰</th>
+                    <th className="px-3 py-2.5 text-right">상태</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {controlRows.map((row) => (
+                    <ControlRow
+                      key={row.label}
+                      label={row.label}
+                      candidate={row.candidate}
+                      priority={row.priority}
+                      status={row.status}
+                      tone={row.tone}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
         </aside>
       </div>
