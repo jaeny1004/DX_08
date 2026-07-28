@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import {
   ShieldAlert,
@@ -22,6 +23,13 @@ import { AuthUser } from "../types/auth";
 import DashboardRiskMapCard from "./DashboardRiskMapCard";
 import SectionTitle from "./SectionTitle";
 
+interface DashboardLiveAlert {
+  id: string;
+  time: string;
+  title: string;
+  tone: "danger" | "warning" | "info";
+}
+
 interface DashboardProps {
   title: string;
   grids: GridCell[];
@@ -32,6 +40,7 @@ interface DashboardProps {
   onAssignWorker: (assignment: DispatchAssignment) => void;
   onGridSelect?: (grid: any) => void;
   authUser: AuthUser;
+  liveAlerts: DashboardLiveAlert[];
 }
 
 export default function Dashboard({
@@ -44,7 +53,27 @@ export default function Dashboard({
   onAssignWorker,
   onGridSelect,
   authUser,
+  liveAlerts,
 }: DashboardProps) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const pad2 = (value: number) => String(value).padStart(2, "0");
+  const hours24 = now.getHours();
+  const period = hours24 < 12 ? "오전" : "오후";
+  const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+  const nowLabel = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())} ${period} ${pad2(hours12)}:${pad2(now.getMinutes())}`;
+
+  const tickerToneClass = (tone: DashboardLiveAlert["tone"]) =>
+    tone === "danger"
+      ? "text-rose-600"
+      : tone === "warning"
+        ? "text-amber-600"
+        : "text-sky-600";
   const activeWorkers = workers.filter(
     (worker) => worker.status !== "대기",
   ).length;
@@ -118,7 +147,7 @@ export default function Dashboard({
       <div
         className="grid min-h-0 flex-1 gap-3"
         style={{
-          gridTemplateRows: "108px minmax(0, 1fr)",
+          gridTemplateRows: "70px 36px minmax(0, 1fr)",
         }}
       >
         <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -131,37 +160,55 @@ export default function Dashboard({
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.04 }}
-                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-shadow hover:shadow-md"
+                className="flex items-center gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-white px-3.5 py-2 shadow-sm transition-shadow hover:shadow-md"
               >
                 <div
-                  className={`absolute right-0 top-0 h-20 w-20 translate-x-7 -translate-y-7 rounded-full transition-transform duration-300 group-hover:scale-110 ${kpi.accentClass}`}
-                />
+                  className={`shrink-0 rounded-xl p-2 text-white shadow-sm ${kpi.iconClass}`}
+                >
+                  <Icon size={16} />
+                </div>
 
-                <div className="relative flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                      {kpi.label}
-                    </div>
-                    <div className="mt-1 text-2xl font-black tracking-tight text-slate-900">
-                      {kpi.value}
-                    </div>
-                    <div
-                      className={`mt-1.5 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${kpi.badgeClass}`}
-                    >
-                      {kpi.caption}
-                    </div>
-                  </div>
+                <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                  <span className="truncate text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                    {kpi.label}
+                  </span>
+                  <span className="shrink-0 text-lg font-black tracking-tight text-slate-900">
+                    {kpi.value}
+                  </span>
+                </div>
 
-                  <div
-                    className={`rounded-xl p-2.5 text-white shadow-sm ${kpi.iconClass}`}
-                  >
-                    <Icon size={20} />
-                  </div>
+                <div
+                  className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${kpi.badgeClass}`}
+                >
+                  {kpi.caption}
                 </div>
               </motion.article>
             );
           })}
         </section>
+
+        <div className="group relative flex min-h-0 items-center gap-3 overflow-hidden rounded-xl border border-slate-200 bg-white px-3 shadow-sm">
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <div className="flex w-max items-center gap-10 whitespace-nowrap text-xs font-bold text-slate-600 [animation:ticker-scroll_28s_linear_infinite] group-hover:[animation-play-state:paused]">
+              {[...liveAlerts, ...liveAlerts].map((alert, index) => (
+                <span
+                  key={`${alert.id}-${index}`}
+                  className="inline-flex items-center gap-2"
+                >
+                  <span className={tickerToneClass(alert.tone)}>●</span>
+                  <span className="font-black text-slate-400">
+                    {alert.time}
+                  </span>
+                  {alert.title}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="shrink-0 text-[11px] font-bold text-slate-400">
+            {nowLabel}
+          </div>
+        </div>
 
         <DashboardRiskMapCard
           dispatchAssignments={dispatchAssignments}

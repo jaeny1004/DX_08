@@ -829,6 +829,7 @@ export default function App() {
                     onAssignWorker={handleAssignWorker}
                     onGridSelect={setSelectedGrid}
                     authUser={authUser}
+                    liveAlerts={liveAlerts}
                   />
                 )}
 
@@ -1033,7 +1034,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[55] bg-slate-950/25 backdrop-blur-[1px]"
+              className="fixed inset-0 z-[1100] bg-slate-950/25 backdrop-blur-[1px]"
             />
 
             <motion.aside
@@ -1045,7 +1046,7 @@ export default function App() {
                 stiffness: 320,
                 damping: 34,
               }}
-              className="fixed bottom-0 right-0 top-0 z-[60] w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[630px]"
+              className="fixed bottom-0 right-0 top-0 z-[1101] w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[630px]"
             >
               <button
                 type="button"
@@ -1069,7 +1070,7 @@ export default function App() {
           initial={{ x: 8, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           whileHover={{ x: -4 }}
-          className="group fixed right-0 top-1/2 z-50 flex -translate-y-1/2 flex-col items-center gap-2 rounded-l-2xl border border-r-0 border-emerald-400/35 bg-emerald-800 px-2.5 py-4 text-white shadow-xl transition-colors hover:bg-emerald-900"
+          className="group fixed right-0 top-1/2 z-[1100] flex -translate-y-1/2 flex-col items-center gap-2 rounded-l-2xl border border-r-0 border-emerald-400/35 bg-emerald-800 px-2.5 py-4 text-white shadow-xl transition-colors hover:bg-emerald-900"
           aria-label="AI 챗봇 열기"
         >
           <span className="relative">
