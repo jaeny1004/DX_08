@@ -125,6 +125,7 @@ def create_app() -> FastAPI:
     from app.api.docs import router as docs_router
     from app.api.reports import router as reports_router
     from app.api.report_drafts import router as report_drafts_router
+    from app.api.species import router as species_router
 
     routers = {
         "auth": auth_router,
@@ -132,6 +133,7 @@ def create_app() -> FastAPI:
         "docs": docs_router,
         "reports": reports_router,
         "report_drafts": report_drafts_router,
+        "species": species_router,
     }
 
     for router_name, router in routers.items():
