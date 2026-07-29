@@ -69,7 +69,8 @@ type ModuleId =
   | "field"
   | "control-status"
   | "control-work"
-  | "admin";
+  | "admin-report"
+  | "admin-species";
 
 export default function App() {
   const [activeModule, setActiveModule] =
@@ -394,18 +395,28 @@ export default function App() {
     ],
   } as const;
 
-  const trailingModules = [
-    {
-      id: "admin",
-      label: "행정 기안 지원",
-      icon: FileText,
-    },
-  ] as const;
+  const adminGroup = {
+    id: "admin",
+    label: "행정 기안 지원",
+    icon: FileText,
+    items: [
+      {
+        id: "admin-report",
+        label: "보고서 생성 및 조회",
+        icon: FileText,
+      },
+      {
+        id: "admin-species",
+        label: "AI 친환경 수종전환 추천",
+        icon: TreePine,
+      },
+    ],
+  } as const;
 
   const modules = [
     ...primaryModules,
     ...controlGroup.items,
-    ...trailingModules,
+    ...adminGroup.items,
   ] as const;
 
   const activeModuleLabel =
@@ -414,6 +425,7 @@ export default function App() {
   const sectionTitle =
     activeModule === "dashboard" ? "홈" : activeModuleLabel;
   const ControlGroupIcon = controlGroup.icon;
+  const AdminGroupIcon = adminGroup.icon;
 
   if (isAuthChecking) {
     return (
@@ -681,41 +693,86 @@ export default function App() {
               </div>
             </div>
 
-            {trailingModules.map((module) => {
-              const Icon = module.icon;
-              const active = activeModule === module.id;
+            <div className="group relative">
+              <div
+                className={
+                  isSidebarOpen
+                    ? adminGroup.items.some(
+                        (item) => item.id === activeModule
+                      )
+                      ? "flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-emerald-900"
+                      : "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                    : adminGroup.items.some(
+                          (item) => item.id === activeModule
+                        )
+                      ? "flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
+                      : "flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                }
+              >
+                <AdminGroupIcon size={20} className="shrink-0" />
 
-              return (
-                <button
-                  key={module.id}
-                  type="button"
-                  onClick={() => setActiveModule(module.id)}
-                  title={module.label}
-                  aria-label={module.label}
-                  className={
-                    isSidebarOpen
-                      ? active
-                        ? "group relative flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
-                        : "group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
-                      : active
-                        ? "group relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
-                        : "group relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
-                  }
-                >
-                  <Icon size={20} className="shrink-0" />
+                {isSidebarOpen ? (
+                  <span className="truncate text-sm font-extrabold">
+                    {adminGroup.label}
+                  </span>
+                ) : (
+                  <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white shadow-lg group-hover:block">
+                    {adminGroup.label}
+                  </span>
+                )}
+              </div>
 
-                  {isSidebarOpen ? (
-                    <span className="truncate text-sm font-extrabold">
-                      {module.label}
-                    </span>
-                  ) : (
-                    <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white shadow-lg group-hover:block">
-                      {module.label}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+              <div className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:grid-rows-[1fr] group-hover:opacity-100">
+                <div className="overflow-hidden">
+                  <div
+                    className={
+                      isSidebarOpen
+                        ? "mt-1 space-y-1 pl-8"
+                        : "mt-1 flex flex-col items-center gap-1"
+                    }
+                  >
+                    {adminGroup.items.map((item) => {
+                      const Icon = item.icon;
+                      const active = activeModule === item.id;
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setActiveModule(item.id)}
+                          title={item.label}
+                          aria-label={item.label}
+                          className={
+                            isSidebarOpen
+                              ? active
+                                ? "flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                                : "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                              : active
+                                ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                                : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                          }
+                        >
+                          <Icon
+                            size={isSidebarOpen ? 16 : 18}
+                            className="shrink-0"
+                          />
+
+                          {isSidebarOpen ? (
+                            <span className="truncate text-xs font-extrabold">
+                              {item.label}
+                            </span>
+                          ) : (
+                            <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                              {item.label}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
           </nav>
 
           <div
@@ -865,9 +922,17 @@ export default function App() {
                   </div>
                 )}
 
-                {activeModule === "admin" && (
+                {(activeModule === "admin-report" ||
+                  activeModule === "admin-species") && (
                   <div className="h-full overflow-y-auto pr-1">
-                    <AdminSection title={sectionTitle} />
+                    <AdminSection
+                      title={sectionTitle}
+                      view={
+                        activeModule === "admin-species"
+                          ? "species"
+                          : "report"
+                      }
+                    />
                   </div>
                 )}
 

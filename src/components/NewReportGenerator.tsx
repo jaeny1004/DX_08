@@ -27,9 +27,14 @@ const REPORT_TYPES: Array<{ value: DraftReportType; label: string }> = [
 
 interface NewReportGeneratorProps {
   onRegistered?: () => void;
+  /** 생성된 초안 PDF 미리보기 URL을 상위(공용 미리보기 패널)로 전달한다. */
+  onPreviewChange?: (url: string | null) => void;
 }
 
-export default function NewReportGenerator({ onRegistered }: NewReportGeneratorProps) {
+export default function NewReportGenerator({
+  onRegistered,
+  onPreviewChange,
+}: NewReportGeneratorProps) {
   const today = new Date().toISOString().slice(0, 10);
   const [reportType, setReportType] = useState<DraftReportType>("prediction");
   const [title, setTitle] = useState("");
@@ -50,6 +55,11 @@ export default function NewReportGenerator({ onRegistered }: NewReportGeneratorP
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
+
+  // 초안 미리보기 URL을 공용 미리보기 패널로 올려보낸다.
+  useEffect(() => {
+    onPreviewChange?.(previewUrl);
   }, [previewUrl]);
 
   const replacePreview = (url: string | null) => {
@@ -141,10 +151,9 @@ export default function NewReportGenerator({ onRegistered }: NewReportGeneratorP
   };
 
   return (
-    <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-      <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-5">
+    <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
         <div>
-          <h3 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
+          <h3 className="flex items-center gap-2 text-base font-black text-slate-950">
             <FilePlus2 size={19} className="text-emerald-800" />
             신규 행정문서 생성
           </h3>
@@ -225,19 +234,16 @@ export default function NewReportGenerator({ onRegistered }: NewReportGeneratorP
             {loading ? <><Loader2 size={15} className="animate-spin" />행정양식 작성 중</> : <><FilePlus2 size={15} />신규 초안 생성</>}
           </button>
         </div>
-      </section>
 
-      <section className="flex min-h-[720px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:col-span-7">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
-          <div>
-            <h3 className="text-lg font-extrabold text-slate-900">{draft?.title || "신규 문서 초안 미리보기"}</h3>
-            <p className="mt-1 text-xs text-slate-500">
-              {draft ? `${draft.sido_name} ${draft.sigungu_name} · 중심 격자 ${draft.center_grid_ids[0]}` : "신규 초안을 생성하면 행정양식 PDF가 즉시 표시됩니다."}
-            </p>
-          </div>
-
-          {draft && (
-            <div className="flex flex-wrap gap-2">
+        {draft && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs">
+            <div className="min-w-0">
+              <p className="truncate font-bold text-slate-800">{draft.title}</p>
+              <p className="truncate text-slate-500">
+                {draft.sido_name} {draft.sigungu_name} · 중심 격자 {draft.center_grid_ids[0]}
+              </p>
+            </div>
+            <div className="ml-auto flex flex-wrap gap-2">
               {(["pdf", "docx"] as DraftExportFormat[]).map((format) => (
                 <button key={format} type="button" onClick={() => download(format)} disabled={exporting !== null} className="flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
                   {exporting === format ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
@@ -254,18 +260,8 @@ export default function NewReportGenerator({ onRegistered }: NewReportGeneratorP
                 {draft.status === "registered" ? "등록 완료" : "보고서 등록"}
               </button>
             </div>
-          )}
-        </div>
-
-        {previewUrl ? (
-          <iframe title="행정양식 PDF 미리보기" src={previewUrl} className="min-h-[650px] w-full flex-1 bg-white" />
-        ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-slate-50 text-center text-slate-400">
-            <FilePlus2 size={45} />
-            <p className="text-sm font-bold">생성된 행정양식이 없습니다.</p>
           </div>
         )}
-      </section>
-    </div>
+    </section>
   );
 }

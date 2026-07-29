@@ -37,6 +37,7 @@ import {
 
 interface AdminSectionProps {
   title: string;
+  view?: "report" | "species";
 }
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
@@ -71,10 +72,12 @@ function scoreText(value: number | null | undefined): string {
 }
 
 
-export default function AdminSection({ title }: AdminSectionProps) {
-  const [activeTab, setActiveTab] =
-  useState<"new-report" | "reports" | "species">("new-report");
+export default function AdminSection({
+  title,
+  view = "report",
+}: AdminSectionProps) {
   const [reportsRefreshKey, setReportsRefreshKey] = useState(0);
+  const [draftPreviewUrl, setDraftPreviewUrl] = useState<string | null>(null);
 
   // --------------------------------------------
   // 실제 행정 보고서 조회·미리보기·다운로드 상태
@@ -329,75 +332,32 @@ export default function AdminSection({ title }: AdminSectionProps) {
     }
   };
 
+  // 공용 미리보기: 신규 초안 미리보기(draft)가 있으면 우선, 없으면 조회 선택 보고서.
+  const activePreviewUrl = draftPreviewUrl || previewUrl;
+
   return (
     <div className="space-y-6">
       <SectionTitle title={title} />
 
-      {/* 탭 선택 */}
-      <div className="flex max-w-3xl rounded-2xl border border-slate-200 bg-slate-100 p-1 text-sm font-bold text-slate-600">
-        <button
-          type="button"
-          onClick={() => setActiveTab("new-report")}
-          className={`flex-1 rounded-xl py-2.5 transition-all ${
-            activeTab === "new-report"
-              ? "bg-white text-emerald-950 shadow-sm"
-              : "hover:text-slate-900"
-          }`}
-        >
-          ✨ 신규 보고서 생성
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("reports")}
-          className={`flex-1 rounded-xl py-2.5 transition-all ${
-            activeTab === "reports"
-              ? "bg-white text-emerald-950 shadow-sm"
-              : "hover:text-slate-900"
-          }`}
-        >
-          📚 과거 보고서 조회
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("species")}
-          className={`flex-1 rounded-xl py-2.5 transition-all ${
-            activeTab === "species"
-              ? "bg-white text-emerald-950 shadow-sm"
-              : "hover:text-slate-900"
-          }`}
-        >
-          🌱 AI 친환경 수종전환 추천
-        </button>
-      </div>
-
       <AnimatePresence mode="wait">
-        {activeTab === "new-report" && (
+        {view === "report" && (
           <motion.div
-            key="new-report-tab"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-          >
-            <NewReportGenerator
-              onRegistered={() => {
-                setReportsRefreshKey((current) => current + 1);
-                setActiveTab("reports");
-              }}
-            />
-          </motion.div>
-        )}
-        {activeTab === "reports" && (
-          <motion.div
-            key="reports-tab"
+            key="report-tab"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             className="grid grid-cols-1 gap-6 lg:grid-cols-12"
           >
-            {/* 왼쪽: 보고서 필터·다운로드 */}
-            <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 text-xs font-semibold shadow-sm lg:col-span-5">
+            {/* 왼쪽: 신규 생성 + 과거 조회 필터 */}
+            <div className="space-y-6 lg:col-span-5">
+              <NewReportGenerator
+                onPreviewChange={setDraftPreviewUrl}
+                onRegistered={() =>
+                  setReportsRefreshKey((current) => current + 1)
+                }
+              />
+              {/* 과거 보고서 조회·다운로드 */}
+              <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 text-xs font-semibold shadow-sm">
               <div>
                 <h3 className="flex items-center gap-2 text-base font-black text-slate-950">
                   <FileText size={19} className="text-emerald-800" />
@@ -645,6 +605,7 @@ export default function AdminSection({ title }: AdminSectionProps) {
                   </button>
                 </div>
               </div>
+              </div>
             </div>
 
             {/* 오른쪽: 실제 PDF 미리보기 및 연결 상태 */}
@@ -655,17 +616,17 @@ export default function AdminSection({ title }: AdminSectionProps) {
                     <span className="text-3xs font-bold tracking-[0.18em] text-slate-500">
                       OFFICIAL FORESTRY REPORT PREVIEW
                     </span>
-                    {previewUrl && (
+                    {activePreviewUrl && (
                       <span className="rounded-full bg-emerald-900/50 px-2.5 py-1 text-3xs font-bold text-emerald-300">
                         실제 PDF
                       </span>
                     )}
                   </div>
 
-                  {previewUrl ? (
+                  {activePreviewUrl ? (
                     <iframe
                       title="행정 보고서 PDF 미리보기"
-                      src={previewUrl}
+                      src={activePreviewUrl}
                       className="min-h-[475px] w-full flex-1 bg-white"
                     />
                   ) : (
@@ -767,8 +728,8 @@ export default function AdminSection({ title }: AdminSectionProps) {
           </motion.div>
         )}
 
-        {/* 기존 AI 친환경 수종전환 추천 탭 — 그대로 유지 */}
-        {activeTab === "species" && (
+        {/* AI 친환경 수종전환 추천 */}
+        {view === "species" && (
           <motion.div
             key="species-tab"
             initial={{ opacity: 0, y: 10 }}
