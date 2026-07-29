@@ -77,7 +77,7 @@ export default function AdminSection({
   view = "report",
 }: AdminSectionProps) {
   const [reportsRefreshKey, setReportsRefreshKey] = useState(0);
-  const [draftPreviewUrl, setDraftPreviewUrl] = useState<string | null>(null);
+  const [reportMode, setReportMode] = useState<"create" | "browse">("create");
 
   // --------------------------------------------
   // 실제 행정 보고서 조회·미리보기·다운로드 상태
@@ -332,9 +332,6 @@ export default function AdminSection({
     }
   };
 
-  // 공용 미리보기: 신규 초안 미리보기(draft)가 있으면 우선, 없으면 조회 선택 보고서.
-  const activePreviewUrl = draftPreviewUrl || previewUrl;
-
   return (
     <div className="space-y-6">
       <SectionTitle title={title} />
@@ -346,18 +343,45 @@ export default function AdminSection({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 gap-6 lg:grid-cols-12"
+            className="space-y-5"
           >
-            {/* 왼쪽: 신규 생성 + 과거 조회 필터 */}
-            <div className="space-y-6 lg:col-span-5">
+            {/* 생성/조회 세그먼트 토글 */}
+            <div className="flex max-w-xs rounded-2xl border border-slate-200 bg-slate-100 p-1 text-sm font-bold text-slate-600">
+              <button
+                type="button"
+                onClick={() => setReportMode("create")}
+                className={`flex-1 rounded-xl py-2 transition-all ${
+                  reportMode === "create"
+                    ? "bg-white text-emerald-950 shadow-sm"
+                    : "hover:text-slate-900"
+                }`}
+              >
+                ✨ 신규 생성
+              </button>
+              <button
+                type="button"
+                onClick={() => setReportMode("browse")}
+                className={`flex-1 rounded-xl py-2 transition-all ${
+                  reportMode === "browse"
+                    ? "bg-white text-emerald-950 shadow-sm"
+                    : "hover:text-slate-900"
+                }`}
+              >
+                📚 과거 조회
+              </button>
+            </div>
+
+            {reportMode === "create" ? (
               <NewReportGenerator
-                onPreviewChange={setDraftPreviewUrl}
-                onRegistered={() =>
-                  setReportsRefreshKey((current) => current + 1)
-                }
+                onRegistered={() => {
+                  setReportsRefreshKey((current) => current + 1);
+                  setReportMode("browse");
+                }}
               />
-              {/* 과거 보고서 조회·다운로드 */}
-              <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 text-xs font-semibold shadow-sm">
+            ) : (
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+                {/* 왼쪽: 보고서 필터·다운로드 */}
+                <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 text-xs font-semibold shadow-sm lg:col-span-5">
               <div>
                 <h3 className="flex items-center gap-2 text-base font-black text-slate-950">
                   <FileText size={19} className="text-emerald-800" />
@@ -605,28 +629,27 @@ export default function AdminSection({
                   </button>
                 </div>
               </div>
-              </div>
-            </div>
+                </div>
 
-            {/* 오른쪽: 실제 PDF 미리보기 및 연결 상태 */}
-            <div className="space-y-4 lg:col-span-7">
+                {/* 오른쪽: 실제 PDF 미리보기 및 연결 상태 */}
+                <div className="space-y-4 lg:col-span-7">
               <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-sm">
                 <div className="flex min-h-[520px] flex-col">
                   <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
                     <span className="text-3xs font-bold tracking-[0.18em] text-slate-500">
                       OFFICIAL FORESTRY REPORT PREVIEW
                     </span>
-                    {activePreviewUrl && (
+                    {previewUrl && (
                       <span className="rounded-full bg-emerald-900/50 px-2.5 py-1 text-3xs font-bold text-emerald-300">
                         실제 PDF
                       </span>
                     )}
                   </div>
 
-                  {activePreviewUrl ? (
+                  {previewUrl ? (
                     <iframe
                       title="행정 보고서 PDF 미리보기"
-                      src={activePreviewUrl}
+                      src={previewUrl}
                       className="min-h-[475px] w-full flex-1 bg-white"
                     />
                   ) : (
@@ -723,8 +746,10 @@ export default function AdminSection({
                     방제 검토 계획이 정상 연결되어 있습니다.
                   </div>
                 )}
+                </div>
+                </div>
               </div>
-            </div>
+            )}
           </motion.div>
         )}
 
