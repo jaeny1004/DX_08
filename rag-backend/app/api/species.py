@@ -34,8 +34,11 @@ ENV_PROFILE_PATH = (
 )
 ELEV_BIN = 200.0
 SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉"
-# 대체 수종 정량 적합도 가중치 (합=1.0, 튜닝 가능)
-SUIT_WEIGHTS = {"climate": 0.30, "soil": 0.25, "elev": 0.15, "regional": 0.30}
+# 대체 수종 정량 적합도 가중치 (합=1.0).
+# 데이터 기반 도출: 임상도 362,863개 산림격자에서 각 인자(기후대·산림토양형·고도·지역)와
+# 실제 수종 분포 간 대칭 불확실성(SU=2·MI/(H(인자)+H(수종)), cardinality 보정)을 계산해
+# 정규화한 값. 즉 "각 인자가 실제 수종 분포를 얼마나 설명하는가"에 비례.
+SUIT_WEIGHTS = {"climate": 0.26, "soil": 0.14, "elev": 0.23, "regional": 0.37}
 
 _client = None
 
