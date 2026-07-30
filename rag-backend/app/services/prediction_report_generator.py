@@ -536,36 +536,35 @@ def request_vworld_map(
         "size": f"{width},{height}",
         "basemap": basemap,
     }
+    # VWorld req/image는 간헐적으로 502/503을 반환한다(특히 서버 IP에서). 보고서 한 건이
+    # 여러 지도를 요청하므로, 짧게 재시도하되(서버리스 10초 제한 고려) 그래도 실패하면
+    # 예외로 초안 전체를 죽이지 말고 중립 배경 이미지로 폴백한다(격자 오버레이는 그 위에 렌더).
     attempts = [common, {**common, "request": "getmap"}]
     last_error: Exception | None = None
 
     for params in attempts:
         try:
-            response = httpx.get(endpoint, params=params, timeout=30)
+            response = httpx.get(endpoint, params=params, timeout=12)
             response.raise_for_status()
-            if "image" not in response.headers.get(
-                "content-type",
-                "",
-            ).lower():
+            if "image" not in response.headers.get("content-type", "").lower():
                 raise RuntimeError(
                     "VWorld가 이미지 대신 다음 내용을 반환했습니다: "
-                    f"{response.text[:500]}"
+                    f"{response.text[:300]}"
                 )
             image = Image.open(io.BytesIO(response.content)).convert("RGBA")
             if image.size != (width, height):
-                image = image.resize(
-                    (width, height),
-                    Image.Resampling.LANCZOS,
-                )
+                image = image.resize((width, height), Image.Resampling.LANCZOS)
             return image
         except Exception as exc:
             last_error = exc
-            time.sleep(1)
+            time.sleep(0.5)
 
-    raise RuntimeError(
-        "VWorld 지도 이미지를 받지 못했습니다. "
+    # 폴백: VWorld 장애 시에도 보고서가 생성되도록 중립 배경 이미지를 반환한다.
+    print(
+        "[VWorld 경고] 지도 이미지를 받지 못해 배경 없이 진행합니다. "
         f"마지막 오류: {last_error}"
     )
+    return Image.new("RGBA", (width, height), (234, 238, 233, 255))
 
 
 def find_font(
