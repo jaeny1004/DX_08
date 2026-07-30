@@ -1,20 +1,25 @@
-fastapi>=0.115
-uvicorn>=0.30
-sqlalchemy>=2.0
-psycopg2-binary>=2.9
-python-jose[cryptography]>=3.3
-pwdlib[argon2]>=0.2
-email-validator>=2.2
-pymupdf>=1.24
-Pillow>=10.0
-supabase>=2.4
-openai>=1.40
-python-dotenv>=1.0
-pydantic>=2.7
-httpx>=0.27
-bcrypt>=4.1
-openpyxl>=3.1
-python-docx>=1.1
-reportlab>=4.2
-pyproj>=3.6
-shapely>=2.0
+# 버전 고정(pin): 무고정(>=) 상태에서는 빌드마다 최신 버전으로 resolve되어
+# 재현성이 없고, 신버전에서 라우팅이 깨지는 문제가 발생할 수 있다.
+# 아래는 로컬에서 앱 기동·엔드포인트 동작이 검증된 조합이다.
+# (프로덕션 반영 전 프리뷰/테스트 배포로 검증 권장)
+fastapi==0.139.2
+starlette==1.3.1
+uvicorn==0.51.0
+sqlalchemy==2.0.51
+psycopg2-binary==2.9.12
+python-jose[cryptography]==3.5.0
+pwdlib[argon2]==0.3.0
+email-validator==2.3.0
+pymupdf==1.28.0
+Pillow==12.3.0
+supabase==2.31.0
+openai==2.46.0
+python-dotenv==1.2.2
+pydantic==2.13.4
+httpx==0.28.1
+bcrypt==5.0.0
+openpyxl==3.1.5
+python-docx==1.2.0
+reportlab==5.0.0
+pyproj==3.7.2
+shapely==2.1.2
