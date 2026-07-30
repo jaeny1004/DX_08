@@ -862,12 +862,53 @@ export default function AdminSection({
                             key={index}
                             className="rounded-lg border border-emerald-200 bg-white p-2.5"
                           >
-                            <span className="font-black text-emerald-950">
-                              {item.species}
-                            </span>
-                            <p className="mt-0.5 font-medium leading-relaxed text-slate-600">
-                              {item.reason}
-                            </p>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-black text-emerald-950">
+                                {index + 1}. {item.species}
+                              </span>
+                              {typeof item.suit_score === "number" && (
+                                <span className="shrink-0 rounded-md bg-emerald-800 px-2 py-0.5 text-3xs font-black text-white">
+                                  적합도 {Math.round(item.suit_score * 100)}점
+                                </span>
+                              )}
+                            </div>
+
+                            {item.breakdown ? (
+                              <div className="mt-2 space-y-1">
+                                {(
+                                  [
+                                    ["기후 일치", item.breakdown.climate_match],
+                                    ["토양 일치", item.breakdown.soil_match],
+                                    ["고도 일치", item.breakdown.elev_match],
+                                    ["지역 적응", item.breakdown.regional_adaptation],
+                                  ] as [string, number][]
+                                ).map(([label, val]) => (
+                                  <div
+                                    key={label}
+                                    className="flex items-center gap-2"
+                                  >
+                                    <span className="w-14 shrink-0 text-3xs font-bold text-slate-500">
+                                      {label}
+                                    </span>
+                                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                                      <div
+                                        className="h-full rounded-full bg-emerald-500"
+                                        style={{
+                                          width: `${Math.round(val * 100)}%`,
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="w-8 shrink-0 text-right text-3xs font-bold text-slate-600">
+                                      {Math.round(val * 100)}%
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-0.5 font-medium leading-relaxed text-slate-600">
+                                {item.reason}
+                              </p>
+                            )}
                           </div>
                         ))}
                       </div>

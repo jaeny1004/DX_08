@@ -29,6 +29,13 @@ router = APIRouter(prefix="/api/species", tags=["수종전환"])
 CODE_MAP_PATH = (
     Path(__file__).resolve().parents[2] / "data" / "koftr_species_code_map.json"
 )
+ENV_PROFILE_PATH = (
+    Path(__file__).resolve().parents[2] / "data" / "species_env_profile.json"
+)
+ELEV_BIN = 200.0
+SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉"
+# 대체 수종 정량 적합도 가중치 (합=1.0, 튜닝 가능)
+SUIT_WEIGHTS = {"climate": 0.30, "soil": 0.25, "elev": 0.15, "regional": 0.30}
 
 _client = None
 
@@ -53,6 +60,86 @@ def _species_group() -> dict[str, str]:
     return {d["species_name"]: d["group"] for d in data}
 
 
+@lru_cache(maxsize=1)
+def _env_profile() -> dict[str, Any]:
+    """수종별 환경(기후·토양·고도) 분포 프로파일. build_species_env_profile.py 산출물."""
+    if not ENV_PROFILE_PATH.exists():
+        return {}
+    return json.loads(ENV_PROFILE_PATH.read_text(encoding="utf-8"))
+
+
+def _soil_group(site_label: Any) -> str | None:
+    """산림토양형 기호에서 끝 첨자를 제거해 토양군으로 묶는다. 예 B₂→B, DRb₂→DRb."""
+    if not site_label:
+        return None
+    s = str(site_label).strip().rstrip(SUBSCRIPT + "0123456789")
+    return s or None
+
+
+def _score_candidates(
+    regional: list[dict[str, Any]],
+    site: dict[str, Any],
+    elevation: float | None,
+) -> list[dict[str, Any]]:
+    """후보 활엽수의 정량 적합도 점수 계산(내림차순). 각 매치는 0~1.
+
+    Suit(s) = w_climate·climateMatch + w_soil·soilMatch
+              + w_elev·elevMatch + w_regional·regionalAdapt
+    - *Match: 수종 s의 전체 분포 면적 중 대상 격자와 같은 환경에 있는 비율.
+    - regionalAdapt: 시군구 regional_score를 최댓값으로 정규화.
+    """
+    profile = _env_profile()
+    climate = site.get("climate_zone")
+    soil = _soil_group(site.get("forest_soil_type"))
+    elev_bin = None
+    if elevation is not None:
+        try:
+            elev_bin = int(float(elevation) // ELEV_BIN * ELEV_BIN)
+        except (TypeError, ValueError):
+            elev_bin = None
+    max_reg = max((d["regional_score"] for d in regional), default=0.0) or 1.0
+
+    scored: list[dict[str, Any]] = []
+    for d in regional:
+        s = d["species"]
+        prof = profile.get(s)
+        climate_match = soil_match = elev_match = 0.0
+        if prof and prof.get("total_area"):
+            tot = float(prof["total_area"])
+            if climate:
+                climate_match = prof.get("climate", {}).get(climate, 0) / tot
+            if soil:
+                soil_match = prof.get("soil", {}).get(soil, 0) / tot
+            if elev_bin is not None:
+                step = int(ELEV_BIN)
+                elev_match = sum(
+                    prof.get("elev", {}).get(str(elev_bin + off), 0)
+                    for off in (-step, 0, step)
+                ) / tot
+        regional_adapt = d["regional_score"] / max_reg
+        suit = (
+            SUIT_WEIGHTS["climate"] * climate_match
+            + SUIT_WEIGHTS["soil"] * soil_match
+            + SUIT_WEIGHTS["elev"] * elev_match
+            + SUIT_WEIGHTS["regional"] * regional_adapt
+        )
+        scored.append(
+            {
+                "species": s,
+                "suit_score": round(suit, 4),
+                "breakdown": {
+                    "climate_match": round(climate_match, 3),
+                    "soil_match": round(soil_match, 3),
+                    "elev_match": round(elev_match, 3),
+                    "regional_adaptation": round(regional_adapt, 3),
+                },
+                "regional_score": d["regional_score"],
+            }
+        )
+    scored.sort(key=lambda x: -x["suit_score"])
+    return scored
+
+
 class RecommendRequest(BaseModel):
     grid_id: int
 
@@ -63,6 +150,8 @@ class RecommendResponse(BaseModel):
     site_summary: dict[str, Any]
     current_composition: dict[str, float]
     regional_broadleaf: list[dict[str, Any]]
+    scored_candidates: list[dict[str, Any]]
+    weights: dict[str, float]
     recommended_species: list[dict[str, Any]]
     rationale: str
     budget_estimate: str
@@ -104,52 +193,44 @@ def _regional_broadleaf(sigungu: str, group: dict[str, str]) -> list[dict[str, A
     ranked = sorted(weight.items(), key=lambda x: -x[1])
     return [
         {"species": name, "regional_score": round(score, 2)}
-        for name, score in ranked[:6]
+        for name, score in ranked[:12]
     ]
 
 
-def _build_prompt(
+def _ai_narrative(
     region: str,
     site: dict[str, Any],
     composition: dict[str, float],
-    elevation: float | None,
-    slope: float | None,
-    pine_ratio: float | None,
-    regional: list[dict[str, Any]],
-) -> str:
+    top: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """정량 점수로 이미 선정된 상위 수종에 대한 서술(rationale/예산/유의)만 생성.
+    순위·수종·점수는 바꾸지 않는다. OPENAI_API_KEY 없거나 실패 시 None."""
+    if not os.getenv("OPENAI_API_KEY") or not top:
+        return None
     comp_txt = ", ".join(f"{k} {v:.0%}" for k, v in composition.items()) or "정보 없음"
-    reg_txt = ", ".join(d["species"] for d in regional) or "정보 없음"
-    return (
-        "다음은 소나무재선충병 피해 극심 후보 격자(500m)의 입지·임상 근거다. "
-        "이 격자를 활엽수 등 대체 수림대로 전환하는 조림 계획을 세운다고 가정하고, "
-        "제공된 근거만 사용해 대체 수종을 추천하라.\n\n"
+    picks = "; ".join(
+        f"{c['species']}(적합도 {round(c['suit_score'] * 100)}점: "
+        f"기후 {c['breakdown']['climate_match']:.0%}·토양 {c['breakdown']['soil_match']:.0%}·"
+        f"고도 {c['breakdown']['elev_match']:.0%}·지역적응 "
+        f"{c['breakdown']['regional_adaptation']:.0%})"
+        for c in top
+    )
+    prompt = (
+        "소나무재선충병 피해 극심 후보 격자(500m)의 수종전환 조림 계획 서술을 작성한다. "
+        "대체 수종은 정량 적합도 점수로 이미 아래와 같이 선정됐다. "
+        "순위나 수종을 바꾸지 말고 주어진 근거로 서술만 작성하라.\n\n"
         f"[지역] {region}\n"
         f"[현재 수종구성] {comp_txt}\n"
-        f"[기후대] {site.get('climate_zone') or '정보 없음'}\n"
-        f"[산림토양형] {site.get('forest_soil_type') or '정보 없음'}\n"
+        f"[기후대] {site.get('climate_zone') or '정보 없음'} / "
+        f"[산림토양형] {site.get('forest_soil_type') or '정보 없음'} / "
         f"[토심] {site.get('soil_depth_class') or '정보 없음'}\n"
-        f"[평균 향(도)] {site.get('aspect_deg') if site.get('aspect_deg') is not None else '정보 없음'}\n"
-        f"[평균 고도(m)] {round(elevation, 1) if elevation is not None else '정보 없음'}\n"
-        f"[평균 경사(도)] {round(slope, 1) if slope is not None else '정보 없음'}\n"
-        f"[소나무 비율] {f'{pine_ratio:.0%}' if pine_ratio is not None else '정보 없음'}\n"
-        f"[같은 시군구에서 실제 우점하는 활엽수(검증된 적합 후보)] {reg_txt}\n\n"
-        "요구사항:\n"
-        "1. 위 '지역 실제 우점 활엽수' 중에서 이 입지(기후대·산림토양형·토심)에 "
-        "적합한 대체 수종 2~3종을 고른다. 목록에 없는 수종을 새로 만들지 말 것.\n"
-        "2. 각 수종마다 기후대·토양을 근거로 한 적합 사유를 1~2문장으로 쓴다.\n"
-        "3. 조림 예산은 정확한 값이 아니라 개략 추정 범위로만 제시하고 "
-        "실제 비용은 산림사업 설계가 필요함을 명시한다.\n"
-        "4. 과장 표현이나 감염 확정 표현을 쓰지 않는다. 이 격자는 '피해 극심 후보'이며 "
-        "현장 확인이 필요하다는 관점을 유지한다.\n"
-        "JSON으로만 답하라. 형식: "
-        '{"recommended_species": [{"species": str, "reason": str}], '
-        '"rationale": str, "budget_estimate": str, "notes": str}'
+        f"[선정된 대체 수종(고정)] {picks}\n\n"
+        "요구사항: (1) 선정 근거를 종합한 rationale 2~3문장, "
+        "(2) 조림 예산은 개략 추정 범위로만 제시하고 실제 비용은 산림사업 설계가 "
+        "필요함을 명시, (3) 과장·감염 확정 표현 금지, '피해 극심 후보·현장 확인 필요' "
+        "관점 유지.\n"
+        'JSON으로만 답하라: {"rationale": str, "budget_estimate": str, "notes": str}'
     )
-
-
-def _ai_recommend(prompt: str) -> dict[str, Any] | None:
-    if not os.getenv("OPENAI_API_KEY"):
-        return None
     try:
         from openai import OpenAI
 
@@ -168,8 +249,7 @@ def _ai_recommend(prompt: str) -> dict[str, Any] | None:
             temperature=0.2,
             response_format={"type": "json_object"},
         )
-        content = response.choices[0].message.content or "{}"
-        return json.loads(content)
+        return json.loads(response.choices[0].message.content or "{}")
     except Exception:
         return None
 
@@ -206,39 +286,41 @@ def recommend_species(req: RecommendRequest) -> RecommendResponse:
         else []
     )
 
-    prompt = _build_prompt(
-        region=region,
-        site=site,
-        composition=composition,
-        elevation=row.get("block_elevation_mean"),
-        slope=row.get("block_slope_mean"),
-        pine_ratio=row.get("center_pine_ratio"),
-        regional=regional,
-    )
+    # 정량 적합도 점수로 순위 결정(선택·점수는 결정론적·재현 가능)
+    scored = _score_candidates(regional, site, row.get("block_elevation_mean"))
+    top = scored[:3]
 
-    ai = _ai_recommend(prompt)
-    if ai and ai.get("recommended_species"):
-        recommended = ai.get("recommended_species", [])
+    def _reason(c: dict[str, Any]) -> str:
+        b = c["breakdown"]
+        return (
+            f"종합 적합도 {round(c['suit_score'] * 100)}점 — "
+            f"기후 일치 {b['climate_match']:.0%}·토양 일치 {b['soil_match']:.0%}·"
+            f"고도 일치 {b['elev_match']:.0%}·지역 적응 {b['regional_adaptation']:.0%}"
+        )
+
+    recommended = [
+        {
+            "species": c["species"],
+            "suit_score": c["suit_score"],
+            "breakdown": c["breakdown"],
+            "reason": _reason(c),
+        }
+        for c in top
+    ]
+
+    # 서술만 OpenAI로 보강(선택·점수 불변), 실패 시 결정론적 폴백
+    ai = _ai_narrative(region, site, composition, top)
+    if ai:
         rationale = str(ai.get("rationale", "")).strip()
         budget = str(ai.get("budget_estimate", "")).strip()
         notes = str(ai.get("notes", "")).strip()
         is_ai = True
     else:
-        # OpenAI 미사용/실패 시: 지역 실제 우점 활엽수 상위를 근거 기반으로 그대로 제시
-        recommended = [
-            {
-                "species": d["species"],
-                "reason": (
-                    f"같은 시군구에서 실제로 우점하는 활엽수로, 해당 입지에서 "
-                    f"활착·생장이 확인된 수종입니다."
-                ),
-            }
-            for d in regional[:3]
-        ]
+        top_names = ", ".join(c["species"] for c in top) or "적합 후보 없음"
         rationale = (
             f"{region}의 기후대({site.get('climate_zone') or '정보 없음'})·"
-            f"산림토양형({site.get('forest_soil_type') or '정보 없음'}) 조건에서 "
-            "실제 우점 활엽수를 대체 수종 후보로 제시합니다."
+            f"산림토양형({site.get('forest_soil_type') or '정보 없음'})·고도 조건과 "
+            f"지역 실제 분포를 종합한 정량 적합도 상위: {top_names}."
         )
         budget = "개략 추정: ha당 약 800만~1,000만원 수준(실제 비용은 산림사업 설계 필요)."
         notes = "이 격자는 피해 극심 후보이며 현장 확인이 필요합니다."
@@ -250,6 +332,8 @@ def recommend_species(req: RecommendRequest) -> RecommendResponse:
         site_summary=site,
         current_composition=composition,
         regional_broadleaf=regional,
+        scored_candidates=scored,
+        weights=SUIT_WEIGHTS,
         recommended_species=recommended,
         rationale=rationale,
         budget_estimate=budget,

@@ -1,8 +1,24 @@
 import { buildApiUrl } from "../config/api";
 
+export interface SuitBreakdown {
+  climate_match: number;
+  soil_match: number;
+  elev_match: number;
+  regional_adaptation: number;
+}
+
 export interface RecommendedSpecies {
   species: string;
   reason: string;
+  suit_score?: number;
+  breakdown?: SuitBreakdown;
+}
+
+export interface ScoredCandidate {
+  species: string;
+  suit_score: number;
+  breakdown: SuitBreakdown;
+  regional_score: number;
 }
 
 export interface RegionalBroadleaf {
@@ -22,6 +38,8 @@ export interface SpeciesRecommendation {
   };
   current_composition: Record<string, number>;
   regional_broadleaf: RegionalBroadleaf[];
+  scored_candidates?: ScoredCandidate[];
+  weights?: Record<string, number>;
   recommended_species: RecommendedSpecies[];
   rationale: string;
   budget_estimate: string;
