@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# 로컬 문서 전처리 전용. Vercel 런타임에는 설치하지 않는다.
+pyhwp>=0.1b15
+pytesseract>=0.3.10

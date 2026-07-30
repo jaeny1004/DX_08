@@ -7,6 +7,11 @@ import {
   DispatchAssignment,
   DispatchTaskType,
 } from "../types/dispatch";
+import {
+  HAS_VWORLD_KEY,
+  MAP_TILE_CONFIG,
+} from "../utils/mapTileConfig";
+import { pickField } from "../utils/pickField";
 
 type BaseMapMode = "base" | "satellite";
 type MapDisplayMode = "priority" | "risk";
@@ -91,26 +96,23 @@ type Recommendation = {
   reason: string;
 };
 
-const VWORLD_KEY = String(import.meta.env.VITE_VWORLD_API_KEY ?? "").trim();
-const HAS_VWORLD_KEY = VWORLD_KEY.length > 0;
-const VWORLD_BASE_URL = `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Base/{z}/{y}/{x}.png`;
-const VWORLD_SATELLITE_URL = `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Satellite/{z}/{y}/{x}.jpeg`;
-const VWORLD_HYBRID_URL = `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Hybrid/{z}/{y}/{x}.png`;
-const OSM_BASE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-const ESRI_SATELLITE_URL =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-
-const GEOJSON_PATH = `${import.meta.env.BASE_URL}data/final_ui_candidate_v4.geojson`;
-const SIGUNGU_BOUNDARY_PATH = `${import.meta.env.BASE_URL}data/sigungu_boundary.geojson`;
-const INFECTION_HISTORY_PATH = `${import.meta.env.BASE_URL}data/infection_history_2016_2021.geojson`;
-const WORKERS_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/workers.json`;
-const WORKER_CAPABILITIES_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/worker_capabilities.json`;
-const WORKER_SERVICE_AREAS_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/worker_service_areas.json`;
-const WORKER_AVAILABILITY_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/worker_availability.json`;
-const WORKER_CURRENT_STATUS_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/worker_current_status.json`;
-const REGION_WORKFORCE_CAPACITY_PATH = `${import.meta.env.BASE_URL}data/workforce_v2/region_workforce_capacity.json`;
+const GEOJSON_PATH = "/data/final_ui_candidate_v4.geojson";
+const SIGUNGU_BOUNDARY_PATH = "/data/sigungu_boundary.geojson";
+const INFECTION_HISTORY_PATH = "/data/infection_history_2016_2021.geojson";
+const WORKERS_PATH = "/data/workforce_v2/workers.json";
+const WORKER_CAPABILITIES_PATH = "/data/workforce_v2/worker_capabilities.json";
+const WORKER_SERVICE_AREAS_PATH = "/data/workforce_v2/worker_service_areas.json";
+const WORKER_AVAILABILITY_PATH = "/data/workforce_v2/worker_availability.json";
+const WORKER_CURRENT_STATUS_PATH = "/data/workforce_v2/worker_current_status.json";
+const REGION_WORKFORCE_CAPACITY_PATH = "/data/workforce_v2/region_workforce_capacity.json";
 
 const KOREA_BOUNDS = L.latLngBounds(L.latLng(32.5, 124.0), L.latLng(39.8, 132.2));
+// final_ui_candidate_v4.geojson 전수 스캔 기준 실제 격자 분포 범위(제주특별자치도 제외).
+// 지역 미선택 시 초기 뷰 전용 — maxBounds/타일 bounds(KOREA_BOUNDS)는 그대로 전국 유지.
+const DATA_BOUNDS = L.latLngBounds(
+  L.latLng(34.585872, 126.199519),
+  L.latLng(38.186753, 129.585322),
+);
 const GRID_RENDERER = L.canvas({ padding: 0.25, tolerance: 4 });
 
 const priorityColors: Record<string, string> = {
@@ -178,7 +180,19 @@ function escapeHtml(value: unknown) {
 }
 
 function normalizeRiskGrade(props: any) {
-  switch (props?.risk_stage_label) {
+  const validGrades = new Set(["매우 높음", "높음", "주의", "관찰", "낮음"]);
+  const selectedGrade = pickField(
+    props,
+    ["risk_grade", "risk_stage_label"],
+    (value, key) =>
+      key === "risk_stage_label" ||
+      validGrades.has(value as string),
+  );
+  if (validGrades.has(selectedGrade as string)) {
+    return selectedGrade as string;
+  }
+
+  switch (selectedGrade) {
     case "고위험 1순위 후보":
       return "매우 높음";
     case "고위험 2순위 후보":
@@ -188,7 +202,7 @@ function normalizeRiskGrade(props: any) {
     case "고위험 4순위 후보":
       return "관찰";
     default:
-      return props?.risk_grade ?? "낮음";
+      return "낮음";
   }
 }
 
@@ -200,9 +214,21 @@ function normalizePriorityGrade(props: any) {
     "정기 관찰",
     "일반 관리",
   ]);
-  if (validGrades.has(props?.field_priority_grade_v3)) return props.field_priority_grade_v3;
-  if (validGrades.has(props?.priority_grade_v3)) return props.priority_grade_v3;
-  switch (props?.priority_stage_label) {
+  const selectedGrade = pickField(
+    props,
+    [
+      "field_priority_grade_v3",
+      "priority_grade_v3",
+      "priority_stage_label",
+    ],
+    (value, key) =>
+      key === "priority_stage_label" ||
+      validGrades.has(value as string),
+  );
+  if (validGrades.has(selectedGrade as string)) {
+    return selectedGrade as string;
+  }
+  switch (selectedGrade) {
     case "예찰 1순위 후보":
       return "최우선 예찰";
     case "예찰 2순위 후보":
@@ -553,7 +579,7 @@ function createGridPopupHtml(
         <tr><td style="padding:5px 0;color:#64748b">격자 ID</td><td style="text-align:right;font-weight:700">${escapeHtml(props.grid_id ?? props.id ?? "-")}</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">AI 위험도</td><td style="text-align:right;font-weight:700">${formatNumber(props.risk_score, 2)}점 / ${escapeHtml(riskGrade)}</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">예찰 우선순위</td><td style="text-align:right;font-weight:700">${formatNumber(props.field_priority_score_v3, 2)}점 / ${escapeHtml(priorityGrade)}</td></tr>
-        <tr><td style="padding:5px 0;color:#64748b">2016~2021년 감염 발생 이력</td><td style="text-align:right;font-weight:800;color:${hasInfectionHistory ? INFECTION_HISTORY_COLOR : "#64748b"}">${hasInfectionHistory ? "있음" : "없음"}</td></tr>
+        <tr><td style="padding:5px 0;color:#64748b">감염 발생 이력</td><td style="text-align:right;font-weight:800;color:${hasInfectionHistory ? INFECTION_HISTORY_COLOR : "#64748b"}">${hasInfectionHistory ? "있음" : "없음"}</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">누적 발생 건수</td><td style="text-align:right;font-weight:700">${formatNumber(infectionCount, 0)}건</td></tr>
         ${
           hasInfectionHistory
@@ -568,7 +594,6 @@ function createGridPopupHtml(
         <tr><td style="padding:5px 0;color:#64748b">도로까지 거리</td><td style="text-align:right;font-weight:700">${formatNumber(props.distance_to_nearest_road_m_v3 ?? props.road_dist_m, 1)}m</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">환경주의</td><td style="text-align:right;font-weight:700">${safeNumber(props.environment_caution_flag_v3 ?? props.env_flag) === 1 ? "현장 확인 필요" : "해당 없음"}</td></tr>
       </table>
-      <div style="margin-top:9px;padding:7px 9px;border-radius:8px;background:#f5f3ff;color:#4c1d95;font-size:10px;line-height:1.5">감염 발생 이력은 2016~2021년 조사자료 기준이며, 2022년 이후는 예측·검증·평가 구간으로 별도 관리합니다.</div>
     </div>`;
 }
 
@@ -620,6 +645,7 @@ export default function DashboardRiskMapCard({
   const [mapDisplayMode, setMapDisplayMode] =
     useState<MapDisplayMode>("priority");
   const [showInfectionHistory, setShowInfectionHistory] = useState(true);
+  const [zoomLevel, setZoomLevel] = useState(7);
   const [selectedSigunguCode, setSelectedSigunguCode] = useState("");
   const [selectedEmdCode, setSelectedEmdCode] = useState("");
   const [selected, setSelected] = useState<any>(null);
@@ -1176,8 +1202,8 @@ export default function DashboardRiskMapCard({
       preferCanvas: true,
       attributionControl: true,
     });
-    const baseLayer = L.tileLayer(HAS_VWORLD_KEY ? VWORLD_BASE_URL : OSM_BASE_URL, {
-      attribution: HAS_VWORLD_KEY ? "© VWorld" : "© OpenStreetMap contributors",
+    const baseLayer = L.tileLayer(MAP_TILE_CONFIG.base.url, {
+      attribution: MAP_TILE_CONFIG.base.attribution,
       minZoom: 6,
       maxZoom: 19,
       bounds: KOREA_BOUNDS,
@@ -1188,9 +1214,9 @@ export default function DashboardRiskMapCard({
       crossOrigin: true,
     });
     const satelliteLayer = L.tileLayer(
-      HAS_VWORLD_KEY ? VWORLD_SATELLITE_URL : ESRI_SATELLITE_URL,
+      MAP_TILE_CONFIG.satellite.url,
       {
-        attribution: HAS_VWORLD_KEY ? "© VWorld" : "Tiles © Esri",
+        attribution: MAP_TILE_CONFIG.satellite.attribution,
         minZoom: 6,
         maxZoom: 19,
         bounds: KOREA_BOUNDS,
@@ -1201,18 +1227,19 @@ export default function DashboardRiskMapCard({
         crossOrigin: true,
       },
     );
-    const hybridLayer = L.tileLayer(VWORLD_HYBRID_URL, {
-      attribution: "© VWorld",
-      minZoom: 6,
-      maxZoom: 19,
-      bounds: KOREA_BOUNDS,
-      noWrap: true,
-      updateWhenIdle: true,
-      updateWhenZooming: false,
-      keepBuffer: 1,
-      crossOrigin: true,
-      opacity: HAS_VWORLD_KEY ? 1 : 0,
-    });
+    const hybridLayer = MAP_TILE_CONFIG.hybrid
+      ? L.tileLayer(MAP_TILE_CONFIG.hybrid.url, {
+          attribution: MAP_TILE_CONFIG.hybrid.attribution,
+          minZoom: 6,
+          maxZoom: 19,
+          bounds: KOREA_BOUNDS,
+          noWrap: true,
+          updateWhenIdle: true,
+          updateWhenZooming: false,
+          keepBuffer: 1,
+          crossOrigin: true,
+        })
+      : null;
     const handleTileLoad = () => {
       if (HAS_VWORLD_KEY) {
         setTileStatus("success");
@@ -1230,6 +1257,7 @@ export default function DashboardRiskMapCard({
       }
     };
     for (const layer of [baseLayer, satelliteLayer, hybridLayer]) {
+      if (!layer) continue;
       layer.on("tileload", handleTileLoad);
       layer.on("tileerror", handleTileError);
     }
@@ -1239,7 +1267,23 @@ export default function DashboardRiskMapCard({
     vworldSatelliteLayerRef.current = satelliteLayer;
     vworldHybridLayerRef.current = hybridLayer;
     window.setTimeout(() => map.invalidateSize(), 200);
+
+    // 사이드바 접힘/펼침 등으로 지도 컨테이너 크기가 CSS로만 바뀌는 경우,
+    // Leaflet은 이를 스스로 감지하지 못해 타일이 잘못된 위치/크기로 남는다.
+    // ResizeObserver로 실제 크기 변화를 감지해서 invalidateSize()를 호출한다.
+    const resizeTarget = mapRef.current;
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    resizeObserver.observe(resizeTarget);
+
+    setZoomLevel(map.getZoom());
+    const handleZoomEnd = () => setZoomLevel(map.getZoom());
+    map.on("zoomend", handleZoomEnd);
+
     return () => {
+      map.off("zoomend", handleZoomEnd);
+      resizeObserver.disconnect();
       map.remove();
       leafletMapRef.current = null;
       gridLayerRef.current = null;
@@ -1254,17 +1298,17 @@ export default function DashboardRiskMapCard({
     const base = vworldBaseLayerRef.current;
     const satellite = vworldSatelliteLayerRef.current;
     const hybrid = vworldHybridLayerRef.current;
-    if (!map || !base || !satellite || !hybrid) return;
+    if (!map || !base || !satellite) return;
     tileErrorCountRef.current = 0;
     if (HAS_VWORLD_KEY) setTileStatus("loading");
     if (baseMapMode === "base") {
       map.removeLayer(satellite);
-      map.removeLayer(hybrid);
+      if (hybrid) map.removeLayer(hybrid);
       if (!map.hasLayer(base)) base.addTo(map);
     } else {
       map.removeLayer(base);
       if (!map.hasLayer(satellite)) satellite.addTo(map);
-      if (HAS_VWORLD_KEY && !map.hasLayer(hybrid)) hybrid.addTo(map);
+      if (hybrid && !map.hasLayer(hybrid)) hybrid.addTo(map);
     }
     gridLayerRef.current?.setStyle((feature) =>
       getGridStyle(feature?.properties ?? {}, baseMapMode, mapDisplayMode),
@@ -1332,7 +1376,7 @@ export default function DashboardRiskMapCard({
     onGridSelectRef.current?.(null);
 
     if (!selectedAdminSummary) {
-      map.fitBounds(KOREA_BOUNDS, { padding: [20, 20], animate: false, maxZoom: 7 });
+      map.fitBounds(DATA_BOUNDS, { padding: [20, 20], animate: false, maxZoom: 7 });
       return;
     }
 
@@ -1454,7 +1498,7 @@ export default function DashboardRiskMapCard({
         const path = featureLayer as L.Path;
 
         path.bindTooltip(
-          `2016~2021년 감염 발생 이력 · 누적 ${formatNumber(
+          `감염 발생 이력 · 누적 ${formatNumber(
             props.infection_count_2016_2021,
             0,
           )}건`,
@@ -1475,14 +1519,14 @@ export default function DashboardRiskMapCard({
             .setLatLng(event.latlng)
             .setContent(`
               <div style="min-width:220px;font-family:Pretendard,Arial,sans-serif;color:#0f172a">
-                <div style="font-size:15px;font-weight:800;color:${INFECTION_HISTORY_COLOR};margin-bottom:9px">2016~2021년 감염 발생 이력</div>
+                <div style="font-size:15px;font-weight:800;color:${INFECTION_HISTORY_COLOR};margin-bottom:9px">감염 발생 이력</div>
                 <table style="width:100%;border-collapse:collapse;font-size:12px">
                   <tr><td style="padding:5px 0;color:#64748b">격자 ID</td><td style="text-align:right;font-weight:700">${escapeHtml(props.id ?? props.grid_id ?? "-")}</td></tr>
                   <tr><td style="padding:5px 0;color:#64748b">누적 발생 건수</td><td style="text-align:right;font-weight:800;color:${INFECTION_HISTORY_COLOR}">${formatNumber(props.infection_count_2016_2021, 0)}건</td></tr>
                   <tr><td style="padding:5px 0;color:#64748b">최초 발생 이력</td><td style="text-align:right;font-weight:700">${formatNumber(props.infection_first_year, 0)}년</td></tr>
                   <tr><td style="padding:5px 0;color:#64748b">최근 발생 이력</td><td style="text-align:right;font-weight:700">${formatNumber(props.infection_last_year, 0)}년</td></tr>
                 </table>
-                <div style="margin-top:9px;padding:8px;border-radius:8px;background:#f5f3ff;color:#5b21b6;font-size:11px;line-height:1.5">학습 기준기간인 2016~2021년 감염 발생 이력 격자입니다.</div>
+                <div style="margin-top:9px;padding:8px;border-radius:8px;background:#f5f3ff;color:#5b21b6;font-size:11px;line-height:1.5">감염 발생 이력 격자입니다.</div>
               </div>
             `)
             .openOn(map);
@@ -1685,138 +1729,11 @@ export default function DashboardRiskMapCard({
       <div
         className="grid h-full min-h-0 gap-4"
         style={{
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gridTemplateColumns: "minmax(0, 2fr) minmax(320px, 1fr)",
           gridTemplateRows: "auto minmax(0, 1fr)",
         }}
       >
-        <div className="col-span-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <select
-              value={selectedSigunguCode}
-              onChange={(event) => {
-                setSelectedSigunguCode(event.target.value);
-                setSelectedEmdCode("");
-                setSelected(null);
-                setAssignmentMessage("");
-              }}
-              className="min-w-[220px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-extrabold text-slate-700 outline-none focus:border-emerald-700"
-            >
-              <option value="">위치(시/군/구) 선택</option>
-              {sigunguOptions.map((option) => (
-                <option key={option.code} value={option.code}>
-                  {option.sidoName} {option.sigunguName}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={selectedEmdCode}
-              onChange={(event) => {
-                setSelectedEmdCode(event.target.value);
-                setSelected(null);
-                setAssignmentMessage("");
-              }}
-              disabled={!selectedSigunguCode}
-              className="min-w-[180px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-            >
-              <option value="">읍면동 전체</option>
-              {emdOptions.map((option) => (
-                <option key={option.code} value={option.code}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-
-            <button
-              type="button"
-              onClick={handleResetAdmin}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50"
-            >
-              선택 초기화
-            </button>
-
-            <div className="hidden text-xs font-bold text-slate-400 xl:block">
-              {selectedGridId
-                ? `선택 격자 GRID-${selectedGridId}`
-                : `선택 지역 ${regionName}`}
-            </div>
-          </div>
-
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-              <button
-                type="button"
-                onClick={() => setMapDisplayMode("priority")}
-                className={
-                  mapDisplayMode === "priority"
-                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-emerald-700 shadow-sm"
-                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-                }
-              >
-                예찰 우선순위
-              </button>
-              <button
-                type="button"
-                onClick={() => setMapDisplayMode("risk")}
-                className={
-                  mapDisplayMode === "risk"
-                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-rose-700 shadow-sm"
-                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-                }
-              >
-                AI 위험도
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowInfectionHistory((value) => !value)}
-              disabled={infectionHistoryLoading || Boolean(infectionHistoryError)}
-              className={
-                showInfectionHistory
-                  ? "rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-extrabold text-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
-                  : "rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-              }
-              title={
-                infectionHistoryLoading
-                  ? "감염 발생 이력 데이터를 불러오는 중입니다."
-                  : infectionHistoryError ||
-                    "2016~2021년 감염 발생 이력 레이어를 켜거나 끕니다."
-              }
-            >
-              {infectionHistoryLoading
-                ? "감염 이력 로딩 중"
-                : showInfectionHistory
-                  ? `감염 발생 이력 ON (${formatNumber(visibleInfectionHistoryFeatures.length, 0)}개)`
-                  : "감염 발생 이력 OFF"}
-            </button>
-
-            <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-              <button
-                type="button"
-                onClick={() => setBaseMapMode("base")}
-                className={
-                  baseMapMode === "base"
-                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900 shadow-sm"
-                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-                }
-              >
-                일반지도
-              </button>
-              <button
-                type="button"
-                onClick={() => setBaseMapMode("satellite")}
-                className={
-                  baseMapMode === "satellite"
-                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900 shadow-sm"
-                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
-                }
-              >
-                위성지도
-              </button>
-            </div>
-          </div>
-        </div>
+        <div className="col-span-2" />
 
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
           {[
@@ -1848,6 +1765,150 @@ export default function DashboardRiskMapCard({
               className="h-full w-full bg-[#EEF7F3]"
             />
 
+            <div className="absolute left-3 top-20 z-[1000] flex flex-wrap items-center gap-2">
+              <select
+                value={selectedSigunguCode}
+                onChange={(event) => {
+                  setSelectedSigunguCode(event.target.value);
+                  setSelectedEmdCode("");
+                  setSelected(null);
+                  setAssignmentMessage("");
+                }}
+                className="min-w-[200px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 shadow outline-none focus:border-emerald-700"
+              >
+                <option value="">위치(시/군/구) 선택</option>
+                {sigunguOptions.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.sidoName} {option.sigunguName}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedEmdCode}
+                onChange={(event) => {
+                  setSelectedEmdCode(event.target.value);
+                  setSelected(null);
+                  setAssignmentMessage("");
+                }}
+                disabled={!selectedSigunguCode}
+                className="min-w-[150px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow outline-none focus:border-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                <option value="">읍면동 전체</option>
+                {emdOptions.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={handleResetAdmin}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow hover:bg-slate-50"
+              >
+                선택 초기화
+              </button>
+            </div>
+
+            <div className="absolute left-14 top-3 z-[1000] flex h-[58px] w-8 items-center justify-center rounded-lg bg-white/95 shadow">
+              <input
+                type="range"
+                min={leafletMapRef.current?.getMinZoom() ?? 6}
+                max={leafletMapRef.current?.getMaxZoom() ?? 19}
+                step={1}
+                value={zoomLevel}
+                onChange={(event) => {
+                  const nextZoom = Number(event.target.value);
+                  setZoomLevel(nextZoom);
+                  leafletMapRef.current?.setZoom(nextZoom);
+                }}
+                aria-label="지도 확대/축소"
+                className="h-1 w-12 -rotate-90 accent-emerald-700"
+              />
+            </div>
+
+            <div className="absolute right-3 top-3 z-[1000] flex gap-1 rounded-xl bg-slate-100 p-1 shadow">
+              <button
+                type="button"
+                onClick={() => setBaseMapMode("base")}
+                className={
+                  baseMapMode === "base"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                일반지도
+              </button>
+              <button
+                type="button"
+                onClick={() => setBaseMapMode("satellite")}
+                className={
+                  baseMapMode === "satellite"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-slate-900 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                위성지도
+              </button>
+            </div>
+
+            <div className="absolute right-3 top-14 z-[1000] flex gap-1 rounded-xl bg-slate-100 p-1 shadow">
+              <button
+                type="button"
+                onClick={() => setMapDisplayMode("priority")}
+                className={
+                  mapDisplayMode === "priority"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-emerald-700 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                예찰 우선순위
+              </button>
+              <button
+                type="button"
+                onClick={() => setMapDisplayMode("risk")}
+                className={
+                  mapDisplayMode === "risk"
+                    ? "rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-rose-700 shadow-sm"
+                    : "rounded-lg px-3 py-2 text-xs font-bold text-slate-500"
+                }
+              >
+                AI 위험도
+              </button>
+            </div>
+
+            <div className="absolute bottom-3 right-3 z-[1000] flex flex-col items-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowInfectionHistory((value) => !value)}
+                disabled={infectionHistoryLoading || Boolean(infectionHistoryError)}
+                className={
+                  showInfectionHistory
+                    ? "rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-extrabold text-violet-800 shadow disabled:cursor-not-allowed disabled:opacity-50"
+                    : "rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-500 shadow disabled:cursor-not-allowed disabled:opacity-50"
+                }
+                title={
+                  infectionHistoryLoading
+                    ? "감염 발생 이력 데이터를 불러오는 중입니다."
+                    : infectionHistoryError ||
+                      "감염 발생 이력 레이어를 켜거나 끕니다."
+                }
+              >
+                {infectionHistoryLoading
+                  ? "감염 이력 로딩 중"
+                  : showInfectionHistory
+                    ? `감염 발생 이력 ON (${formatNumber(visibleInfectionHistoryFeatures.length, 0)}개)`
+                    : "감염 발생 이력 OFF"}
+              </button>
+
+              {showInfectionHistory && selectedSigunguCode && !infectionHistoryError && (
+                <div className="rounded-lg border border-violet-200 bg-white/95 px-3 py-2 text-xs font-extrabold text-violet-800 shadow">
+                  감염 발생 이력 {formatNumber(visibleInfectionHistoryFeatures.length, 0)}개 표시
+                </div>
+              )}
+            </div>
+
             {tileStatus === "loading" && (
               <div className="absolute left-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-bold text-slate-600 shadow">
                 VWorld 지도 불러오는 중...
@@ -1857,12 +1918,6 @@ export default function DashboardRiskMapCard({
             {!selectedSigunguCode && (
               <div className="absolute bottom-3 left-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-bold text-slate-600 shadow">
                 지도에서 시군구를 클릭하거나 상단 목록에서 선택하세요.
-              </div>
-            )}
-
-            {showInfectionHistory && selectedSigunguCode && !infectionHistoryError && (
-              <div className="absolute bottom-3 right-3 z-[1000] rounded-lg border border-violet-200 bg-white/95 px-3 py-2 text-xs font-extrabold text-violet-800 shadow">
-                감염 발생 이력 {formatNumber(visibleInfectionHistoryFeatures.length, 0)}개 표시
               </div>
             )}
           </div>
@@ -1879,17 +1934,17 @@ export default function DashboardRiskMapCard({
               {showInfectionHistory && !infectionHistoryError && (
                 <FilledSquareLegend
                   color={INFECTION_HISTORY_COLOR}
-                  label="2016~2021년 감염 발생 이력"
+                  label="감염 발생 이력"
                 />
               )}
             </div>
 
-            <div className="text-[11px] font-semibold text-slate-400">
+            <div className="text-2xs font-semibold text-slate-400">
               {mapDisplayMode === "priority"
                 ? "상위 10% 우선 예찰 검토지역 표시"
                 : "상위 10% AI 신규 확산위험 후보 표시"}
               {showInfectionHistory && !infectionHistoryError
-                ? " · 보라색 사각형은 2016~2021년 감염 발생 이력"
+                ? " · 보라색 사각형은 감염 발생 이력"
                 : ""}
             </div>
           </div>
@@ -1898,104 +1953,15 @@ export default function DashboardRiskMapCard({
         <aside
           className="grid min-h-0 min-w-0 gap-3"
           style={{
-            gridTemplateRows: "minmax(0, 1fr) minmax(0, 1fr)",
+            gridTemplateRows: "1.8fr 1fr",
           }}
         >
-          <section className="min-h-0 overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-slate-900">
-                📈 주간 예찰 제보 및 현장 확인 추이
-              </h3>
-              <span className="text-[11px] font-bold text-slate-400">
-                최근 7주
-              </span>
-            </div>
-
-            <div className="mt-3 flex h-[118px] items-end justify-between gap-2 px-1">
-              {weeklyTrend.map((item) => (
-                <div
-                  key={item.label}
-                  className="flex flex-1 flex-col items-center gap-2"
-                >
-                  <div className="flex h-[92px] items-end gap-1">
-                    <div
-                      className="w-3 rounded-t bg-sky-400"
-                      style={{
-                        height: `${Math.max(
-                          12,
-                          (item.report / maxTrendValue) * 88,
-                        )}px`,
-                      }}
-                    />
-                    <div
-                      className="w-3 rounded-t bg-rose-500"
-                      style={{
-                        height: `${Math.max(
-                          8,
-                          (item.field / maxTrendValue) * 88,
-                        )}px`,
-                      }}
-                    />
-                  </div>
-                  <span className="text-[10px] font-bold text-slate-500">
-                    {item.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-1 flex justify-center gap-4 text-[10px] font-bold text-slate-500">
-              <Legend color="#38bdf8" label="예찰 제보" />
-              <Legend color="#f43f5e" label="현장 확인" />
-            </div>
-          </section>
-
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-slate-900">
-                📋 지역별 위험후보 및 우선순위
-              </h3>
-              <span className="text-[11px] font-bold text-slate-400">
-                실시간 집계
-              </span>
-            </div>
-
-            <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-[11px] text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2.5 text-left">구분</th>
-                    <th className="px-3 py-2.5 text-right">후보 격자</th>
-                    <th className="px-3 py-2.5 text-right">최우선 예찰</th>
-                    <th className="px-3 py-2.5 text-right">상태</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {controlRows.map((row) => (
-                    <ControlRow
-                      key={row.label}
-                      label={row.label}
-                      candidate={row.candidate}
-                      priority={row.priority}
-                      status={row.status}
-                      tone={row.tone}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-
-        </aside>
-
-        <aside className="min-h-0 min-w-0">
           <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
             <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-slate-900">
+              <h3 className="text-base font-black text-slate-950">
                 👥 지역 인력풀 및 출동 배정
               </h3>
-              <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+              <span className="rounded-full bg-emerald-50 px-2 py-1 text-3xs font-bold text-emerald-700">
                 복수 역량
               </span>
             </div>
@@ -2005,7 +1971,7 @@ export default function DashboardRiskMapCard({
                 시군구를 선택하면 지역별 등록요원과 업무별 가용인원을 표시합니다.
               </div>
             ) : !selected ? (
-              <div className="mt-3 grid flex-1 grid-cols-2 gap-2 overflow-y-auto">
+              <div className="mt-3 grid flex-1 grid-cols-3 gap-2 overflow-y-auto">
                 <WorkforceMetric
                   label="등록요원"
                   value={selectedRegionCapacity?.registered_worker_count ?? 0}
@@ -2031,7 +1997,7 @@ export default function DashboardRiskMapCard({
                   value={selectedRegionCapacity?.shortage_worker_count ?? 0}
                   danger={(selectedRegionCapacity?.shortage_worker_count ?? 0) > 0}
                 />
-                <div className="col-span-2 rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-semibold leading-5 text-slate-500">
+                <div className="col-span-3 rounded-xl bg-slate-50 px-3 py-2 text-3xs font-semibold leading-5 text-slate-500">
                   지도에서 격자를 클릭하면 예찰·드론·방제 업무별 추천요원을 확인하고 출동 배정할 수 있습니다.
                 </div>
               </div>
@@ -2053,8 +2019,8 @@ export default function DashboardRiskMapCard({
                         onClick={() => setSelectedTaskType(taskType)}
                         className={
                           selectedTaskType === taskType
-                            ? "rounded-md bg-white px-2.5 py-1.5 text-[10px] font-extrabold text-emerald-700 shadow-sm"
-                            : "rounded-md px-2.5 py-1.5 text-[10px] font-bold text-slate-500"
+                            ? "rounded-md bg-white px-2.5 py-1.5 text-3xs font-extrabold text-emerald-700 shadow-sm"
+                            : "rounded-md px-2.5 py-1.5 text-3xs font-bold text-slate-500"
                         }
                       >
                         {label}
@@ -2064,7 +2030,7 @@ export default function DashboardRiskMapCard({
                 </div>
 
                 {assignmentMessage && (
-                  <div className="shrink-0 rounded-lg bg-emerald-50 px-3 py-2 text-[10px] font-bold text-emerald-700">
+                  <div className="shrink-0 rounded-lg bg-emerald-50 px-3 py-2 text-3xs font-bold text-emerald-700">
                     {assignmentMessage}
                   </div>
                 )}
@@ -2086,11 +2052,11 @@ export default function DashboardRiskMapCard({
                             <div className="min-w-0">
                               <div className="truncate text-xs font-extrabold text-slate-800">
                                 {item.worker.worker_name}
-                                <span className="ml-1 text-[9px] font-bold text-slate-400">
+                                <span className="ml-1 text-3xs font-bold text-slate-400">
                                   {item.worker.worker_id}
                                 </span>
                               </div>
-                              <div className="mt-1 truncate text-[9px] font-semibold text-slate-500">
+                              <div className="mt-1 truncate text-3xs font-semibold text-slate-500">
                                 {capabilityText}
                               </div>
                               <div className="mt-1 text-[9px] font-semibold text-emerald-700">
@@ -2103,7 +2069,7 @@ export default function DashboardRiskMapCard({
                             <button
                               type="button"
                               onClick={() => handleAssignRecommendedWorker(item)}
-                              className="shrink-0 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-[10px] font-extrabold text-white hover:bg-emerald-800"
+                              className="shrink-0 rounded-lg bg-emerald-700 px-2.5 py-1.5 text-3xs font-extrabold text-white hover:bg-emerald-800"
                             >
                               배정
                             </button>
@@ -2112,7 +2078,7 @@ export default function DashboardRiskMapCard({
                       );
                     })
                   ) : (
-                    <div className="rounded-xl bg-amber-50 px-3 py-3 text-center text-[10px] font-semibold text-amber-700">
+                    <div className="rounded-xl bg-amber-50 px-3 py-3 text-center text-3xs font-semibold text-amber-700">
                       선택 업무에 배정 가능한 요원이 없습니다. 인접지역 또는 광역 지원 인력을 확인하세요.
                     </div>
                   )}
@@ -2120,6 +2086,88 @@ export default function DashboardRiskMapCard({
               </div>
             )}
           </section>
+
+          <div className="grid min-h-0 min-w-0 grid-cols-2 gap-3">
+            <section className="flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-base font-black text-slate-950">
+                  📋 지역별 위험후보 및 우선순위
+                </h3>
+                <span className="text-2xs font-bold text-slate-400">
+                  실시간 집계
+                </span>
+              </div>
+
+              <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-2xs text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2.5 text-left">구분</th>
+                      <th className="px-3 py-2.5 text-right">후보 격자</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {controlRows.map((row) => (
+                      <ControlRow
+                        key={row.label}
+                        label={row.label}
+                        candidate={row.candidate}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="min-h-0 overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-base font-black text-slate-950">
+                  📈 주간 예찰 제보 및 현장 확인 추이
+                </h3>
+                <span className="text-2xs font-bold text-slate-400">
+                  최근 4주
+                </span>
+              </div>
+
+              <div className="mt-3 flex h-[118px] items-end justify-between gap-2 px-1">
+                {weeklyTrend.slice(-4).map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex flex-1 flex-col items-center gap-2"
+                  >
+                    <div className="flex h-[92px] items-end gap-1">
+                      <div
+                        className="w-3 rounded-t bg-sky-400"
+                        style={{
+                          height: `${Math.max(
+                            12,
+                            (item.report / maxTrendValue) * 88,
+                          )}px`,
+                        }}
+                      />
+                      <div
+                        className="w-3 rounded-t bg-rose-500"
+                        style={{
+                          height: `${Math.max(
+                            8,
+                            (item.field / maxTrendValue) * 88,
+                          )}px`,
+                        }}
+                      />
+                    </div>
+                    <span className="text-3xs font-bold text-slate-500">
+                      {item.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-1 flex justify-center gap-4 text-3xs font-bold text-slate-500">
+                <Legend color="#38bdf8" label="예찰 제보" />
+                <Legend color="#f43f5e" label="현장 확인" />
+              </div>
+            </section>
+          </div>
         </aside>
       </div>
     </div>
@@ -2137,7 +2185,7 @@ function WorkforceMetric({
 }) {
   return (
     <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-      <div className="text-[9px] font-bold text-slate-400">{label}</div>
+      <div className="text-3xs font-bold text-slate-400">{label}</div>
       <div
         className={`mt-1 text-lg font-black ${danger ? "text-rose-600" : "text-slate-800"}`}
       >
@@ -2150,38 +2198,15 @@ function WorkforceMetric({
 function ControlRow({
   label,
   candidate,
-  priority,
-  status,
-  tone,
 }: {
   label: string;
   candidate: number;
-  priority: number;
-  status: string;
-  tone: "danger" | "warning" | "success" | "neutral";
 }) {
-  const badge =
-    tone === "danger"
-      ? "bg-rose-50 text-rose-600"
-      : tone === "warning"
-        ? "bg-amber-50 text-amber-600"
-        : tone === "success"
-          ? "bg-emerald-50 text-emerald-600"
-          : "bg-slate-100 text-slate-600";
-
   return (
     <tr>
       <td className="px-3 py-2.5 font-semibold text-slate-700">{label}</td>
       <td className="px-3 py-2.5 text-right text-slate-600">
         {formatNumber(candidate, 0)}개
-      </td>
-      <td className="px-3 py-2.5 text-right text-slate-600">
-        {formatNumber(priority, 0)}개
-      </td>
-      <td className="px-3 py-2.5 text-right">
-        <span className={`rounded-md px-2 py-1 text-[10px] font-bold ${badge}`}>
-          {status}
-        </span>
       </td>
     </tr>
   );
@@ -2206,7 +2231,7 @@ function ControlNotice({
   return (
     <div className={`rounded-xl border px-3 py-2.5 ${className}`}>
       <div className="text-xs font-extrabold">{title}</div>
-      <div className="mt-1 text-[10px] font-semibold opacity-80">
+      <div className="mt-1 text-3xs font-semibold opacity-80">
         {description}
       </div>
     </div>

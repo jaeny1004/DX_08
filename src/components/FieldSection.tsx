@@ -26,7 +26,10 @@ import {
   DispatchStatus,
 } from "../types/dispatch";
 
+import SectionTitle from "./SectionTitle";
+
 interface FieldSectionProps {
+  title: string;
   workers: WorkerStatus[];
   reports: CrowdReport[];
 
@@ -287,6 +290,7 @@ function getRiskTheme(level: ParsedAiResult["level"] | undefined) {
 }
 
 export default function FieldSection({
+  title,
   workers,
   reports,
   dispatchAssignments,
@@ -423,6 +427,8 @@ export default function FieldSection({
 
   return (
     <div className="space-y-6">
+      <SectionTitle title={title} />
+
       {/* Category Tabs */}
       <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 text-sm font-bold text-slate-600 max-w-lg">
         <button

@@ -1,1 +1,15 @@
 @import "tailwindcss";
+
+@theme {
+  --text-2xs: 11px;
+  --text-3xs: 10px;
+}
+
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}

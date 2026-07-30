@@ -9,13 +9,13 @@ import {
   TreePine,
   MessageSquare,
   X,
-  LayoutDashboard,
-  Radar,
+  HomeIcon,
+  TreesIcon,
   Footprints,
   ShieldCheck,
+  ShieldOffIcon,
   FileText,
-  Settings,
-  FlaskConical,
+  VideoIcon,
   AlertTriangle,
   PanelLeftOpen,
   PanelLeftClose,
@@ -23,6 +23,7 @@ import {
   MapPinned,
   Radio,
   LogOut,
+  UserRound,
 } from "lucide-react";
 
 import Dashboard from "./components/Dashboard";
@@ -30,7 +31,6 @@ import MonitoringSection from "./components/MonitoringSection";
 import FieldSection from "./components/FieldSection";
 import ControlSection from "./components/ControlSection";
 import AdminSection from "./components/AdminSection";
-import SystemSection from "./components/SystemSection";
 import Chatbot from "./components/Chatbot";
 import SimulationSection from "./components/SimulationSection";
 import AuthScreen from "./components/auth/AuthScreen";
@@ -67,10 +67,10 @@ type ModuleId =
   | "dashboard"
   | "monitoring"
   | "field"
-  | "control"
-  | "admin"
-  | "system"
-  | "simulation";
+  | "control-status"
+  | "control-work"
+  | "admin-report"
+  | "admin-species";
 
 export default function App() {
   const [activeModule, setActiveModule] =
@@ -310,8 +310,7 @@ export default function App() {
       timeline: [
         {
           stage:
-            "시민 제보 확진 대장 전환 완료 " +
-            "(FR-FLD-006)",
+            "시민 제보 확진 대장 전환 완료",
           date:
             new Date().toLocaleString(),
           note:
@@ -360,47 +359,73 @@ export default function App() {
     );
   };
 
-  const modules = [
+  const primaryModules = [
     {
       id: "dashboard",
       label: "종합 상황판",
-      icon: LayoutDashboard,
+      icon: HomeIcon,
     },
     {
       id: "monitoring",
-      label: "병해충 모니터링",
-      icon: Radar,
+      label: "확진목 모니터링",
+      icon: TreesIcon,
     },
     {
       id: "field",
       label: "현장 스마트 예찰",
       icon: Footprints,
     },
-    {
-      id: "control",
-      label: "방제 사업 관리",
-      icon: ShieldCheck,
-    },
-    {
-      id: "admin",
-      label: "행정 기안 지원",
-      icon: FileText,
-    },
-    {
-      id: "system",
-      label: "시스템 보안 관제",
-      icon: Settings,
-    },
-    {
-      id: "simulation",
-      label: "확산 시뮬레이션",
-      icon: FlaskConical,
-    },
+  ] as const;
+
+  const controlGroup = {
+    id: "control",
+    label: "실시간 방제 현황",
+    icon: ShieldCheck,
+    items: [
+      {
+        id: "control-status",
+        label: "작업 현황",
+        icon: ShieldOffIcon,
+      },
+      {
+        id: "control-work",
+        label: "시뮬레이션",
+        icon: VideoIcon,
+      },
+    ],
+  } as const;
+
+  const adminGroup = {
+    id: "admin",
+    label: "행정 기안 지원",
+    icon: FileText,
+    items: [
+      {
+        id: "admin-report",
+        label: "보고서 생성 및 조회",
+        icon: FileText,
+      },
+      {
+        id: "admin-species",
+        label: "AI 친환경 수종전환 추천",
+        icon: TreePine,
+      },
+    ],
+  } as const;
+
+  const modules = [
+    ...primaryModules,
+    ...controlGroup.items,
+    ...adminGroup.items,
   ] as const;
 
   const activeModuleLabel =
     modules.find((module) => module.id === activeModule)?.label ??
     "종합 상황판";
+  const sectionTitle =
+    activeModule === "dashboard" ? "홈" : activeModuleLabel;
+  const ControlGroupIcon = controlGroup.icon;
+  const AdminGroupIcon = adminGroup.icon;
 
   if (isAuthChecking) {
     return (
@@ -463,8 +488,8 @@ export default function App() {
         className="grid h-full transition-[grid-template-columns] duration-300 ease-out"
         style={{
           gridTemplateColumns: isSidebarOpen
-            ? "260px minmax(0, 1fr)"
-            : "88px minmax(0, 1fr)",
+            ? "240px minmax(0, 1fr)"
+            : "50px minmax(0, 1fr)",
         }}
       >
         <aside className="relative flex h-full min-w-0 flex-col border-r border-slate-200 bg-white py-4 shadow-sm">
@@ -482,17 +507,15 @@ export default function App() {
               }
               className={
                 isAlertPanelOpen
-                  ? "relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-rose-300 bg-rose-100 text-rose-700 shadow-sm"
-                  : "relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm"
+                  ? "relative flex h-10 w-10 shrink-0 items-center justify-center text-rose-700 transition hover:text-rose-900"
+                  : liveAlerts.length > 0
+                    ? "relative flex h-10 w-10 shrink-0 items-center justify-center text-rose-600 transition hover:text-rose-700"
+                    : "relative flex h-10 w-10 shrink-0 items-center justify-center text-emerald-800 transition hover:text-emerald-900"
               }
               aria-label="실시간 알림 열기"
               title="실시간 알림"
             >
-              <AlertTriangle size={25} />
-
-              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1 text-[10px] font-black text-white">
-                {liveAlerts.length}
-              </span>
+              <AlertTriangle size={22} />
             </button>
 
             {isSidebarOpen && (
@@ -507,7 +530,7 @@ export default function App() {
                   실시간 알림
                 </div>
 
-                <div className="mt-0.5 truncate text-[10px] font-bold text-slate-400">
+                <div className="mt-0.5 truncate text-3xs font-bold text-slate-400">
                   미확인 {liveAlerts.length}건
                 </div>
               </button>
@@ -519,7 +542,7 @@ export default function App() {
             onClick={() =>
               setIsSidebarOpen((previous) => !previous)
             }
-            className="absolute -right-4 top-[86px] z-30 flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition hover:text-emerald-700"
+            className="absolute -right-4 top-1/2 z-30 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition hover:text-emerald-700"
             aria-label={
               isSidebarOpen
                 ? "사이드바 닫기"
@@ -549,11 +572,11 @@ export default function App() {
           <nav
             className={
               isSidebarOpen
-                ? "flex flex-1 flex-col gap-2 px-3"
-                : "flex flex-1 flex-col items-center gap-2"
+                ? "flex flex-1 flex-col gap-0.5 px-2"
+                : "flex flex-1 flex-col items-center gap-1"
             }
           >
-            {modules.map((module) => {
+            {primaryModules.map((module) => {
               const Icon = module.icon;
               const active = activeModule === module.id;
 
@@ -567,28 +590,253 @@ export default function App() {
                   className={
                     isSidebarOpen
                       ? active
-                        ? "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-100 px-3 text-left text-emerald-900 shadow-sm"
-                        : "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 text-left text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                        ? "group relative flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                        : "group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                       : active
-                        ? "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-100 text-emerald-900 shadow-sm"
-                        : "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                        ? "group relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
+                        : "group relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                   }
                 >
-                  <Icon size={21} className="shrink-0" />
+                  <Icon size={20} className="shrink-0" />
 
                   {isSidebarOpen ? (
                     <span className="truncate text-sm font-extrabold">
                       {module.label}
                     </span>
                   ) : (
-                    <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                    <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white shadow-lg group-hover:block">
                       {module.label}
                     </span>
                   )}
                 </button>
               );
             })}
+
+            <div className="group relative">
+              <div
+                className={
+                  isSidebarOpen
+                    ? controlGroup.items.some(
+                        (item) => item.id === activeModule
+                      )
+                      ? "flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-emerald-900"
+                      : "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                    : controlGroup.items.some(
+                          (item) => item.id === activeModule
+                        )
+                      ? "flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
+                      : "flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                }
+              >
+                <ControlGroupIcon size={20} className="shrink-0" />
+
+                {isSidebarOpen ? (
+                  <span className="truncate text-sm font-extrabold">
+                    {controlGroup.label}
+                  </span>
+                ) : (
+                  <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white shadow-lg group-hover:block">
+                    {controlGroup.label}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:grid-rows-[1fr] group-hover:opacity-100">
+                <div className="overflow-hidden">
+                  <div
+                    className={
+                      isSidebarOpen
+                        ? "mt-1 space-y-1 pl-8"
+                        : "mt-1 flex flex-col items-center gap-1"
+                    }
+                  >
+                    {controlGroup.items.map((item) => {
+                      const Icon = item.icon;
+                      const active = activeModule === item.id;
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setActiveModule(item.id)}
+                          title={item.label}
+                          aria-label={item.label}
+                          className={
+                            isSidebarOpen
+                              ? active
+                                ? "flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                                : "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                              : active
+                                ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                                : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                          }
+                        >
+                          <Icon
+                            size={isSidebarOpen ? 16 : 18}
+                            className="shrink-0"
+                          />
+
+                          {isSidebarOpen ? (
+                            <span className="truncate text-xs font-extrabold">
+                              {item.label}
+                            </span>
+                          ) : (
+                            <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                              {item.label}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="group relative">
+              <div
+                className={
+                  isSidebarOpen
+                    ? adminGroup.items.some(
+                        (item) => item.id === activeModule
+                      )
+                      ? "flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-emerald-900"
+                      : "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                    : adminGroup.items.some(
+                          (item) => item.id === activeModule
+                        )
+                      ? "flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
+                      : "flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                }
+              >
+                <AdminGroupIcon size={20} className="shrink-0" />
+
+                {isSidebarOpen ? (
+                  <span className="truncate text-sm font-extrabold">
+                    {adminGroup.label}
+                  </span>
+                ) : (
+                  <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white shadow-lg group-hover:block">
+                    {adminGroup.label}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:grid-rows-[1fr] group-hover:opacity-100">
+                <div className="overflow-hidden">
+                  <div
+                    className={
+                      isSidebarOpen
+                        ? "mt-1 space-y-1 pl-8"
+                        : "mt-1 flex flex-col items-center gap-1"
+                    }
+                  >
+                    {adminGroup.items.map((item) => {
+                      const Icon = item.icon;
+                      const active = activeModule === item.id;
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setActiveModule(item.id)}
+                          title={item.label}
+                          aria-label={item.label}
+                          className={
+                            isSidebarOpen
+                              ? active
+                                ? "flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                                : "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                              : active
+                                ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                                : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                          }
+                        >
+                          <Icon
+                            size={isSidebarOpen ? 16 : 18}
+                            className="shrink-0"
+                          />
+
+                          {isSidebarOpen ? (
+                            <span className="truncate text-xs font-extrabold">
+                              {item.label}
+                            </span>
+                          ) : (
+                            <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-2xs font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                              {item.label}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
           </nav>
+
+          <div
+            className={
+              isSidebarOpen
+                ? "mx-3 mt-3 flex flex-col gap-2 border-t border-slate-200 pt-3"
+                : "mx-auto mt-3 flex flex-col items-center gap-2 border-t border-slate-200 pt-3"
+            }
+          >
+            {isSidebarOpen && (
+              <div className="flex items-center gap-2 px-1 text-2xs font-bold text-slate-500">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  행정망 연동 정상
+                </span>
+              </div>
+            )}
+
+            <div
+              className={
+                isSidebarOpen
+                  ? "flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3"
+                  : "flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-slate-50"
+              }
+              title={
+                isSidebarOpen
+                  ? undefined
+                  : `${authUser.name} · ${authUser.organization}`
+              }
+            >
+              <UserRound size={20} className="shrink-0 text-emerald-800" />
+              {isSidebarOpen && (
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-extrabold text-slate-800">
+                    {authUser.name}
+                  </div>
+                  <div className="mt-0.5 max-w-[140px] truncate text-3xs font-bold text-slate-400">
+                    {authUser.organization}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                logout();
+                setAuthUser(null);
+                setSelectedGrid(null);
+                setIsChatOpen(false);
+                setIsAlertPanelOpen(false);
+              }}
+              className={
+                isSidebarOpen
+                  ? "flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                  : "flex h-10 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+              }
+              aria-label="로그아웃"
+              title="로그아웃"
+            >
+              <LogOut size={16} />
+              {isSidebarOpen && <span>로그아웃</span>}
+            </button>
+          </div>
 
           <div
             className={
@@ -601,9 +849,6 @@ export default function App() {
 
             {isSidebarOpen && (
               <div className="min-w-0">
-                <div className="truncate text-xs font-extrabold">
-                  PWD-ISCP
-                </div>
                 <div className="truncate text-[9px] font-bold text-slate-400">
                   의사결정 지원 플랫폼
                 </div>
@@ -613,68 +858,7 @@ export default function App() {
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-col">
-          <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
-            <div className="flex min-w-0 items-center gap-4">
-              <div>
-                <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-700">
-                  Pine Wilt Control Center
-                </div>
-
-                <h1 className="mt-0.5 text-3xl font-black tracking-tight text-slate-950">
-                  {activeModule === "dashboard"
-                    ? "홈"
-                    : activeModuleLabel}
-                </h1>
-              </div>
-
-              <div className="hidden h-9 w-px bg-slate-200 xl:block" />
-
-              <div className="hidden max-w-[560px] truncate text-xs font-semibold text-slate-500 xl:block">
-                AI 기반 소나무재선충병 신규 확산위험 후보 분석 및 우선 예찰 의사결정 지원
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="hidden items-center gap-4 text-[11px] font-bold text-slate-500 xl:flex">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  행정망 연동 정상
-                </span>
-
-                <span className="rounded-full bg-slate-100 px-3 py-1.5">
-                  PR-AUC 0.3183
-                </span>
-              </div>
-
-              <div className="hidden text-right sm:block">
-                <div className="text-xs font-extrabold text-slate-800">
-                  {authUser.name}
-                </div>
-                <div className="mt-0.5 max-w-[180px] truncate text-[10px] font-bold text-slate-400">
-                  {authUser.organization}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  logout();
-                  setAuthUser(null);
-                  setSelectedGrid(null);
-                  setIsChatOpen(false);
-                  setIsAlertPanelOpen(false);
-                }}
-                className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-              >
-                <LogOut size={16} />
-                <span className="hidden md:inline">
-                  로그아웃
-                </span>
-              </button>
-            </div>
-          </header>
-
-          <main className="min-h-0 flex-1 overflow-hidden p-3 xl:p-4">
+          <main className="min-h-0 flex-1 overflow-hidden p-3 pt-5 xl:p-4 xl:pt-6">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeModule}
@@ -686,6 +870,7 @@ export default function App() {
               >
                 {activeModule === "dashboard" && (
                   <Dashboard
+                    title={sectionTitle}
                     grids={grids}
                     trees={trees}
                     workers={workers}
@@ -694,12 +879,14 @@ export default function App() {
                     onAssignWorker={handleAssignWorker}
                     onGridSelect={setSelectedGrid}
                     authUser={authUser}
+                    liveAlerts={liveAlerts}
                   />
                 )}
 
                 {activeModule === "monitoring" && (
                   <div className="h-full overflow-y-auto pr-1">
                     <MonitoringSection
+                      title={sectionTitle}
                       trees={trees}
                       onAddTree={handleAddTree}
                       onUpdateTreeStatus={handleUpdateTreeStatus}
@@ -710,6 +897,7 @@ export default function App() {
                 {activeModule === "field" && (
                   <div className="h-full overflow-y-auto pr-1">
                     <FieldSection
+                      title={sectionTitle}
                       workers={workers}
                       reports={reports}
                       dispatchAssignments={dispatchAssignments}
@@ -722,9 +910,10 @@ export default function App() {
                   </div>
                 )}
 
-                {activeModule === "control" && (
+                {activeModule === "control-status" && (
                   <div className="h-full overflow-y-auto pr-1">
                     <ControlSection
+                      title={sectionTitle}
                       tasks={tasks}
                       grids={grids}
                       onAddTask={handleAddTask}
@@ -733,19 +922,21 @@ export default function App() {
                   </div>
                 )}
 
-                {activeModule === "admin" && (
+                {(activeModule === "admin-report" ||
+                  activeModule === "admin-species") && (
                   <div className="h-full overflow-y-auto pr-1">
-                    <AdminSection />
+                    <AdminSection
+                      title={sectionTitle}
+                      view={
+                        activeModule === "admin-species"
+                          ? "species"
+                          : "report"
+                      }
+                    />
                   </div>
                 )}
 
-                {activeModule === "system" && (
-                  <div className="h-full overflow-y-auto pr-1">
-                    <SystemSection />
-                  </div>
-                )}
-
-                {activeModule === "simulation" && (
+                {activeModule === "control-work" && (
                   <div className="h-full overflow-y-auto pr-1">
                     <SimulationSection />
                   </div>
@@ -766,7 +957,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[9998] cursor-default bg-transparent"
+              className="fixed inset-0 z-[9998] cursor-default bg-slate-950/10 backdrop-blur-[1px]"
             />
 
             <motion.aside
@@ -789,69 +980,91 @@ export default function App() {
                 duration: 0.18,
               }}
               style={{
-                left: isSidebarOpen ? 276 : 104,
+                left: isSidebarOpen ? 256 : 66,
                 top: 16,
               }}
               className="fixed z-[9999] flex max-h-[calc(100vh-32px)] w-[390px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
             >
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <div>
-                  <div className="text-xs font-extrabold text-rose-600">
-                    REAL-TIME ALERT
-                  </div>
+                  <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 text-3xs font-black uppercase tracking-[0.14em] text-rose-600">
+                    Real-time Alert
+                  </span>
 
-                  <h2 className="mt-1 text-xl font-black text-slate-950">
+                  <h2 className="mt-2 text-xl font-black text-slate-950">
                     실시간 통합 알림
                   </h2>
+
+                  <div className="mt-0.5 text-2xs font-bold text-slate-400">
+                    전체 {liveAlerts.length}건 · 미확인 {liveAlerts.length}건
+                  </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setIsAlertPanelOpen(false)}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                   aria-label="실시간 알림 닫기"
                 >
                   <X size={19} />
                 </button>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+              <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-4">
                 {liveAlerts.map((alert) => {
                   const Icon = alert.icon;
 
-                  const toneClass =
+                  const accent =
                     alert.tone === "danger"
-                      ? "border-rose-200 bg-rose-50 text-rose-800"
+                      ? {
+                          bar: "bg-rose-500",
+                          chip: "bg-rose-50 text-rose-600",
+                          time: "text-rose-500",
+                        }
                       : alert.tone === "warning"
-                        ? "border-amber-200 bg-amber-50 text-amber-800"
-                        : "border-blue-200 bg-blue-50 text-blue-800";
+                        ? {
+                            bar: "bg-amber-500",
+                            chip: "bg-amber-50 text-amber-600",
+                            time: "text-amber-500",
+                          }
+                        : {
+                            bar: "bg-blue-500",
+                            chip: "bg-blue-50 text-blue-600",
+                            time: "text-blue-500",
+                          };
 
                   return (
                     <article
                       key={alert.id}
-                      className={`rounded-2xl border p-4 ${toneClass}`}
+                      className="flex overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80">
+                      <div className={`w-1 shrink-0 ${accent.bar}`} />
+
+                      <div className="flex flex-1 items-start gap-3 p-3.5">
+                        <div
+                          className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${accent.chip}`}
+                        >
                           <Icon size={18} />
                         </div>
 
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-3">
-                            <h3 className="text-sm font-extrabold">
+                            <h3 className="truncate text-sm font-extrabold text-slate-900">
                               {alert.title}
                             </h3>
 
-                            <span className="shrink-0 text-[10px] font-black opacity-70">
+                            <span
+                              className={`shrink-0 text-3xs font-black ${accent.time}`}
+                            >
                               {alert.time}
                             </span>
                           </div>
 
-                          <p className="mt-1 text-xs font-semibold leading-5 opacity-80">
+                          <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
                             {alert.description}
                           </p>
 
-                          <div className="mt-2 text-[10px] font-black opacity-60">
+                          <div className="mt-2 text-3xs font-black text-slate-300">
                             {alert.id}
                           </div>
                         </div>
@@ -861,7 +1074,7 @@ export default function App() {
                 })}
               </div>
 
-              <div className="border-t border-slate-100 bg-slate-50 px-5 py-3 text-[11px] font-semibold leading-5 text-slate-500">
+              <div className="border-t border-slate-100 bg-slate-50 px-5 py-3 text-2xs font-semibold leading-5 text-slate-500">
                 알림은 감염 확정이 아닌 신규 확산위험 후보와 현장 확인 필요사항을 안내합니다.
               </div>
             </motion.aside>
@@ -879,7 +1092,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[55] bg-slate-950/25 backdrop-blur-[1px]"
+              className="fixed inset-0 z-[1100] bg-slate-950/25 backdrop-blur-[1px]"
             />
 
             <motion.aside
@@ -891,7 +1104,7 @@ export default function App() {
                 stiffness: 320,
                 damping: 34,
               }}
-              className="fixed bottom-0 right-0 top-0 z-[60] w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[630px]"
+              className="fixed bottom-0 right-0 top-0 z-[1101] w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[630px]"
             >
               <button
                 type="button"
@@ -909,26 +1122,33 @@ export default function App() {
       </AnimatePresence>
 
       {!isChatOpen && (
-        <div className="fixed bottom-6 right-6 z-50">
-          <motion.button
-            type="button"
-            onClick={() => setIsChatOpen(true)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="group relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-emerald-400/35 bg-emerald-800 text-white shadow-xl transition-colors hover:bg-emerald-900"
-            aria-label="AI 챗봇 열기"
-          >
-            <MessageSquare size={22} />
-
-            <span className="absolute -right-1 -top-1 animate-bounce rounded-full border border-white bg-amber-400 px-1.5 py-0.5 text-[9px] font-black text-emerald-950">
+        <motion.button
+          type="button"
+          onClick={() => setIsChatOpen(true)}
+          initial={{ x: 8, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          whileHover={{ x: -4 }}
+          className="group fixed right-0 top-1/2 z-[1100] flex -translate-y-1/2 flex-col items-center gap-2 rounded-l-2xl border border-r-0 border-emerald-400/35 bg-emerald-800 px-2.5 py-4 text-white shadow-xl transition-colors hover:bg-emerald-900"
+          aria-label="AI 챗봇 열기"
+        >
+          <span className="relative">
+            <MessageSquare size={20} />
+            <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full border border-white bg-amber-400 px-1 text-3xs font-black text-emerald-950">
               AI
             </span>
+          </span>
 
-            <span className="pointer-events-none absolute right-16 whitespace-nowrap rounded-xl bg-slate-900/90 px-2.5 py-1 text-[10px] font-bold text-white opacity-0 shadow transition-all group-hover:opacity-100">
-              위험격자·백서 통합 질의 비서
-            </span>
-          </motion.button>
-        </div>
+          <span
+            className="text-2xs font-black tracking-widest"
+            style={{ writingMode: "vertical-rl" }}
+          >
+            AI 챗봇
+          </span>
+
+          <span className="pointer-events-none absolute right-full mr-3 whitespace-nowrap rounded-xl bg-slate-900/90 px-2.5 py-1 text-3xs font-bold text-white opacity-0 shadow transition-all group-hover:opacity-100">
+            위험격자·백서 통합 질의 비서
+          </span>
+        </motion.button>
       )}
     </div>
   );

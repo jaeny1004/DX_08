@@ -38,6 +38,7 @@ __pycache__/
 rag-backend/data/chroma/
 rag-backend/data/generated_drafts/
 rag-backend/data/generated_reports/
+data/precompute_logs/
 
 # Backups and archives
 *.backup_*
@@ -52,6 +53,21 @@ rag-backend/data/generated_reports/
 Thumbs.db
 __MACOSX/
 
+# Claude Code local session/tool settings (per-developer, not for sharing)
+.claude/
+
+# Vercel 번들 용량 측정용 임시 pip install 산출물 (일회성 조사 산출물, 커밋 대상 아님)
+.tmp_vercel_size/
+.uv-tools/
+.vercel-linux-site-packages/
+
+# Root data/ raw source GeoJSON copies (large, regeneratable staging data).
+# Deployed copies used by the app live in public/data/ and rag-backend/data/
+# only — this pattern is anchored to the top-level data/ folder and does not
+# touch those two directories.
+/data/**/*.geojson
+/data/docs/*.pdf
+
 # GitHub upload exclusions for very large source artifacts
 /data/admin/BND_ADM_DONG_PG.shp
 /public/data/sigungu_boundary.geojson
@@ -60,3 +76,5 @@ __MACOSX/
 
 # IMPORTANT: keep this project data file tracked
 !/rag-backend/data/final_ui_candidate_v4.geojson
+.vercel
+.env*

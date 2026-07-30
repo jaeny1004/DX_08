@@ -26,7 +26,7 @@ function createMessageId(): string {
     typeof crypto !== "undefined" &&
     typeof crypto.randomUUID === "function"
   ) {
-    return createMessageId();
+    return crypto.randomUUID();
   }
 
   return [
@@ -309,7 +309,7 @@ export default function Chatbot({
           text:
             "지식엔진에 연결하지 못했습니다.\n\n" +
             `${errorMessage}\n\n` +
-            "RAG 백엔드가 8788 포트에서 실행 중인지 확인해 주세요.",
+            "AI 챗봇 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.",
           sources: [],
           error: true,
         },
@@ -346,7 +346,7 @@ export default function Chatbot({
               소나무재선충병 예찰·방제지원 AI
             </span>
 
-            <span className="text-[11px] text-slate-400 font-bold">
+            <span className="text-2xs text-slate-400 font-bold">
               {hasSelectedGrid
                 ? `선택 격자 GRID-${selectedGridId} 연계 중`
                 : "격자 미선택 · 백서 중심 분석"}
@@ -354,12 +354,12 @@ export default function Chatbot({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 shrink-0">
+        <div className="flex items-center gap-1.5 text-2xs text-emerald-800 font-bold bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 shrink-0">
           <Sparkles
             size={11}
             className="text-emerald-600"
           />
-          <span>RAG 지식엔진</span>
+          <span>백서 기반</span>
         </div>
       </div>
 
@@ -403,7 +403,7 @@ export default function Chatbot({
               {message.sources &&
                 message.sources.length > 0 && (
                   <div className="mt-2.5 border border-emerald-100 bg-emerald-50/60 rounded-xl p-3">
-                    <strong className="text-[11px] text-emerald-800 block mb-1.5">
+                    <strong className="text-2xs text-emerald-800 block mb-1.5">
                       가장 관련성 높은 근거 자료
                     </strong>
 
@@ -415,7 +415,7 @@ export default function Chatbot({
                           href={getRagSourceUrl(source)}
                           target="_blank"
                           rel="noreferrer"
-                          className="block text-[11px] leading-5 text-slate-600 hover:text-emerald-800 hover:underline break-words"
+                          className="block text-2xs leading-5 text-slate-600 hover:text-emerald-800 hover:underline break-words"
                         >
                           {source.doc_name}
                           {" · "}
@@ -459,7 +459,7 @@ export default function Chatbot({
           className="w-full flex items-center justify-between rounded-xl px-2 py-2 text-left text-slate-500 hover:bg-slate-50 transition-colors"
           aria-expanded={isPresetOpen}
         >
-          <span className="text-[11px] font-bold flex items-center gap-1.5">
+          <span className="text-2xs font-bold flex items-center gap-1.5">
             <HelpCircle size={12} />
             {hasSelectedGrid
               ? "선택 격자 추천 질문"
@@ -486,7 +486,7 @@ export default function Chatbot({
                   handleSendMessage(question)
                 }
                 disabled={isLoading}
-                className="text-[11px] bg-slate-50 border border-slate-200 hover:border-emerald-500 rounded-lg py-1.5 px-2.5 text-slate-600 font-semibold text-left transition-all disabled:opacity-50"
+                className="text-2xs bg-slate-50 border border-slate-200 hover:border-emerald-500 rounded-lg py-1.5 px-2.5 text-slate-600 font-semibold text-left transition-all disabled:opacity-50"
               >
                 {question}
               </button>
@@ -528,7 +528,7 @@ export default function Chatbot({
           </button>
         </form>
 
-        <p className="text-[10px] text-slate-400 leading-relaxed mt-3">
+        <p className="text-3xs text-slate-400 leading-relaxed mt-3">
           위험도는 감염 확정값이 아닌 신규 발생 후보지역 예측 결과입니다.
           최종 예찰·방제 판단은 담당자의 현장 검토가 필요합니다.
         </p>

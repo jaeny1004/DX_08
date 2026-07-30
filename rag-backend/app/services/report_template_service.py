@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import csv
 import json
 import math
-import re
-import shutil
-import subprocess
-import tempfile
+import os
 import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -14,7 +10,11 @@ from typing import Any
 
 from docx import Document
 from PIL import Image, ImageDraw, ImageFont
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
+from app.core.database import SessionLocal
+from app.core.report_storage import BUCKET, storage_key_for
 from app.services.report_draft_service import (
     ALIASES,
     CANDIDATE_GEOJSON,
@@ -26,14 +26,7 @@ from app.services.report_draft_service import (
     save_draft,
 )
 
-TEMPLATE_ROOT = DATA_ROOT / "report_templates"
 GENERATED_REPORT_ROOT = DATA_ROOT / "generated_reports"
-
-TEMPLATE_FILES = {
-    "prediction": "[양식]소나무재선충병 발생 예측 보고서_빈양식.docx",
-    "field_survey": "[양식]소나무재선충병 현장 예찰 보고서_빈양식.docx",
-    "control": "[양식]소나무재선충병 방제 보고서_빈양식.docx",
-}
 
 REPORT_DIRECTORIES = {
     "prediction": "prediction_30",
@@ -209,17 +202,25 @@ def _control_exact(draft: dict[str, Any]) -> dict[str, str]:
     center = draft["data_summary"].get("center_grid", {})
     risk = _value(center.get("risk_score"))
     grade = _value(center.get("risk_grade"))
+    # control_report_generator.py가 field_survey 연계에 실패해 추정값을 쓴
+    # 경우에만 center_grid.field_survey_linked=False를 채워 넣는다. 그 외
+    # (interactive draft 등) 경로는 이 키가 없어 항상 빈 문자열이 된다.
+    fallback_suffix = (
+        " (현장예찰 연계 자료 없음, 추정값)"
+        if center.get("field_survey_linked") is False
+        else ""
+    )
     return {
         "❍ (방 제 자) [소속·조] (단원: [성명])": f"❍ (방 제 자) 관할 산림 담당 부서 (담당자: {draft.get('created_by', '담당자')})",
         "❍ (방제 면적) 총 [면적] ha ([포함 범위])": f"❍ (방제 면적) 현장 확정 후 입력 ({draft['sido_name']} {draft['sigungu_name']} 중심 격자 기준)",
-        "❍ (대상 수량) 최종 검경 확진목 [수량]본 및 감염 우려 피해목 [수량]본 (총 [수량]본)": "❍ (대상 수량) 현장 확인 및 검경 확정 후 확진목·피해목 수량 입력",
+        "❍ (대상 수량) 최종 검경 확진목 [수량]본 및 감염 우려 피해목 [수량]본 (총 [수량]본)": f"❍ (대상 수량) 현장 확인 및 검경 확정 후 확진목·피해목 수량 입력{fallback_suffix}",
         "❍ (파쇄 처리) [수량]본 / [처리 방법 및 규격]": "❍ (파쇄 처리) 적용 시 처리 수량·파쇄 규격·완료 일시 입력",
         "❍ (훈증 처리) [수량]본 / [처리 사유 및 방법]": "❍ (훈증 처리) 적용 시 처리 수량·사유·피복 및 약제 정보 입력",
         "― 타포린 피복 일련번호: [번호]": "― 타포린 피복 일련번호: 훈증 적용 시 입력",
         "❍ (작업 면적) [범위 및 대상] (약 [면적]ha)": "❍ (작업 면적) 예방나무주사 적용 범위와 대상 면적 현장 확정 후 입력",
         "❍ (주입 실적) [수종] 약 [수량]본 / [약제 및 처리 내용]": "❍ (주입 실적) 수종·본수·약제명·주입량 및 작업 결과 입력",
         "❍ (천공 규격) [직경]mm, 깊이 [깊이]cm / [작업 방법]": "❍ (천공 규격) 사용 약제 지침과 현장 작업 기준에 따라 입력",
-        "❍ (방제 전) [현장 상태 입력]": f"❍ (방제 전) 중심 격자 {center.get('grid_id', '-')} / 신규 확산위험 {risk}점({grade}) / 현장 상태 확인 필요",
+        "❍ (방제 전) [현장 상태 입력]": f"❍ (방제 전) 중심 격자 {center.get('grid_id', '-')} / 신규 확산위험 {risk}점({grade}) / 현장 상태 확인 필요{fallback_suffix}",
         "❍ (방제 후) [조치 결과 입력]": "❍ (방제 후) 처리 수량·방법·잔재물 상태·완료 사진을 등록",
         "― 위험도 변화: 기존 [점수]점([등급]) → 방제 완료 후 [점수]점([등급])": f"― 위험도 변화: 기존 {risk}점({grade}) → 방제 완료 후 후속 예측 결과로 갱신",
         "― 훈증 더미 [개소] 위치 좌표 등록 및 [주기] 모니터링 계획": "― 훈증 더미 적용 시 개소·위치 좌표를 등록하고 정기 모니터링 계획 수립",
@@ -326,85 +327,159 @@ def _replace_docx_media(docx_path: Path, media_name: str, replacement: Path) -> 
     temp_path.replace(docx_path)
 
 
-def apply_report_template(draft_id: str) -> dict[str, Any]:
-    draft = load_draft(draft_id)
-    report_type = draft["report_type"]
-    template_name = TEMPLATE_FILES.get(report_type)
-    if not template_name:
-        raise ValueError(f"지원하지 않는 문서 유형입니다: {report_type}")
-    template_path = TEMPLATE_ROOT / template_name
-    if not template_path.is_file():
-        raise FileNotFoundError(f"행정양식 파일이 없습니다: {template_path}")
-
-    output_dir = DATA_ROOT / "generated_drafts" / draft_id / "template"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    safe_title = re.sub(r'[\\/:*?"<>|]+', "_", draft["title"])
-    docx_path = output_dir / f"{safe_title}.docx"
-    pdf_path = output_dir / f"{safe_title}.pdf"
-
-    document = Document(template_path)
-    replacements = _common_replacements(draft)
-    exact = _prediction_exact(draft) if report_type == "prediction" else _field_exact(draft) if report_type == "field_survey" else _control_exact(draft)
-    for paragraph in _all_paragraphs(document):
-        _replace_paragraph(paragraph, replacements, exact)
-    document.save(docx_path)
-
-    if report_type == "prediction":
-        map_path = output_dir / "selected_grid_map.png"
-        _create_map_image(draft, map_path)
-        _replace_docx_media(docx_path, "image1.png", map_path)
-
-    libreoffice = shutil.which("libreoffice") or shutil.which("soffice")
-    if not libreoffice:
-        raise RuntimeError("LibreOffice가 없어 행정양식 PDF를 생성할 수 없습니다.")
-    completed = subprocess.run(
-        [libreoffice, "--headless", "--convert-to", "pdf", "--outdir", str(output_dir), str(docx_path)],
-        capture_output=True, text=True, timeout=180, check=False,
-    )
-    if completed.returncode != 0 or not pdf_path.is_file():
-        raise RuntimeError(f"행정양식 PDF 변환 실패: {completed.stderr.strip() or completed.stdout.strip()}")
-
-    center = draft["data_summary"].get("center_grid", {})
-    template_output = {
-        "status": "generated",
-        "center_grid_id": center.get("grid_id"),
-        "year": draft["year"],
-        "sido_name": draft["sido_name"],
-        "sigungu_name": draft["sigungu_name"],
-        "risk_score": center.get("risk_score"),
-        "risk_grade": center.get("risk_grade"),
-        "priority_score": center.get("priority_score"),
-        "priority_grade": center.get("priority_grade"),
-        "docx_path": str(docx_path.resolve()),
-        "pdf_path": str(pdf_path.resolve()),
-    }
-    draft["template_output"] = template_output
-    save_draft(draft)
-    return template_output
-
-
-def get_template_file(draft_id: str, file_format: str) -> Path:
+def get_template_storage_key(draft_id: str, file_format: str) -> str:
     if file_format not in {"docx", "pdf"}:
         raise ValueError("행정양식 파일은 DOCX와 PDF만 지원합니다.")
     draft = load_draft(draft_id)
     output = draft.get("template_output")
     if not isinstance(output, dict):
         raise FileNotFoundError("행정양식이 아직 생성되지 않았습니다.")
-    path = Path(str(output.get(f"{file_format}_path", ""))).resolve()
+    storage_key = str(output.get(f"{file_format}_storage_key", "")).strip()
+    if not storage_key:
+        raise FileNotFoundError(
+            f"{file_format.upper()} Storage key를 찾을 수 없습니다: {draft_id}"
+        )
+    return storage_key
+
+
+def _next_document_no(session, report_type: str) -> str:
+    result = session.execute(
+        text(
+            "select coalesce(max(document_no::int), 0) + 1 "
+            "from reports where report_type = :report_type"
+        ),
+        {"report_type": report_type},
+    ).scalar()
+    return str(result)
+
+
+def _insert_report_row(
+    *,
+    report_type: str,
+    year: str,
+    center_grid_id: str,
+    sido_name: str,
+    sigungu_name: str,
+    file_stem_suffix: str,
+    data_fields: dict[str, Any],
+) -> tuple[str, str, str]:
+    """document_no를 계산해 reports에 insert한다.
+
+    unique(report_type, document_no) 충돌 시 번호를 다시 계산해 한 번만
+    재시도한다. 두 번째도 실패하면 무한 재시도하지 않고 그대로 실패시킨다.
+    """
+    last_error: IntegrityError | None = None
+    for attempt in (1, 2):
+        with SessionLocal() as session:
+            document_no = _next_document_no(session, report_type)
+            file_stem = f"{document_no}_{file_stem_suffix}"
+            pdf_name = f"{file_stem}.pdf"
+            try:
+                session.execute(
+                    text(
+                        """
+                        insert into reports
+                            (report_type, document_no, file_name, year,
+                             center_grid_id, sido_name, sigungu_name, data)
+                        values
+                            (:report_type, :document_no, :file_name, :year,
+                             :center_grid_id, :sido_name, :sigungu_name, cast(:data as jsonb))
+                        """
+                    ),
+                    {
+                        "report_type": report_type,
+                        "document_no": document_no,
+                        "file_name": pdf_name,
+                        "year": year,
+                        "center_grid_id": center_grid_id,
+                        "sido_name": sido_name,
+                        "sigungu_name": sigungu_name,
+                        "data": json.dumps(data_fields, ensure_ascii=False),
+                    },
+                )
+                session.commit()
+                return document_no, pdf_name, f"{file_stem}.docx"
+            except IntegrityError as exc:
+                session.rollback()
+                is_unique_violation = getattr(exc.orig, "pgcode", None) == "23505"
+                if not is_unique_violation:
+                    raise RuntimeError(
+                        f"보고서 등록 중 예기치 않은 DB 오류가 발생했습니다: {exc.orig}"
+                    ) from exc
+                last_error = exc
+
+    raise RuntimeError(
+        "보고서 문서번호 등록에 두 번 모두 실패했습니다 "
+        f"(report_type={report_type}): "
+        f"{last_error.orig if last_error else '알 수 없는 오류'}"
+    )
+
+
+_storage_client = None
+
+
+def _storage():
+    global _storage_client
+    if _storage_client is None:
+        from supabase import create_client
+
+        _storage_client = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+    return _storage_client
+
+
+def _content_type_for(path: Path) -> str:
+    return {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".png": "image/png",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }.get(path.suffix.lower(), "application/octet-stream")
+
+
+def upload_storage_file(local_path: Path, storage_key: str) -> str:
+    """Upload one generated artifact and return its object key."""
+    path = Path(local_path)
     if not path.is_file():
-        raise FileNotFoundError(f"생성 파일을 찾을 수 없습니다: {path}")
-    return path
+        raise FileNotFoundError(f"업로드할 파일을 찾을 수 없습니다: {path}")
+    _storage().storage.from_(BUCKET).upload(
+        storage_key,
+        path.read_bytes(),
+        {
+            "content-type": _content_type_for(path),
+            "upsert": "true",
+        },
+    )
+    return storage_key
 
 
-def _next_document_no(csv_path: Path) -> str:
-    maximum = 0
-    if csv_path.is_file():
-        with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
-            for row in csv.DictReader(file):
-                value = str(row.get("document_no", "")).strip()
-                if value.isdigit():
-                    maximum = max(maximum, int(value))
-    return str(maximum + 1)
+def create_storage_signed_url(
+    storage_key: str,
+    *,
+    expires_in: int = 300,
+    download_filename: str | None = None,
+) -> str:
+    options = {"download": download_filename} if download_filename else None
+    response = (
+        _storage()
+        .storage.from_(BUCKET)
+        .create_signed_url(storage_key, expires_in, options=options)
+    )
+    return response["signedURL"]
+
+
+def copy_storage_file(source_key: str, destination_key: str) -> str:
+    """Copy an object inside the reports bucket without local disk I/O."""
+    _storage().storage.from_(BUCKET).copy(source_key, destination_key)
+    return destination_key
+
+
+def _upload_report_file(report_type: str, local_path: Path, filename: str) -> None:
+    """기존 로컬 보고서 파일을 Supabase Storage에도 업로드한다."""
+    try:
+        storage_key = storage_key_for(report_type, filename)
+        upload_storage_file(local_path, storage_key)
+    except Exception as exc:  # noqa: BLE001 - 등록 자체를 막으면 안 되므로 의도적으로 광범위하게 처리
+        print(f"[register_report] Storage 업로드 실패 (로컬 등록은 계속 진행): {report_type}/{filename}: {exc}")
 
 
 def register_report(draft_id: str) -> dict[str, Any]:
@@ -413,39 +488,11 @@ def register_report(draft_id: str) -> dict[str, Any]:
         return draft["registered_report"]
 
     report_type = draft["report_type"]
-    directory = GENERATED_REPORT_ROOT / REPORT_DIRECTORIES[report_type]
-    pdf_dir = directory / "pdf"
-    docx_dir = directory / "docx"
-    pdf_dir.mkdir(parents=True, exist_ok=True)
-    docx_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = directory / "문서목록.csv"
-    document_no = _next_document_no(csv_path)
-
-    source_pdf = get_template_file(draft_id, "pdf")
-    source_docx = get_template_file(draft_id, "docx")
-    file_stem = f"{document_no}_{draft['year']}_{draft['sigungu_name']}_{REPORT_LABELS[report_type]}"
-    pdf_name = f"{file_stem}.pdf"
-    docx_name = f"{file_stem}.docx"
-    shutil.copy2(source_pdf, pdf_dir / pdf_name)
-    shutil.copy2(source_docx, docx_dir / docx_name)
-
-    default_headers = [
-        "document_no", "file_name", "year", "center_grid_id", "sido_name", "sigungu_name",
-        "risk_score", "risk_grade", "priority_score", "priority_grade", "created_at",
-    ]
-    existing_headers: list[str] = []
-    if csv_path.is_file():
-        with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
-            existing_headers = next(csv.reader(file), [])
-    headers = existing_headers or default_headers
+    source_pdf_key = get_template_storage_key(draft_id, "pdf")
+    source_docx_key = get_template_storage_key(draft_id, "docx")
     center = draft["data_summary"].get("center_grid", {})
-    row = {
-        "document_no": document_no,
-        "file_name": pdf_name,
-        "year": str(draft["year"]),
-        "center_grid_id": str(center.get("grid_id", "")),
-        "sido_name": draft["sido_name"],
-        "sigungu_name": draft["sigungu_name"],
+
+    data_fields = {
         "risk_score": _value(center.get("risk_score")),
         "risk_grade": _value(center.get("risk_grade")),
         "priority_score": _value(center.get("priority_score")),
@@ -455,13 +502,28 @@ def register_report(draft_id: str) -> dict[str, Any]:
         "link_status": "UNLINKED",
         "control_status": "방제 결과 등록",
         "survey_datetime": draft["end_date"],
+        # draft 생성 단계에서 PDF와 DOCX가 모두 Storage에 업로드된다.
+        "available_formats": ["pdf", "docx"],
     }
-    write_header = not csv_path.is_file() or csv_path.stat().st_size == 0
-    with csv_path.open("a", encoding="utf-8-sig", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=headers, extrasaction="ignore")
-        if write_header:
-            writer.writeheader()
-        writer.writerow({key: row.get(key, "") for key in headers})
+
+    document_no, pdf_name, docx_name = _insert_report_row(
+        report_type=report_type,
+        year=str(draft["year"]),
+        center_grid_id=str(center.get("grid_id", "")),
+        sido_name=draft["sido_name"],
+        sigungu_name=draft["sigungu_name"],
+        file_stem_suffix=f"{draft['year']}_{draft['sigungu_name']}_{REPORT_LABELS[report_type]}",
+        data_fields=data_fields,
+    )
+
+    copy_storage_file(
+        source_pdf_key,
+        storage_key_for(report_type, pdf_name),
+    )
+    copy_storage_file(
+        source_docx_key,
+        storage_key_for(report_type, docx_name),
+    )
 
     registered = {"report_type": report_type, "document_no": document_no, "file_name": pdf_name}
     draft["status"] = "registered"

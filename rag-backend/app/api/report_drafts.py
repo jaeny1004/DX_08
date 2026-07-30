@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 from app.api.auth import get_current_user
@@ -16,13 +17,30 @@ from app.services.report_draft_service import (
     load_draft,
     update_draft,
 )
+from app.services.control_template_service import apply_control_template
+from app.services.field_survey_template_service import (
+    apply_field_survey_template,
+)
+from app.services.prediction_template_service import (
+    apply_prediction_template,
+)
 from app.services.report_template_service import (
-    apply_report_template,
-    get_template_file,
+    create_storage_signed_url,
+    get_template_storage_key,
     register_report,
 )
 
 router = APIRouter(prefix="/api/report-drafts", tags=["신규 보고서 생성"])
+
+
+def _apply_template(report_type: str, draft_id: str) -> dict:
+    if report_type == "prediction":
+        return apply_prediction_template(draft_id)
+    if report_type == "field_survey":
+        return apply_field_survey_template(draft_id)
+    if report_type == "control":
+        return apply_control_template(draft_id)
+    raise ValueError(f"지원하지 않는 문서 유형입니다: {report_type}")
 
 
 class IncludeSections(BaseModel):
@@ -70,7 +88,7 @@ def create_new_draft(
 ) -> dict:
     try:
         draft = create_draft(request.model_dump(), created_by=current_user.email)
-        template_output = apply_report_template(draft["draft_id"])
+        template_output = _apply_template(request.report_type, draft["draft_id"])
         draft = load_draft(draft["draft_id"])
         draft["template_output"] = template_output
         return draft
@@ -108,7 +126,7 @@ def save_draft_changes(
 @router.post("/{draft_id}/apply-template")
 def apply_template(draft_id: str, current_user: User = Depends(get_current_user)) -> dict:
     try:
-        output = apply_report_template(draft_id)
+        output = _apply_template(load_draft(draft_id)["report_type"], draft_id)
         return {"draft_id": draft_id, "status": "generated", "template_output": output}
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -119,12 +137,21 @@ def apply_template(draft_id: str, current_user: User = Depends(get_current_user)
 
 
 @router.get("/{draft_id}/preview/pdf")
-def preview_template_pdf(draft_id: str, current_user: User = Depends(get_current_user)) -> FileResponse:
+def preview_template_pdf(
+    draft_id: str,
+    current_user: User = Depends(get_current_user),
+) -> RedirectResponse:
     try:
-        path = get_template_file(draft_id, "pdf")
+        storage_key = get_template_storage_key(draft_id, "pdf")
+        signed_url = create_storage_signed_url(storage_key)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return FileResponse(path=path, filename=path.name, media_type="application/pdf", content_disposition_type="inline")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="PDF Storage 객체를 찾을 수 없습니다.",
+        ) from exc
+    return RedirectResponse(signed_url)
 
 
 @router.post("/{draft_id}/register")
@@ -143,17 +170,42 @@ def export_draft(
     draft_id: str,
     file_format: Literal["docx", "pdf", "xlsx"],
     current_user: User = Depends(get_current_user),
-) -> FileResponse:
+) -> Response:
     try:
-        path = build_xlsx(load_draft(draft_id)) if file_format == "xlsx" else get_template_file(draft_id, file_format)
+        draft = load_draft(draft_id)
+        if file_format == "xlsx":
+            workbook = build_xlsx(draft)
+            filename = Path(workbook.name).name
+            return Response(
+                content=workbook.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": (
+                        "attachment; "
+                        f"filename*=UTF-8''{quote(filename)}"
+                    )
+                },
+            )
+
+        storage_key = get_template_storage_key(draft_id, file_format)
+        template_output = draft.get("template_output")
+        filename = (
+            str(template_output.get(f"{file_format}_filename", "")).strip()
+            if isinstance(template_output, dict)
+            else ""
+        ) or Path(storage_key).name
+        signed_url = create_storage_signed_url(
+            storage_key,
+            download_filename=filename,
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"{file_format.upper()} Storage 객체를 찾을 수 없습니다.",
+        ) from exc
 
-    media_types = {
-        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "pdf": "application/pdf",
-        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }
-    return FileResponse(path=path, filename=Path(path).name, media_type=media_types[file_format])
+    return RedirectResponse(signed_url)

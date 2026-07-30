@@ -10,7 +10,7 @@ export async function loadAdministrativeRegions(): Promise<SidoOption[]> {
   }
 
   const response = await fetch(
-    `${import.meta.env.BASE_URL}data/administrative_regions.json`,
+    "/data/administrative_regions.json",
   );
 
   if (!response.ok) {

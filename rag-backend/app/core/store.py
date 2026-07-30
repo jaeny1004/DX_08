@@ -1,7 +1,5 @@
 from typing import Protocol
 
-import chromadb
-
 from app.core.models import Chunk, SearchResult
 
 
@@ -34,6 +32,11 @@ def diversify(
 
 class ChromaStore:
     def __init__(self, persist_dir: str, collection: str = "documents"):
+        # SupabaseStore와 동일하게 지연 임포트 — VECTOR_BACKEND=supabase일 때는
+        # chromadb 패키지가 설치돼 있지 않아도 서버가 기동돼야 하므로, 이 클래스가
+        # 실제로 생성될 때만 chromadb를 불러온다.
+        import chromadb
+
         self._client = chromadb.PersistentClient(path=persist_dir)
         self._col = self._client.get_or_create_collection(
             name=collection, metadata={"hnsw:space": "cosine"}
@@ -109,4 +112,6 @@ def make_store():
         return SupabaseStore(
             url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_KEY"]
         )
-    return ChromaStore(persist_dir=os.environ.get("CHROMA_DIR", "./data/chroma"))
+    if backend == "chroma":
+        return ChromaStore(persist_dir=os.environ.get("CHROMA_DIR", "./data/chroma"))
+    raise ValueError(f"지원하지 않는 VECTOR_BACKEND입니다: {backend}")

@@ -402,33 +402,27 @@ export default function AuthScreen({
               <div className="text-sm font-black">
                 소나무재선충병 통합 예찰·방제지원 플랫폼
               </div>
-              <div className="mt-1 text-[11px] font-semibold text-emerald-200">
-                Pine Wilt Disease Integrated Surveillance &amp; Control Platform
-              </div>
             </div>
           </div>
         </div>
 
         <div className="relative z-10 max-w-3xl">
-          <div className="inline-flex rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-extrabold text-emerald-200">
-            산림 행정 의사결정 지원 시스템
-          </div>
           <h1 className="mt-6 text-5xl font-black leading-[1.18] tracking-tight">
-            신규 확산위험 후보를
+            IMPINE :
             <br />
-            더 빠르게 확인하고,
+            더 빠르고 정밀한 지능형
             <br />
-            예찰 우선순위를 결정합니다.
+            소나무재선충 통합 관제 플랫폼
           </h1>
           <p className="mt-6 max-w-2xl text-sm font-semibold leading-7 text-slate-300">
-            500m 격자 기반 위험도 분석과 현장 확인 지원을 통해
-            신규 확산위험 후보 및 우선 예찰 검토지역을 제공합니다.
+            다차원의 데이터에 AI 예측 엔진을 결합하여
+            위험도를 산출하고 최적의 예찰·방제 우선순위를 제시합니다.
           </p>
           <div className="mt-9 grid max-w-2xl grid-cols-3 gap-3">
             <FeatureCard
               icon={Radar}
               title="위험도 분석"
-              description="AI 앙상블 기반 신규 확산위험 후보"
+              description="AI 기반 신규 확산위험 후보"
             />
             <FeatureCard
               icon={MapPinned}
@@ -443,10 +437,6 @@ export default function AuthScreen({
           </div>
         </div>
 
-        <div className="relative z-10 flex items-center justify-between text-[11px] font-semibold text-slate-400">
-          <span>PWD-ISCP · AI Decision Support</span>
-          <span>PR-AUC 0.3183</span>
-        </div>
       </section>
 
       <section className="flex min-h-screen items-center justify-center overflow-y-auto bg-slate-50 px-5 py-8 sm:px-10">
@@ -743,7 +733,7 @@ export default function AuthScreen({
               </button>
             </form>
 
-            <div className="mt-5 flex items-start gap-2 rounded-xl bg-slate-50 px-3.5 py-3 text-[11px] font-semibold leading-5 text-slate-500">
+            <div className="mt-5 flex items-start gap-2 rounded-xl bg-slate-50 px-3.5 py-3 text-2xs font-semibold leading-5 text-slate-500">
               <ShieldCheck
                 size={16}
                 className="mt-0.5 shrink-0 text-emerald-700"
@@ -802,7 +792,7 @@ function FeatureCard({
       <div className="mt-3 text-sm font-extrabold">
         {title}
       </div>
-      <div className="mt-1 text-[11px] font-semibold leading-5 text-slate-400">
+      <div className="mt-1 text-2xs font-semibold leading-5 text-slate-400">
         {description}
       </div>
     </div>

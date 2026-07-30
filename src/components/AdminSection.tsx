@@ -28,6 +28,17 @@ import {
   type ReportType,
 } from "../services/reportApi";
 import NewReportGenerator from "./NewReportGenerator";
+import ReportGridSelector from "./ReportGridSelector";
+import SectionTitle from "./SectionTitle";
+import {
+  recommendSpecies,
+  type SpeciesRecommendation,
+} from "../services/speciesApi";
+
+interface AdminSectionProps {
+  title: string;
+  view?: "report" | "species";
+}
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   prediction: "발생 예측",
@@ -61,10 +72,12 @@ function scoreText(value: number | null | undefined): string {
 }
 
 
-export default function AdminSection() {
-  const [activeTab, setActiveTab] =
-  useState<"new-report" | "reports" | "species">("new-report");
+export default function AdminSection({
+  title,
+  view = "report",
+}: AdminSectionProps) {
   const [reportsRefreshKey, setReportsRefreshKey] = useState(0);
+  const [reportMode, setReportMode] = useState<"create" | "browse">("create");
 
   // --------------------------------------------
   // 실제 행정 보고서 조회·미리보기·다운로드 상태
@@ -88,13 +101,17 @@ export default function AdminSection() {
   const [reportError, setReportError] = useState<string | null>(null);
 
   // --------------------------------------------
-  // 기존 수종전환 기능 상태 — 수정하지 않음
+  // AI 친환경 수종전환 추천 (격자 기반)
+  // 지도에서 위험후보 격자를 선택하면 해당 격자의 입지·수종구성 근거로 추천한다.
   // --------------------------------------------
-  const [speciesArea, setSpeciesArea] = useState("경북 포항 죽장면 고사 피해지");
-  const [speciesElevation, setElevation] = useState("320m");
-  const [speciesDensity, setDensity] = useState("상 (88%)");
-  const [reforestData, setReforestData] = useState<any>(null);
+  const [speciesSido, setSpeciesSido] = useState("");
+  const [speciesSigungu, setSpeciesSigungu] = useState("");
+  const [speciesGridId, setSpeciesGridId] = useState("");
+  const [reforestData, setReforestData] = useState<SpeciesRecommendation | null>(
+    null,
+  );
   const [reforestLoading, setReforestLoading] = useState(false);
+  const [reforestError, setReforestError] = useState<string | null>(null);
 
   const selectedReport = useMemo(
     () => reports.find((item) => item.document_no === selectedDocumentNo) ?? null,
@@ -289,39 +306,27 @@ export default function AdminSection() {
   };
 
   // --------------------------------------------
-  // 기존 수종전환 기능 — 수정하지 않음
+  // AI 친환경 수종전환 추천 — 선택 격자 기반 백엔드 호출
   // --------------------------------------------
   const handleRecommendReforest = async () => {
+    if (!speciesGridId) {
+      setReforestError("지도에서 위험후보 격자를 먼저 선택하세요.");
+      return;
+    }
+
     setReforestLoading(true);
     setReforestData(null);
+    setReforestError(null);
 
     try {
-      const res = await fetch("/api/recommend-species", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          region: speciesArea,
-          elevation: speciesElevation,
-          density: speciesDensity,
-        }),
-      });
-
-      const data = await res.json();
+      const data = await recommendSpecies(Number(speciesGridId));
       setReforestData(data);
     } catch (err) {
-      console.error(err);
-
-      setReforestData({
-        species: [
-          "상수리나무 (Quercus acutissima)",
-          "굴참나무 (Quercus variabilis)",
-        ],
-        budget: "ha당 약 8,500,000원 (총 42ha 기준 약 3억 5천만원 소요 예상)",
-        elevation_suitability:
-          "고도 250m 내외의 야산 지대에 매우 높은 생존율과 생장 속도를 보이며, 목재 활용 가치가 큼.",
-        soil_suitability:
-          "산성도가 조절된 마사토 및 사질양토에서 소나무 고사목 제거 후 우수한 활착력을 지님.",
-      });
+      setReforestError(
+        err instanceof Error
+          ? err.message
+          : "수종전환 추천을 불러오지 못했습니다.",
+      );
     } finally {
       setReforestLoading(false);
     }
@@ -329,73 +334,56 @@ export default function AdminSection() {
 
   return (
     <div className="space-y-6">
-      {/* 탭 선택 */}
-      <div className="flex max-w-3xl rounded-2xl border border-slate-200 bg-slate-100 p-1 text-sm font-bold text-slate-600">
-        <button
-          type="button"
-          onClick={() => setActiveTab("new-report")}
-          className={`flex-1 rounded-xl py-2.5 transition-all ${
-            activeTab === "new-report"
-              ? "bg-white text-emerald-950 shadow-sm"
-              : "hover:text-slate-900"
-          }`}
-        >
-          ✨ 신규 보고서 생성
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("reports")}
-          className={`flex-1 rounded-xl py-2.5 transition-all ${
-            activeTab === "reports"
-              ? "bg-white text-emerald-950 shadow-sm"
-              : "hover:text-slate-900"
-          }`}
-        >
-          📚 과거 보고서 조회
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("species")}
-          className={`flex-1 rounded-xl py-2.5 transition-all ${
-            activeTab === "species"
-              ? "bg-white text-emerald-950 shadow-sm"
-              : "hover:text-slate-900"
-          }`}
-        >
-          🌱 AI 친환경 수종전환 추천
-        </button>
-      </div>
+      <SectionTitle title={title} />
 
       <AnimatePresence mode="wait">
-        {activeTab === "new-report" && (
+        {view === "report" && (
           <motion.div
-            key="new-report-tab"
+            key="report-tab"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
+            className="space-y-5"
           >
-            <NewReportGenerator
-              onRegistered={() => {
-                setReportsRefreshKey((current) => current + 1);
-                setActiveTab("reports");
-              }}
-            />
-          </motion.div>
-        )}
-        {activeTab === "reports" && (
-          <motion.div
-            key="reports-tab"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 gap-6 lg:grid-cols-12"
-          >
-            {/* 왼쪽: 보고서 필터·다운로드 */}
-            <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 text-xs font-semibold shadow-sm lg:col-span-5">
+            {/* 생성/조회 세그먼트 토글 */}
+            <div className="flex max-w-xs rounded-2xl border border-slate-200 bg-slate-100 p-1 text-sm font-bold text-slate-600">
+              <button
+                type="button"
+                onClick={() => setReportMode("create")}
+                className={`flex-1 rounded-xl py-2 transition-all ${
+                  reportMode === "create"
+                    ? "bg-white text-emerald-950 shadow-sm"
+                    : "hover:text-slate-900"
+                }`}
+              >
+                ✨ 신규 생성
+              </button>
+              <button
+                type="button"
+                onClick={() => setReportMode("browse")}
+                className={`flex-1 rounded-xl py-2 transition-all ${
+                  reportMode === "browse"
+                    ? "bg-white text-emerald-950 shadow-sm"
+                    : "hover:text-slate-900"
+                }`}
+              >
+                📚 과거 조회
+              </button>
+            </div>
+
+            {reportMode === "create" ? (
+              <NewReportGenerator
+                onRegistered={() => {
+                  setReportsRefreshKey((current) => current + 1);
+                  setReportMode("browse");
+                }}
+              />
+            ) : (
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+                {/* 왼쪽: 보고서 필터·다운로드 */}
+                <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 text-xs font-semibold shadow-sm lg:col-span-5">
               <div>
-                <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                <h3 className="flex items-center gap-2 text-base font-black text-slate-950">
                   <FileText size={19} className="text-emerald-800" />
                   실제 행정 보고서 조회·다운로드
                 </h3>
@@ -498,7 +486,7 @@ export default function AdminSection() {
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <label className="text-slate-600">연결 보고서 선택</label>
-                    <span className="text-[10px] text-slate-400">
+                    <span className="text-3xs text-slate-400">
                       {reportsLoading ? "조회 중" : `${reports.length}건`}
                     </span>
                   </div>
@@ -537,7 +525,7 @@ export default function AdminSection() {
                 {selectedReport && (
                   <div className="grid grid-cols-2 gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
                     <div>
-                      <span className="block text-[10px] text-emerald-700">
+                      <span className="block text-3xs text-emerald-700">
                         신규 확산위험
                       </span>
                       <strong className="text-sm text-emerald-950">
@@ -547,7 +535,7 @@ export default function AdminSection() {
                     </div>
 
                     <div>
-                      <span className="block text-[10px] text-emerald-700">
+                      <span className="block text-3xs text-emerald-700">
                         예찰 우선순위
                       </span>
                       <strong className="text-sm text-emerald-950">
@@ -557,7 +545,7 @@ export default function AdminSection() {
                     </div>
 
                     <div>
-                      <span className="block text-[10px] text-emerald-700">
+                      <span className="block text-3xs text-emerald-700">
                         중심 격자
                       </span>
                       <strong className="text-sm text-emerald-950">
@@ -566,7 +554,7 @@ export default function AdminSection() {
                     </div>
 
                     <div>
-                      <span className="block text-[10px] text-emerald-700">
+                      <span className="block text-3xs text-emerald-700">
                         기준 지역
                       </span>
                       <strong className="text-sm text-emerald-950">
@@ -641,18 +629,18 @@ export default function AdminSection() {
                   </button>
                 </div>
               </div>
-            </div>
+                </div>
 
-            {/* 오른쪽: 실제 PDF 미리보기 및 연결 상태 */}
-            <div className="space-y-4 lg:col-span-7">
+                {/* 오른쪽: 실제 PDF 미리보기 및 연결 상태 */}
+                <div className="space-y-4 lg:col-span-7">
               <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-sm">
                 <div className="flex min-h-[520px] flex-col">
                   <div className="flex items-center justify-between border-b border-slate-800 px-5 py-3">
-                    <span className="text-[10px] font-bold tracking-[0.18em] text-slate-500">
+                    <span className="text-3xs font-bold tracking-[0.18em] text-slate-500">
                       OFFICIAL FORESTRY REPORT PREVIEW
                     </span>
                     {previewUrl && (
-                      <span className="rounded-full bg-emerald-900/50 px-2.5 py-1 text-[10px] font-bold text-emerald-300">
+                      <span className="rounded-full bg-emerald-900/50 px-2.5 py-1 text-3xs font-bold text-emerald-300">
                         실제 PDF
                       </span>
                     )}
@@ -734,7 +722,7 @@ export default function AdminSection() {
                               {label}
                             </span>
                           </div>
-                          <p className="mt-1 text-[10px] text-slate-500">
+                          <p className="mt-1 text-3xs text-slate-500">
                             {complete
                               ? "연결 완료"
                               : item.exists
@@ -758,13 +746,15 @@ export default function AdminSection() {
                     방제 검토 계획이 정상 연결되어 있습니다.
                   </div>
                 )}
+                </div>
+                </div>
               </div>
-            </div>
+            )}
           </motion.div>
         )}
 
-        {/* 기존 AI 친환경 수종전환 추천 탭 — 그대로 유지 */}
-        {activeTab === "species" && (
+        {/* AI 친환경 수종전환 추천 */}
+        {view === "species" && (
           <motion.div
             key="species-tab"
             initial={{ opacity: 0, y: 10 }}
@@ -774,71 +764,60 @@ export default function AdminSection() {
           >
             <div className="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 text-xs font-semibold shadow-sm lg:col-span-5">
               <div>
-                <h3 className="flex items-center gap-1.5 text-lg font-bold text-slate-900">
-                  🌱 피해지 친환경 AI 수종 전환 분석 (ADM-004)
+                <h3 className="flex items-center gap-1.5 text-base font-black text-slate-950">
+                  🌱 피해지 친환경 AI 수종 전환 분석
                 </h3>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  재선충 피해 극심지를 활엽수 등 대체 수림대로 개조하는
-                  사업 계획 초안을 생성형 AI가 기후/지질을 판단해 분석합니다.
+                  지도에서 위험후보 격자를 선택하면, 해당 격자의 입지(기후대·
+                  산림토양형·토심)와 임상 수종구성, 같은 시군구의 실제 활엽수
+                  분포를 근거로 대체 수종과 조림 방향을 제시합니다.
                 </p>
               </div>
 
-              <div className="space-y-4 pt-2">
-                <div className="space-y-1">
-                  <label className="text-slate-600">대상 피해 조림지명</label>
-                  <input
-                    type="text"
-                    value={speciesArea}
-                    onChange={(event) => setSpeciesArea(event.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2 font-medium outline-none"
-                  />
-                </div>
+              <ReportGridSelector
+                sidoName={speciesSido}
+                sigunguName={speciesSigungu}
+                selectedGridId={speciesGridId}
+                onSidoChange={setSpeciesSido}
+                onSigunguChange={setSpeciesSigungu}
+                onGridSelect={setSpeciesGridId}
+              />
 
-                <div className="space-y-1">
-                  <label className="text-slate-600">지형 평균 고도</label>
-                  <input
-                    type="text"
-                    value={speciesElevation}
-                    onChange={(event) => setElevation(event.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2 font-mono font-medium outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-slate-600">소나무림 유실 밀집도</label>
-                  <input
-                    type="text"
-                    value={speciesDensity}
-                    onChange={(event) => setDensity(event.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2 font-medium outline-none"
-                  />
-                </div>
-
+              <div className="space-y-2 pt-1">
                 <button
                   type="button"
                   onClick={handleRecommendReforest}
-                  disabled={reforestLoading}
+                  disabled={reforestLoading || !speciesGridId}
                   className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-800 py-3 font-bold text-white hover:bg-emerald-900 disabled:bg-slate-300"
                 >
                   {reforestLoading
-                    ? "AI 조림 타당성 분석 중..."
-                    : "AI 수종 전환 및 예산 가늠 시작"}
+                    ? "AI 수종전환 적합성 분석 중..."
+                    : "AI 수종 전환 및 예산 분석 시작"}
                 </button>
+                {reforestError && (
+                  <p className="flex items-center gap-1 text-3xs font-bold text-rose-600">
+                    <AlertCircle size={12} /> {reforestError}
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="lg:col-span-7">
-              <div className="flex min-h-[420px] flex-col justify-between rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="mb-4 border-b border-slate-100 pb-3 text-sm font-extrabold text-slate-800">
-                  📃 AI 추천 활엽 대체 수종 및 예산 분석서 (FR-ADM-004)
+              <div className="flex min-h-[420px] flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3 text-base font-black text-slate-950">
+                  <span>📃 AI 추천 대체 수종 및 조림 방향</span>
+                  {reforestData && (
+                    <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-3xs font-black text-emerald-800">
+                      {reforestData.is_ai_generated ? "AI 서술" : "근거 기반"}
+                    </span>
+                  )}
                 </h3>
 
                 {reforestLoading ? (
                   <div className="flex flex-1 flex-col items-center justify-center space-y-2 py-12 text-slate-400">
                     <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-emerald-800" />
                     <span className="text-xs font-bold text-slate-500">
-                      Gemini 3.5 모델이 토양 지질과 고도 기온 수치를
-                      대조 연산 중입니다...
+                      선택 격자의 입지·임상 근거를 분석 중입니다...
                     </span>
                   </div>
                 ) : reforestData ? (
@@ -847,55 +826,105 @@ export default function AdminSection() {
                     animate={{ opacity: 1 }}
                     className="flex-1 space-y-4 text-xs font-semibold leading-relaxed text-slate-700"
                   >
-                    <div className="rounded-2xl border border-emerald-100/60 bg-emerald-50 p-4">
-                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-emerald-800">
-                        추천 활엽 및 친환경 침엽수종
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                      <span className="mb-1.5 block text-3xs font-black uppercase tracking-wider text-slate-400">
+                        대상 격자 {reforestData.grid_id} · {reforestData.region}
                       </span>
-                      <div className="flex flex-wrap gap-2">
-                        {reforestData.species?.map(
-                          (species: string, index: number) => (
-                            <span
-                              key={index}
-                              className="inline-block rounded-lg border border-emerald-200 bg-white px-2.5 py-1.5 font-bold text-emerald-950 shadow-sm"
-                            >
-                              {species}
-                            </span>
-                          ),
-                        )}
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-slate-600">
+                        <span>
+                          기후대{" "}
+                          <b className="text-slate-900">
+                            {reforestData.site_summary.climate_zone ?? "-"}
+                          </b>
+                        </span>
+                        <span>
+                          산림토양형{" "}
+                          <b className="text-slate-900">
+                            {reforestData.site_summary.forest_soil_type ?? "-"}
+                          </b>
+                        </span>
+                        <span>
+                          토심{" "}
+                          <b className="text-slate-900">
+                            {reforestData.site_summary.soil_depth_class ?? "-"}
+                          </b>
+                        </span>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                        <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-400">
-                          지구당 수림 조림 추정 비용
-                        </span>
-                        <p className="text-xs font-extrabold text-slate-900">
-                          {reforestData.budget}
-                        </p>
+                    <div className="rounded-2xl border border-emerald-100/60 bg-emerald-50 p-4">
+                      <span className="mb-2 block text-3xs font-black uppercase tracking-wider text-emerald-800">
+                        추천 대체 수종
+                      </span>
+                      <div className="space-y-2">
+                        {reforestData.recommended_species.map((item, index) => (
+                          <div
+                            key={index}
+                            className="rounded-lg border border-emerald-200 bg-white p-2.5"
+                          >
+                            <span className="font-black text-emerald-950">
+                              {item.species}
+                            </span>
+                            <p className="mt-0.5 font-medium leading-relaxed text-slate-600">
+                              {item.reason}
+                            </p>
+                          </div>
+                        ))}
                       </div>
+                    </div>
 
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                        <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-400">
-                          고도 생존률 적합 평가
+                        <span className="mb-1 block text-3xs font-black uppercase tracking-wider text-slate-400">
+                          현재 임상 수종구성
                         </span>
-                        <p className="mt-0.5 font-medium leading-relaxed text-slate-600">
-                          {reforestData.elevation_suitability}
-                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {Object.entries(reforestData.current_composition).map(
+                            ([name, ratio]) => (
+                              <span
+                                key={name}
+                                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-3xs font-bold text-slate-700"
+                              >
+                                {name} {Math.round(ratio * 100)}%
+                              </span>
+                            ),
+                          )}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <span className="mb-1 block text-3xs font-black uppercase tracking-wider text-slate-400">
+                          지역 실제 우점 활엽수(근거)
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {reforestData.regional_broadleaf.map((item) => (
+                            <span
+                              key={item.species}
+                              className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-3xs font-bold text-slate-700"
+                            >
+                              {item.species}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
                     <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                      <span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-400">
-                        토양 지질 점착 타당성 원리
+                      <span className="mb-1 block text-3xs font-black uppercase tracking-wider text-slate-400">
+                        조림 예산(개략) 및 유의사항
                       </span>
-                      <p className="mt-0.5 font-medium leading-relaxed text-slate-600">
-                        {reforestData.soil_suitability}
+                      <p className="font-medium leading-relaxed text-slate-600">
+                        {reforestData.budget_estimate}
                       </p>
-                    </div>
-
-                    <div className="border-t border-slate-100 pt-2 text-right text-[10px] font-bold text-slate-400">
-                      본 결과는 연계된 AI 분석 서비스의 응답을 기반으로 생성되었습니다.
+                      {reforestData.rationale && (
+                        <p className="mt-1 font-medium leading-relaxed text-slate-600">
+                          {reforestData.rationale}
+                        </p>
+                      )}
+                      {reforestData.notes && (
+                        <p className="mt-1 text-3xs font-bold text-amber-700">
+                          {reforestData.notes}
+                        </p>
+                      )}
                     </div>
                   </motion.div>
                 ) : (
@@ -905,10 +934,9 @@ export default function AdminSection() {
                       className="animate-pulse stroke-[1.5] text-slate-300"
                     />
                     <span>
-                      좌측의 고사 피해 수림지 정보를 입력하고
+                      좌측 지도에서 위험후보 격자를 선택하고
                       <br />
-                      "AI 수종 전환 분석" 버튼을 누르면 연계된 분석 API가
-                      실행됩니다.
+                      "AI 수종 전환 분석" 버튼을 누르면 추천이 실행됩니다.
                     </span>
                   </div>
                 )}

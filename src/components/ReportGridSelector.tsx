@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { MAP_TILE_CONFIG } from "../utils/mapTileConfig";
+import { pickTextField } from "../utils/pickField";
 
 type GridFeature = GeoJSON.Feature<GeoJSON.Geometry, Record<string, unknown>>;
 
@@ -13,23 +15,12 @@ interface ReportGridSelectorProps {
   onGridSelect: (gridId: string) => void;
 }
 
-const GEOJSON_PATH = `${import.meta.env.BASE_URL}data/final_ui_candidate_v4.geojson`;
-const OSM_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const GEOJSON_PATH = "/data/final_ui_candidate_v4.geojson";
 const KOREA_CENTER: [number, number] = [36.2, 127.8];
 
 const SIDO_KEYS = ["sido_name", "sido", "ctpv_nm", "SIDO_NM"];
 const SIGUNGU_KEYS = ["sigungu_name", "sigungu", "sgg_nm", "SIGUNGU_NM"];
 const GRID_KEYS = ["grid_id", "id", "GRID_ID"];
-
-function pick(props: Record<string, unknown>, keys: string[]): string {
-  for (const key of keys) {
-    const value = props[key];
-    if (value !== null && value !== undefined && String(value).trim()) {
-      return String(value).trim().replace(/\.0$/, "");
-    }
-  }
-  return "";
-}
 
 function riskColor(props: Record<string, unknown>): string {
   const grade = String(
@@ -84,15 +75,15 @@ export default function ReportGridSelector({
   }, []);
 
   const sidos = useMemo(
-    () => Array.from(new Set(features.map((feature) => pick(feature.properties || {}, SIDO_KEYS)).filter(Boolean))).sort(),
+    () => Array.from(new Set(features.map((feature) => pickTextField(feature.properties || {}, SIDO_KEYS)).filter(Boolean))).sort(),
     [features],
   );
 
   const sigungus = useMemo(
     () => Array.from(new Set(
       features
-        .filter((feature) => pick(feature.properties || {}, SIDO_KEYS) === sidoName)
-        .map((feature) => pick(feature.properties || {}, SIGUNGU_KEYS))
+        .filter((feature) => pickTextField(feature.properties || {}, SIDO_KEYS) === sidoName)
+        .map((feature) => pickTextField(feature.properties || {}, SIGUNGU_KEYS))
         .filter(Boolean),
     )).sort(),
     [features, sidoName],
@@ -102,8 +93,8 @@ export default function ReportGridSelector({
     () => features.filter((feature) => {
       const props = feature.properties || {};
       return (
-        (!sidoName || pick(props, SIDO_KEYS) === sidoName) &&
-        (!sigunguName || pick(props, SIGUNGU_KEYS) === sigunguName)
+        (!sidoName || pickTextField(props, SIDO_KEYS) === sidoName) &&
+        (!sigunguName || pickTextField(props, SIGUNGU_KEYS) === sigunguName)
       );
     }),
     [features, sidoName, sigunguName],
@@ -117,9 +108,9 @@ export default function ReportGridSelector({
       zoomControl: true,
     }).setView(KOREA_CENTER, 7);
 
-    L.tileLayer(OSM_URL, {
+    L.tileLayer(MAP_TILE_CONFIG.base.url, {
       maxZoom: 19,
-      attribution: "&copy; OpenStreetMap",
+      attribution: MAP_TILE_CONFIG.base.attribution,
     }).addTo(map);
 
     mapRef.current = map;
@@ -146,7 +137,7 @@ export default function ReportGridSelector({
       {
         style: (feature) => {
           const props = (feature?.properties || {}) as Record<string, unknown>;
-          const gridId = pick(props, GRID_KEYS);
+          const gridId = pickTextField(props, GRID_KEYS);
           const selected = gridId === selectedGridId;
           return {
             color: selected ? "#0f172a" : "#ffffff",
@@ -157,7 +148,7 @@ export default function ReportGridSelector({
         },
         onEachFeature: (feature, featureLayer) => {
           const props = (feature.properties || {}) as Record<string, unknown>;
-          const gridId = pick(props, GRID_KEYS);
+          const gridId = pickTextField(props, GRID_KEYS);
           featureLayer.bindTooltip(`격자 ${gridId}`, { sticky: true });
           featureLayer.on("click", () => onGridSelect(gridId));
         },

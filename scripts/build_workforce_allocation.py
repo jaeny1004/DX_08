@@ -185,9 +185,24 @@ def normalize_risk_grade(
     properties: dict,
 ) -> str:
     """
-    모델 내부 위험단계 라벨을
-    UI 위험도 등급으로 변환한다.
+    고정 백분위 위험등급을 우선 사용하고,
+    없으면 모델 내부 위험단계 라벨을 변환한다.
     """
+    risk_grade = properties.get(
+        "risk_grade"
+    )
+
+    valid_grades = {
+        "매우 높음",
+        "높음",
+        "주의",
+        "관찰",
+        "낮음",
+    }
+
+    if risk_grade in valid_grades:
+        return str(risk_grade)
+
     stage_label = properties.get(
         "risk_stage_label"
     )
@@ -202,10 +217,7 @@ def normalize_risk_grade(
     if stage_label in mapping:
         return mapping[stage_label]
 
-    return str(
-        properties.get("risk_grade")
-        or "낮음"
-    )
+    return "낮음"
 
 
 def normalize_priority_grade(

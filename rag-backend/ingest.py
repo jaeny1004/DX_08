@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -9,6 +10,11 @@ from app.core.parsers import parse
 from app.core.store import make_store
 
 SUPPORTED = (".pdf", ".hwp", ".hwpx")
+BACKEND_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = BACKEND_ROOT.parent
+DEFAULT_DOCS_DIR = PROJECT_ROOT / "data" / "docs"
+DOCS_TEXT_CACHE_DIR = BACKEND_ROOT / "data" / "docs_text_cache"
+LEGACY_DOCS_DIR = BACKEND_ROOT / "data" / "docs"
 
 
 def run(docs_dir: str, store, embedder) -> dict:
@@ -16,9 +22,11 @@ def run(docs_dir: str, store, embedder) -> dict:
     for name in sorted(os.listdir(docs_dir)):
         if not name.lower().endswith(SUPPORTED):
             continue
-        path = os.path.join(docs_dir, name)
+        path = Path(docs_dir) / name
         try:
-            pages = parse(path)
+            cache_path = DOCS_TEXT_CACHE_DIR / f"{name}.json"
+            parse_path = LEGACY_DOCS_DIR / name if cache_path.is_file() else path
+            pages = parse(str(parse_path))
             chunks = chunk_pages(pages, doc_name=name)
             if chunks:
                 vectors = embedder.embed([c.text for c in chunks])
@@ -46,7 +54,7 @@ def main() -> None:
     load_dotenv()
     if not os.environ.get("OPENAI_API_KEY"):
         sys.exit("OPENAI_API_KEY가 없습니다. .env를 확인하세요.")
-    docs_dir = os.environ.get("DOCS_DIR", "./data/docs")
+    docs_dir = os.environ.get("DOCS_DIR", str(DEFAULT_DOCS_DIR))
     store = make_store()
     embedder = Embedder()
     report = run(docs_dir=docs_dir, store=store, embedder=embedder)

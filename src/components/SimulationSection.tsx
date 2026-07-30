@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { MAP_TILE_CONFIG } from "../utils/mapTileConfig";
 
 type ForecastMonth = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 type ViewMode = "current" | "noControl" | "control" | "effect";
@@ -54,28 +55,14 @@ type ControlArea = {
   selectedIds: Set<string>;
 };
 
-const SIGUNGU_BOUNDARY_PATH = `${import.meta.env.BASE_URL}data/sigungu_boundary.geojson`;
-const SIGUNGU_INDEX_PATH = `${import.meta.env.BASE_URL}data/simulation_sigungu/index.json`;
-const SIGUNGU_DATA_BASE = `${import.meta.env.BASE_URL}data/simulation_sigungu`;
+const SIGUNGU_BOUNDARY_PATH = "/data/sigungu_boundary.geojson";
+const SIGUNGU_INDEX_PATH = "/data/simulation_sigungu/index.json";
+const SIGUNGU_DATA_BASE = "/data/simulation_sigungu";
 
 const MIN_ZOOM = 6;
 const SIGUNGU_MAX_ZOOM = 9;
 const GRID_MIN_ZOOM = 10;
 const MAX_ZOOM = 15;
-
-const VWORLD_KEY = import.meta.env.VITE_VWORLD_API_KEY;
-
-const BASE_URL = VWORLD_KEY
-  ? `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Base/{z}/{y}/{x}.png`
-  : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-
-const SATELLITE_URL = VWORLD_KEY
-  ? `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Satellite/{z}/{y}/{x}.jpeg`
-  : "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-
-const HYBRID_URL = VWORLD_KEY
-  ? `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Hybrid/{z}/{y}/{x}.png`
-  : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
 const KOREA_BOUNDS = L.latLngBounds(
   L.latLng(32.5, 124),
@@ -439,6 +426,8 @@ export default function SimulationSection() {
 
   const featureLayerByIdRef = useRef<Map<string, L.Path>>(new Map());
   const gridCacheRef = useRef<Map<string, GridFeature[]>>(new Map());
+  const gridRequestControllerRef = useRef<AbortController | null>(null);
+  const gridRequestIdRef = useRef(0);
 
   const featuresRef = useRef<GridFeature[]>([]);
   const selectedSigunguRef = useRef<SigunguFeature | null>(null);
@@ -479,6 +468,14 @@ export default function SimulationSection() {
   useEffect(() => {
     selectedSigunguRef.current = selectedSigungu;
   }, [selectedSigungu]);
+
+  useEffect(
+    () => () => {
+      gridRequestControllerRef.current?.abort();
+      gridRequestIdRef.current += 1;
+    },
+    [],
+  );
 
   const derivedById = useMemo(() => {
     const map = new Map<string, DerivedGrid>();
@@ -591,30 +588,28 @@ export default function SimulationSection() {
     map.getPane("controlPane")!.style.zIndex = "470";
     map.getPane("controlPane")!.style.pointerEvents = "none";
 
-    const base = L.tileLayer(BASE_URL, {
+    const base = L.tileLayer(MAP_TILE_CONFIG.base.url, {
       maxZoom: 19,
       noWrap: true,
       bounds: KOREA_BOUNDS,
-      attribution: VWORLD_KEY
-        ? "VWorld"
-        : "© OpenStreetMap contributors",
+      attribution: MAP_TILE_CONFIG.base.attribution,
     });
 
-    const satellite = L.tileLayer(SATELLITE_URL, {
+    const satellite = L.tileLayer(MAP_TILE_CONFIG.satellite.url, {
       maxZoom: 19,
       noWrap: true,
       bounds: KOREA_BOUNDS,
-      attribution: VWORLD_KEY ? "VWorld" : "Esri World Imagery",
+      attribution: MAP_TILE_CONFIG.satellite.attribution,
     });
 
-    const hybrid = L.tileLayer(HYBRID_URL, {
-      maxZoom: 19,
-      noWrap: true,
-      bounds: KOREA_BOUNDS,
-      attribution: VWORLD_KEY
-        ? "VWorld"
-        : "© OpenStreetMap contributors",
-    });
+    const hybrid = MAP_TILE_CONFIG.hybrid
+      ? L.tileLayer(MAP_TILE_CONFIG.hybrid.url, {
+          maxZoom: 19,
+          noWrap: true,
+          bounds: KOREA_BOUNDS,
+          attribution: MAP_TILE_CONFIG.hybrid.attribution,
+        })
+      : null;
 
     base.addTo(map);
 
@@ -746,7 +741,7 @@ export default function SimulationSection() {
 
     if (baseMapMode === "base") {
       map.removeLayer(layers.satellite);
-      map.removeLayer(layers.hybrid);
+      if (layers.hybrid) map.removeLayer(layers.hybrid);
       if (!map.hasLayer(layers.base)) {
         layers.base.addTo(map);
       }
@@ -757,7 +752,7 @@ export default function SimulationSection() {
         layers.satellite.addTo(map);
       }
 
-      if (!map.hasLayer(layers.hybrid)) {
+      if (layers.hybrid && !map.hasLayer(layers.hybrid)) {
         layers.hybrid.addTo(map);
       }
     }
@@ -824,6 +819,12 @@ export default function SimulationSection() {
           });
 
           featureLayer.on("click", async () => {
+            gridRequestControllerRef.current?.abort();
+            const controller = new AbortController();
+            gridRequestControllerRef.current = controller;
+            const requestId = gridRequestIdRef.current + 1;
+            gridRequestIdRef.current = requestId;
+
             const indexItem = indexRef.current?.items.find(
               (item) =>
                 item.code === code ||
@@ -831,6 +832,8 @@ export default function SimulationSection() {
             );
 
             if (!indexItem) {
+              gridRequestControllerRef.current = null;
+              setLoading(false);
               setLoadError(
                 `${name}에 대응하는 시뮬레이션 파일을 index.json에서 찾지 못했습니다.`
               );
@@ -851,7 +854,8 @@ export default function SimulationSection() {
 
               if (!nextFeatures) {
                 const response = await fetch(
-                  `${SIGUNGU_DATA_BASE}/${indexItem.file}`
+                  `${SIGUNGU_DATA_BASE}/${indexItem.file}`,
+                  { signal: controller.signal },
                 );
 
                 if (!response.ok) {
@@ -863,8 +867,16 @@ export default function SimulationSection() {
                 gridCacheRef.current.set(indexItem.code, nextFeatures);
               }
 
+              if (
+                controller.signal.aborted ||
+                requestId !== gridRequestIdRef.current
+              ) {
+                return;
+              }
+
               setFeatures(nextFeatures);
               setLoading(false);
+              gridRequestControllerRef.current = null;
 
               const bounds = L.latLngBounds(
                 L.latLng(indexItem.bounds[1], indexItem.bounds[0]),
@@ -876,6 +888,13 @@ export default function SimulationSection() {
                * 제거된 지도에 fitBounds를 호출하는 문제가 발생하지 않습니다.
                */
               window.requestAnimationFrame(() => {
+                if (
+                  controller.signal.aborted ||
+                  requestId !== gridRequestIdRef.current
+                ) {
+                  return;
+                }
+
                 const currentMap = mapRef.current;
 
                 if (!currentMap) return;
@@ -893,11 +912,19 @@ export default function SimulationSection() {
                 }
               });
             } catch (error) {
+              if (
+                controller.signal.aborted ||
+                requestId !== gridRequestIdRef.current
+              ) {
+                return;
+              }
+
               console.error("시군구 격자 로딩 오류:", error);
               setLoadError(
                 `${name} 격자 파일을 불러오지 못했습니다. 브라우저 Network에서 ${indexItem.file} 응답을 확인하세요.`
               );
               setLoading(false);
+              gridRequestControllerRef.current = null;
             }
           });
         },
@@ -1021,6 +1048,7 @@ export default function SimulationSection() {
     month,
     viewMode,
     baseMapMode,
+    currentZoom,
   ]);
 
   useEffect(() => {
@@ -1394,7 +1422,7 @@ function Metric(props: {
 function SmallMetric(props: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-white border p-3">
-      <div className="text-[11px] text-[#64748B]">{props.label}</div>
+      <div className="text-2xs text-[#64748B]">{props.label}</div>
       <div className="text-sm font-extrabold">{props.value}</div>
     </div>
   );

@@ -1,0 +1,13 @@
+data/docs/
+data/chroma/
+data/generated_drafts/
+data/generated_reports/
+scripts/
+tests/
+venv/
+.venv/
+.env
+precompute-venv312/
+.tmp_vercel_size/
+**/__pycache__/**
+.pytest_cache/
