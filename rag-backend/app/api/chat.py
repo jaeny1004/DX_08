@@ -199,6 +199,10 @@ def search_documents(
     question: str,
     k: int = 8,
 ) -> list[Any]:
+    ensure_rag = getattr(request.app.state, "ensure_rag", None)
+    if ensure_rag is not None:
+        ensure_rag()
+
     store = getattr(request.app.state, "store", None)
     embedder = getattr(request.app.state, "embedder", None)
 

@@ -1,8 +1,6 @@
 import os
 from typing import Any
 
-from openai import OpenAI
-
 from app.core.models import Answer, SearchResult, Source
 
 DEFAULT_MODEL = os.environ.get(
@@ -243,7 +241,7 @@ def answer(
     history: list[dict],
     search_results: list[SearchResult],
     grid_context: dict[str, Any] | None = None,
-    client: OpenAI | None = None,
+    client: Any = None,
     k_context: int = 8,
 ) -> Answer:
     top_results = [
@@ -298,6 +296,8 @@ def answer(
             ),
         }
     )
+
+    from openai import OpenAI
 
     openai_client = client or OpenAI()
 
@@ -380,6 +380,8 @@ def generate_answer(
             ),
         }
     )
+
+    from openai import OpenAI
 
     response = OpenAI().chat.completions.create(
         model=DEFAULT_MODEL,

@@ -6,9 +6,6 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.embedder import Embedder
-from app.core.store import make_store
-
 
 # 앱 초기화 전에 .env를 읽는다.
 load_dotenv()
@@ -55,20 +52,32 @@ def create_app() -> FastAPI:
     )
 
     # -----------------------------
-    # RAG 초기화
+    # RAG 지연 초기화
     # -----------------------------
-    initialization_error: str | None = None
+    # make_store()/Embedder()와 그 의존성(supabase 등) import는 서버리스
+    # 콜드스타트를 무겁게 해 10초 제한을 넘긴다. 첫 RAG 사용(/chat) 때까지 지연한다.
+    app.state.store = None
+    app.state.embedder = None
+    app.state.initialization_error = None
+    app.state.rag_ready = False
 
-    try:
-        app.state.store = make_store()
-        app.state.embedder = Embedder()
-    except Exception as exc:
-        initialization_error = f"{type(exc).__name__}: {exc}"
-        print(f"[RAG 초기화 오류] {initialization_error}")
-        app.state.store = None
-        app.state.embedder = None
+    def _ensure_rag() -> None:
+        if app.state.rag_ready:
+            return
+        try:
+            from app.core.embedder import Embedder
+            from app.core.store import make_store
 
-    app.state.initialization_error = initialization_error
+            app.state.store = make_store()
+            app.state.embedder = Embedder()
+        except Exception as exc:
+            app.state.initialization_error = f"{type(exc).__name__}: {exc}"
+            print(f"[RAG 초기화 오류] {app.state.initialization_error}")
+            app.state.store = None
+            app.state.embedder = None
+        app.state.rag_ready = True
+
+    app.state.ensure_rag = _ensure_rag
 
     # -----------------------------
     # 인증 DB 초기화
