@@ -1,22 +1,27 @@
-import React, { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { 
-  ShieldAlert, 
-  Trash2, 
-  Plus, 
-  ListFilter, 
-  Layers, 
-  Database, 
-  Hammer, 
-  Flame, 
-  Check, 
-  Settings, 
-  Activity, 
-  AlertCircle 
+import React, { useState } from "react";
+import {
+  Plus,
+  Minus,
+  Layers,
+  SlidersHorizontal,
+  Database,
+  AlertCircle,
+  MapPin,
+  Navigation,
+  BatteryMedium,
+  Activity,
+  Package,
+  X,
+  Battery,
+  Gauge,
+  ListCheckIcon,
+  DatabaseIcon,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { ControlTask, GridCell } from "../types";
 
 interface ControlSectionProps {
+  mode: "status" | "work";
   tasks: ControlTask[];
   grids: GridCell[];
   onAddTask: (task: ControlTask) => void;
@@ -24,12 +29,12 @@ interface ControlSectionProps {
 }
 
 export default function ControlSection({
+  mode,
   tasks,
   grids,
   onAddTask,
-  onUpdateTaskProgress
+  onUpdateTaskProgress,
 }: ControlSectionProps) {
-  const [activeTab, setActiveTab] = useState<"operations" | "simulator" | "priorities">("operations");
 
   // CTR-003 Registration Form
   const [area, setArea] = useState("");
@@ -37,35 +42,7 @@ export default function ControlSection({
   const [company, setCompany] = useState("동해산림방제(주)");
   const [workers, setWorkers] = useState(10);
   const [isRegistering, setIsRegistering] = useState(false);
-
-  // CTR-004 Sim Variables
-  const [budget, setBudget] = useState<number>(12); // in 100M KRW
-  const [headcount, setHeadcount] = useState<number>(45); // workforce
-
-  // CTR-008 Attribute Weights
-  const [weightRisk, setWeightRisk] = useState<number>(40);
-  const [weightAccess, setWeightAccess] = useState<number>(30);
-  const [weightDensity, setWeightDensity] = useState<number>(30);
-
-  // Recalculating treatment priorities dynamically based on sliding weights (FR-CTR-008)
-  const prioritizedGrids = useMemo(() => {
-    return grids.map(g => {
-      // Simulate accessibility index (higher elevation = lower access convenience)
-      const simulatedAccessibility = Math.max(10, 100 - Math.round(g.elevation / 7));
-      
-      const weightedScore = (
-        (g.riskScore * 100 * (weightRisk / 100)) +
-        (simulatedAccessibility * (weightAccess / 100)) +
-        (g.pineDensity * (weightDensity / 100))
-      );
-
-      return {
-        ...g,
-        accessibility: simulatedAccessibility,
-        priorityScore: Number(weightedScore.toFixed(1))
-      };
-    }).sort((a, b) => b.priorityScore - a.priorityScore);
-  }, [grids, weightRisk, weightAccess, weightDensity]);
+  const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
 
   const handleRegisterTask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,472 +77,1626 @@ export default function ControlSection({
 
   return (
     <div className="space-y-6">
-      {/* Category Tabs */}
-      <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 text-sm font-bold text-slate-600 max-w-lg">
-        <button 
-          onClick={() => setActiveTab("operations")}
-          className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "operations" ? "bg-white text-emerald-950 shadow-sm" : "hover:text-slate-900"}`}
-        >
-          🛡️ 방제 현황 및 등록
-        </button>
-        <button 
-          onClick={() => setActiveTab("priorities")}
-          className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "priorities" ? "bg-white text-emerald-950 shadow-sm" : "hover:text-slate-900"}`}
-        >
-          🎛️ AI 최적 방제 우선순위
-        </button>
-        <button 
-          onClick={() => setActiveTab("simulator")}
-          className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === "simulator" ? "bg-white text-emerald-950 shadow-sm" : "hover:text-slate-900"}`}
-        >
-          🔮 예산 대비 확산 예측기
-        </button>
-      </div>
 
-      <AnimatePresence mode="wait">
-        {activeTab === "operations" && (
-          <motion.div 
-            key="operations-view"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-6"
-          >
-            {/* Control Tasks List (FR-CTR-002) */}
-            <div className="lg:col-span-8 space-y-6">
-              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
-                <div className="flex justify-between items-center mb-6">
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                      📋 국가 방제 공정 및 실적 대장 (CTR-002)
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      구역별 작업 진행 상황, 투입 공수 및 시공 계약 업체 연동 현황
-                    </p>
+      {/* =========================================
+          방제 공정 + GPS 영역
+      ========================================= */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+
+        {/* =========================================
+            방제 공정
+        ========================================= */}
+        <section className="xl:col-span-6">
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+            {/* =========================================
+                Header
+            ========================================= */}
+            <header className="border-b border-slate-200 bg-white px-5 py-4">
+
+              <div className="flex items-center justify-between gap-4">
+
+                <div className="min-w-0">
+
+                  <div className="flex items-center gap-2">
+
+                    <ListCheckIcon
+                      size={18}
+                      className="shrink-0 text-emerald-700"
+                    />
+
+                    <h2 className="text-base font-black text-slate-950">
+                      감염목 방제 작업 리스트
+                    </h2>
+
                   </div>
-                  <button 
-                    onClick={() => setIsRegistering(!isRegistering)}
-                    className="bg-emerald-800 text-white rounded-xl px-4 py-2 text-xs font-bold flex items-center gap-1.5 hover:bg-emerald-900 transition-colors"
-                  >
-                    <Plus size={14} />
-                    <span>작업 추가 배정</span>
-                  </button>
+
+                  <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                    방제 작업 리스트의 상세 정보를 관리합니다.
+                  </p>
+
                 </div>
 
-                {isRegistering && (
-                  <motion.form 
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    onSubmit={handleRegisterTask}
-                    className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-6 space-y-4 text-xs font-semibold"
+
+                {/* =========================================
+                    작업 추가 버튼
+                ========================================= */}
+                <button
+                  onClick={() => setIsRegistering(!isRegistering)}
+                  className="
+                    flex shrink-0 items-center gap-1.5
+                    rounded-lg
+                    bg-emerald-800
+                    px-3 py-2
+                    text-xs font-bold
+                    text-white
+                    transition
+                    hover:bg-emerald-900
+                  "
+                >
+
+                  {isRegistering ? (
+                    <X size={14} />
+                  ) : (
+                    <Plus size={14} />
+                  )}
+
+                  {isRegistering
+                    ? "취소"
+                    : "작업 추가 배정"
+                  }
+
+                </button>
+
+              </div>
+
+            </header>
+
+
+            {/* =========================================
+                작업 등록 폼
+            ========================================= */}
+            {isRegistering && (
+
+              <form
+                onSubmit={handleRegisterTask}
+                className="border-b border-slate-200 bg-slate-50 p-5"
+              >
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+
+                  {/* 대상 방제 구역 */}
+                  <div>
+
+                    <label className="mb-1 block text-[11px] font-bold text-slate-600">
+                      대상 방제 구역/주소
+                    </label>
+
+                    <input
+                      type="text"
+                      value={area}
+                      onChange={(e) =>
+                        setArea(e.target.value)
+                      }
+                      placeholder="예: 경북 포항시 죽장면 GRID-3629 산간"
+                      className="
+                        w-full
+                        rounded-lg
+                        border border-slate-200
+                        bg-white
+                        px-3 py-2
+                        text-xs
+                        text-slate-700
+                        outline-none
+                        transition
+                        placeholder:text-slate-400
+                        focus:border-emerald-500
+                        focus:ring-2
+                        focus:ring-emerald-100
+                      "
+                    />
+
+                  </div>
+
+
+                  {/* 표준 방제 기법 */}
+                  <div>
+
+                    <label className="mb-1 block text-[11px] font-bold text-slate-600">
+                      표준 방제 기법
+                    </label>
+
+                    <select
+                      value={method}
+                      onChange={(e) =>
+                        setMethod(
+                          e.target.value as ControlTask["method"]
+                        )
+                      }
+                      className="
+                        w-full
+                        rounded-lg
+                        border border-slate-200
+                        bg-white
+                        px-3 py-2
+                        text-xs
+                        text-slate-700
+                        outline-none
+                        transition
+                        focus:border-emerald-500
+                        focus:ring-2
+                        focus:ring-emerald-100
+                      "
+                    >
+
+                      <option>파쇄</option>
+                      <option>훈증</option>
+                      <option>소각</option>
+                      <option>나무주사</option>
+                      <option>항공방제</option>
+
+                    </select>
+
+                  </div>
+
+
+                  {/* 수주 시공사 */}
+                  <div>
+
+                    <label className="mb-1 block text-[11px] font-bold text-slate-600">
+                      수주 시공사
+                    </label>
+
+                    <input
+                      type="text"
+                      value={company}
+                      onChange={(e) =>
+                        setCompany(e.target.value)
+                      }
+                      className="
+                        w-full
+                        rounded-lg
+                        border border-slate-200
+                        bg-white
+                        px-3 py-2
+                        text-xs
+                        text-slate-700
+                        outline-none
+                        transition
+                        focus:border-emerald-500
+                        focus:ring-2
+                        focus:ring-emerald-100
+                      "
+                    />
+
+                  </div>
+
+
+                  {/* 투입 인력 */}
+                  <div>
+
+                    <label className="mb-1 block text-[11px] font-bold text-slate-600">
+                      투입 배정 인력 (공수)
+                    </label>
+
+                    <input
+                      type="number"
+                      value={workers}
+                      onChange={(e) =>
+                        setWorkers(Number(e.target.value))
+                      }
+                      className="
+                        w-full
+                        rounded-lg
+                        border border-slate-200
+                        bg-white
+                        px-3 py-2
+                        text-xs
+                        text-slate-700
+                        outline-none
+                        transition
+                        focus:border-emerald-500
+                        focus:ring-2
+                        focus:ring-emerald-100
+                      "
+                    />
+
+                  </div>
+
+                </div>
+
+
+                {/* =========================================
+                    Form Buttons
+                ========================================= */}
+                <div className="mt-4 flex justify-end gap-2">
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setIsRegistering(false)
+                    }
+                    className="
+                      rounded-lg
+                      border border-slate-200
+                      bg-white
+                      px-3 py-2
+                      text-xs font-bold
+                      text-slate-600
+                      transition
+                      hover:bg-slate-50
+                    "
                   >
-                    <div className="text-xs font-bold text-slate-800 border-b border-slate-200 pb-2 flex items-center gap-1">
-                      <Settings size={14} className="text-emerald-700" />
-                      <span>신규 방제 명령 등록 및 작업 구역 확정 (FR-CTR-003)</span>
-                    </div>
+                    취소
+                  </button>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <label className="text-slate-600 block">대상 방제 구역/주소</label>
-                        <input 
-                          type="text" 
-                          required
-                          value={area}
-                          onChange={(e) => setArea(e.target.value)}
-                          placeholder="예: 경북 포항시 죽장면 GRID-3629 산간"
-                          className="w-full bg-white border border-slate-200 rounded-xl p-2 font-medium outline-none"
-                        />
-                      </div>
 
-                      <div className="space-y-1">
-                        <label className="text-slate-600 block">표준 방제 기법</label>
-                        <select 
-                          value={method}
-                          onChange={(e) => setMethod(e.target.value as any)}
-                          className="w-full bg-white border border-slate-200 rounded-xl p-2 outline-none font-bold"
+                  <button
+                    type="submit"
+                    className="
+                      rounded-lg
+                      bg-emerald-800
+                      px-3 py-2
+                      text-xs font-bold
+                      text-white
+                      transition
+                      hover:bg-emerald-900
+                    "
+                  >
+                    시공 배정 완료
+                  </button>
+
+                </div>
+
+              </form>
+
+            )}
+
+
+            {/* =========================================
+                작업 테이블
+            ========================================= */}
+            <div className="overflow-x-auto">
+
+              <table className="w-full text-left text-xs">
+
+                {/* =========================================
+                    Table Header
+                ========================================= */}
+                <thead>
+
+                  <tr className="border-b border-slate-200 bg-slate-50">
+
+                    <th className="whitespace-nowrap px-3 py-2.5 text-[10px] font-bold text-slate-500">
+                      공정 ID
+                    </th>
+
+                    <th className="whitespace-nowrap px-3 py-2.5 text-[10px] font-bold text-slate-500">
+                      방제 구역
+                    </th>
+
+                    <th className="whitespace-nowrap px-3 py-2.5 text-[10px] font-bold text-slate-500">
+                      방제 방식
+                    </th>
+
+                    <th className="whitespace-nowrap px-3 py-2.5 text-[10px] font-bold text-slate-500">
+                      시공 업체
+                    </th>
+
+                    <th className="whitespace-nowrap px-3 py-2.5 text-[10px] font-bold text-slate-500">
+                      진척률
+                    </th>
+
+                    <th className="whitespace-nowrap px-3 py-2.5 text-[10px] font-bold text-slate-500">
+                      상태
+                    </th>
+
+                  </tr>
+
+                </thead>
+
+
+                {/* =========================================
+                    Table Body
+                ========================================= */}
+                <tbody>
+
+                  {tasks.map((task) => (
+
+                    <tr
+                      key={task.id}
+                      className="
+                        border-b border-slate-100
+                        transition
+                        hover:bg-slate-50
+                      "
+                    >
+
+                      {/* 공정 ID */}
+                      <td className="
+                        whitespace-nowrap
+                        px-3 py-3
+                        font-mono
+                        text-[10px]
+                        font-bold
+                        text-slate-700
+                      ">
+                        {task.id}
+                      </td>
+
+
+                      {/* 방제 구역 */}
+                      <td className="
+                        px-3 py-3
+                        text-[11px]
+                        text-slate-700
+                      ">
+                        {task.area}
+                      </td>
+
+
+                      {/* 방제 방식 */}
+                      <td className="px-3 py-3">
+
+                        <span
+                          className={`
+                            inline-flex
+                            rounded-md
+                            border
+                            px-1.5 py-1
+                            text-[10px]
+                            font-bold
+                            ${getMethodBadge(task.method)}
+                          `}
                         >
-                          <option>파쇄</option>
-                          <option>훈증</option>
-                          <option>소각</option>
-                          <option>나무주사</option>
-                          <option>항공방제</option>
-                        </select>
-                      </div>
+                          {task.method}
+                        </span>
 
-                      <div className="space-y-1">
-                        <label className="text-slate-600 block">수주 시공사</label>
-                        <input 
-                          type="text" 
-                          value={company}
-                          onChange={(e) => setCompany(e.target.value)}
-                          className="w-full bg-white border border-slate-200 p-2 rounded-xl outline-none font-medium"
-                        />
-                      </div>
+                      </td>
 
-                      <div className="space-y-1">
-                        <label className="text-slate-600 block">투입 배정 인력 (공수)</label>
-                        <input 
-                          type="number" 
-                          value={workers}
-                          onChange={(e) => setWorkers(Number(e.target.value))}
-                          className="w-full bg-white border border-slate-200 p-2 rounded-xl outline-none font-mono"
-                        />
-                      </div>
-                    </div>
 
-                    <div className="flex justify-end gap-2 text-xs pt-2">
-                      <button 
-                        type="button" 
-                        onClick={() => setIsRegistering(false)}
-                        className="px-3.5 py-2 border border-slate-200 bg-white rounded-xl font-bold text-slate-600"
-                      >
-                        취소
-                      </button>
-                      <button 
-                        type="submit" 
-                        className="px-4 py-2 bg-emerald-800 text-white rounded-xl font-bold hover:bg-emerald-900"
-                      >
-                        시공 배정 완료
-                      </button>
-                    </div>
-                  </motion.form>
+                      {/* 시공 업체 */}
+                      <td className="
+                        px-3 py-3
+                        text-[11px]
+                        text-slate-700
+                      ">
+                        {task.company}
+                      </td>
+
+
+                      {/* 진척률 */}
+                      <td className="px-3 py-3">
+
+                        <div className="flex items-center gap-1.5">
+
+                          <div className="
+                            h-1.5
+                            w-20
+                            overflow-hidden
+                            rounded-full
+                            bg-slate-100
+                          ">
+
+                            <div
+                              className="
+                                h-full
+                                rounded-full
+                                bg-emerald-600
+                                transition-all
+                              "
+                              style={{
+                                width: `${task.progress}%`,
+                              }}
+                            />
+
+                          </div>
+
+                          <span className="
+                            text-[10px]
+                            font-bold
+                            text-slate-600
+                          ">
+                            {task.progress}%
+                          </span>
+
+                        </div>
+
+                      </td>
+
+
+                      {/* 상태 */}
+                      <td className="
+                        whitespace-nowrap
+                        px-3 py-3
+                        text-[10px]
+                        font-bold
+                        text-slate-700
+                      ">
+                        {task.status}
+                      </td>
+
+                    </tr>
+
+                  ))}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+          </div>
+
+        </section>
+        {/* =========================================
+            RIGHT : 현장 출동 요원 위치
+        ========================================= */}
+        <section className="xl:col-span-6">
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+            {/* =========================================
+                Header
+            ========================================= */}
+            <header className="border-b border-slate-200 bg-white px-5 py-4">
+
+              <div className="flex items-center justify-between gap-4">
+
+                {/* 제목 영역 */}
+                <div className="min-w-0">
+
+                  <div className="flex items-center gap-2">
+
+                    <Navigation
+                      size={18}
+                      className="shrink-0 text-emerald-700"
+                    />
+
+                    <h2 className="text-base font-black text-slate-950">
+                      현장 출동 요원 위치
+                    </h2>
+
+                  </div>
+
+                  <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                    현장 방제요원의 위치 및 이동 경로를 확인합니다.
+                  </p>
+
+                </div>
+
+                {/* LIVE 상태 */}
+                <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-bold text-emerald-600">
+
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+
+                  LIVE
+
+                </span>
+
+              </div>
+
+            </header>
+
+
+            {/* =========================================
+                지도 영역
+            ========================================= */}
+            <div
+              className="
+                relative
+                h-[600px]
+                overflow-hidden
+                border
+                border-slate-200
+                bg-gradient-to-br
+                from-emerald-100/40
+                via-sky-50/30
+                to-emerald-50
+              "
+            >
+
+              {/* =========================================
+                  지도 배경
+              ========================================= */}
+              <div className="absolute inset-0">
+
+                {/* Grid */}
+                <div
+                  className="
+                    absolute
+                    inset-0
+                    grid
+                    grid-cols-8
+                    opacity-25
+                  "
+                >
+
+                  {Array.from({ length: 48 }).map((_, index) => (
+
+                    <div
+                      key={index}
+                      className="
+                        border-l
+                        border-t
+                        border-slate-400/30
+                      "
+                    />
+
+                  ))}
+
+                </div>
+
+
+                {/* =========================================
+                    이동 경로
+                ========================================= */}
+                <svg
+                  className="
+                    pointer-events-none
+                    absolute
+                    inset-0
+                    h-full
+                    w-full
+                  "
+                  viewBox="0 0 600 600"
+                  preserveAspectRatio="none"
+                >
+
+                  <motion.path
+                    d="
+                      M 40 470
+                      Q 150 250 280 370
+                      T 450 120
+                    "
+                    fill="none"
+                    stroke="#059669"
+                    strokeWidth="3"
+                    strokeDasharray="6 4"
+                    initial={{
+                      strokeDashoffset: 100,
+                    }}
+                    animate={{
+                      strokeDashoffset: -100,
+                    }}
+                    transition={{
+                      duration: 15,
+                      repeat: Infinity,
+                      ease: "linear",
+                    }}
+                  />
+
+                </svg>
+
+              </div>
+
+
+              {/* =========================================
+                  김예찰 마커
+              ========================================= */}
+              <button
+                type="button"
+                onClick={() => setSelectedWorkerId("W-101")}
+                className="
+                  absolute
+                  left-[27%]
+                  top-[34%]
+                  z-30
+                  flex
+                  h-8
+                  w-8
+                  cursor-pointer
+                  items-center
+                  justify-center
+                  rounded-full
+                  border-2
+                  border-white
+                  bg-emerald-800
+                  text-xs
+                  font-bold
+                  text-white
+                  shadow-lg
+                  transition-all
+                  hover:scale-125
+                  focus:outline-none
+                "
+                aria-label="김예찰 상세 정보"
+              >
+
+                {selectedWorkerId === "W-101" && (
+                  <span
+                    className="
+                      absolute
+                      inset-[-5px]
+                      rounded-full
+                      border-2
+                      border-emerald-300
+                    "
+                  />
                 )}
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-400 font-bold bg-slate-50/50">
-                        <th className="py-3 px-3">공정 ID</th>
-                        <th className="py-3 px-3">방제 구역</th>
-                        <th className="py-3 px-3">방제 방식</th>
-                        <th className="py-3 px-3">시공 업체</th>
-                        <th className="py-3 px-3">진척률 (게이지)</th>
-                        <th className="py-3 px-3 text-right">상태</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                      {tasks.map((task) => (
-                        <tr key={task.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="py-4 px-3 font-mono font-bold text-emerald-950">{task.id}</td>
-                          <td className="py-4 px-3 max-w-[140px] truncate">{task.area}</td>
-                          <td className="py-4 px-3">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getMethodBadge(task.method)}`}>
-                              {task.method}
-                            </span>
-                          </td>
-                          <td className="py-4 px-3 truncate text-slate-500 max-w-[120px]">{task.company}</td>
-                          <td className="py-4 px-3">
-                            <div className="space-y-1 max-w-[120px]">
-                              <div className="flex justify-between text-[10px] font-bold">
-                                <span>진척도</span>
-                                <span>{task.progress}%</span>
-                              </div>
-                              <input 
-                                type="range" 
-                                min={0} 
-                                max={100} 
-                                value={task.progress}
-                                onChange={(e) => onUpdateTaskProgress(task.id, Number(e.target.value))}
-                                className="w-full accent-emerald-700 h-1 bg-slate-100 rounded-full appearance-none"
-                              />
-                            </div>
-                          </td>
-                          <td className="py-4 px-3 text-right">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                              task.status === "완료" ? "bg-emerald-100 text-emerald-800" : task.status === "진행" ? "bg-sky-100 text-sky-800" : "bg-amber-100 text-amber-800"
-                            }`}>
-                              {task.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+                김
 
-            {/* Resources and inventory telemetry (FR-CTR-006) */}
-            <div className="lg:col-span-4 space-y-6">
-              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
-                <h3 className="text-sm font-extrabold text-slate-800 border-b border-slate-100 pb-3 flex items-center gap-1.5">
-                  <Database size={16} className="text-emerald-700" />
-                  <span>약제 및 방제 소모품 재고 통합 센서 (CTR-006)</span>
-                </h3>
+              </button>
 
-                <div className="space-y-4 text-xs font-semibold">
-                  <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl flex gap-3">
-                    <AlertCircle className="text-rose-500 shrink-0" size={18} />
-                    <div className="space-y-1">
-                      <div className="font-bold text-rose-900">훈증 천막 (노란색 타프) 재고 소진 임계치 접근</div>
-                      <p className="text-[10px] text-rose-700">포항 보관 창고에 잔여 천막 12개 검출됨. 긴급 훈증 수요 급증에 의한 자동 수급 경보 (FR-CTR-006 부합)</p>
-                    </div>
-                  </div>
 
-                  <div className="space-y-3 pt-2">
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-slate-600">
-                        <span>아바멕틴 주사 수간 주입제</span>
-                        <span className="text-slate-900 font-mono">840 리터 (84%)</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-emerald-600 h-full rounded-full" style={{ width: "84%" }} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-slate-600">
-                        <span>메탐소듐 훈증 전용 액제</span>
-                        <span className="text-slate-900 font-mono">1,200 리터 (91%)</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-emerald-600 h-full rounded-full" style={{ width: "91%" }} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-slate-600">
-                        <span>목재 자주식 파쇄기 가용도</span>
-                        <span className="text-slate-900 font-mono">8대 가동 가능 / 총 12대</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                        <div className="bg-emerald-500 h-full rounded-full" style={{ width: "66%" }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Treatment Priorities weighted multi-factor calculation console (FR-CTR-008) */}
-        {activeTab === "priorities" && (
-          <motion.div 
-            key="priorities-view"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-6"
-          >
-            {/* Weight tuning console */}
-            <div className="lg:col-span-5 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-1.5">
-                  🎛️ 다차원 가중 방제 우선순위 수립
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  AI 위험점수, 도로 접근 편의도, 소나무림 면적 비율의 가중치를 정교하게 연산하여 실시간 방제 우선순위를 배정합니다.
-                </p>
+              {/* =========================================
+                  김예찰 이름
+              ========================================= */}
+              <div
+                className="
+                  pointer-events-none
+                  absolute
+                  left-[27%]
+                  top-[27%]
+                  z-20
+                  -translate-x-1/2
+                  whitespace-nowrap
+                  rounded
+                  bg-slate-900
+                  px-2
+                  py-1
+                  text-[9px]
+                  font-bold
+                  text-white
+                "
+              >
+                김예찰 · 75% 진행
               </div>
 
-              <div className="space-y-5 text-xs font-semibold border-b border-slate-100 pb-5">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-slate-700">
-                    <span>1. XGBoost 예측 위험도 가중치</span>
-                    <span className="font-mono text-emerald-800 font-bold">{weightRisk}%</span>
-                  </div>
-                  <input 
-                    type="range" 
-                    min={0} 
-                    max={100} 
-                    value={weightRisk}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setWeightRisk(v);
-                      // Autoscale others
-                      const rem = 100 - v;
-                      setWeightAccess(Math.round(rem / 2));
-                      setWeightDensity(100 - v - Math.round(rem / 2));
+
+              {/* =========================================
+                  김예찰 상세 팝업
+                  - 지도 기준 위치
+                  - 마커 아래쪽
+        ========================================= */}
+              <AnimatePresence>
+
+                {selectedWorkerId === "W-101" && (
+
+                  <motion.div
+                    initial={{
+                      opacity: 0,
+                      scale: 0.95,
+                      y: -10,
                     }}
-                    className="w-full accent-emerald-800 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-slate-700">
-                    <span>2. 도로 접근 및 지형 편의성 가중치</span>
-                    <span className="font-mono text-emerald-800 font-bold">{weightAccess}%</span>
-                  </div>
-                  <input 
-                    type="range" 
-                    min={0} 
-                    max={100} 
-                    value={weightAccess}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setWeightAccess(v);
-                      const rem = 100 - v;
-                      setWeightRisk(Math.round(rem / 2));
-                      setWeightDensity(100 - v - Math.round(rem / 2));
+                    animate={{
+                      opacity: 1,
+                      scale: 1,
+                      y: 0,
                     }}
-                    className="w-full accent-emerald-800 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between text-slate-700">
-                    <span>3. 소나무림 밀도 비율 가중치</span>
-                    <span className="font-mono text-emerald-800 font-bold">{weightDensity}%</span>
-                  </div>
-                  <input 
-                    type="range" 
-                    min={0} 
-                    max={100} 
-                    value={weightDensity}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setWeightDensity(v);
-                      const rem = 100 - v;
-                      setWeightRisk(Math.round(rem / 2));
-                      setWeightAccess(100 - v - Math.round(rem / 2));
+                    exit={{
+                      opacity: 0,
+                      scale: 0.95,
+                      y: -10,
                     }}
-                    className="w-full accent-emerald-800 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
-                  />
-                </div>
-              </div>
+                    transition={{
+                      duration: 0.2,
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                    className="
+                      absolute
+                      left-[27%]
+                      top-[41%]
+                      z-50
+                      w-[280px]
+                      max-w-[calc(100%-32px)]
+                      -translate-x-1/2
+                      overflow-hidden
+                      rounded-2xl
+                      border
+                      border-slate-200
+                      bg-white
+                      shadow-2xl
+                    "
+                  >
 
-              <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 text-emerald-800 leading-relaxed text-xs">
-                💡 <b>가중치 튜닝 정보:</b> 환경 보호 및 국립공원 인근 구역의 경우 <b>소나무림 밀도</b>에 높은 우선 가중치를 두어 주변 확산을 미연에 방지할 수 있습니다.
-              </div>
-            </div>
+                    {/* 팝업 헤더 */}
+                    <div
+                      className="
+                        flex
+                        items-center
+                        justify-between
+                        border-b
+                        border-slate-100
+                        px-4
+                        py-3
+                      "
+                    >
 
-            {/* Calculated Priorities roster */}
-            <div className="lg:col-span-7 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
-              <h3 className="text-lg font-bold text-slate-900 mb-6">
-                🏆 실시간 가중 종합 방제 등급 및 수치 (FR-CTR-008)
-              </h3>
+                      <div className="flex items-center gap-2">
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-slate-400 font-bold bg-slate-50/50">
-                      <th className="py-3 px-3">우선순위</th>
-                      <th className="py-3 px-3">지역구명</th>
-                      <th className="py-3 px-3">위험점수</th>
-                      <th className="py-3 px-3">접근편의도</th>
-                      <th className="py-3 px-3 text-right">종합 등급점수</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                    {prioritizedGrids.slice(0, 5).map((g, idx) => (
-                      <tr key={g.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="py-3 px-3 text-center">
-                          <span className={`w-6 h-6 rounded-full inline-flex items-center justify-center font-black ${
-                            idx === 0 ? "bg-rose-500 text-white shadow-md shadow-rose-200" : idx === 1 ? "bg-amber-400 text-white" : "bg-slate-100 text-slate-600"
-                          }`}>
-                            {idx + 1}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 truncate max-w-[150px] font-bold text-slate-900">
-                          {g.region} <span className="text-[10px] text-slate-400 font-normal font-mono block">{g.id}</span>
-                        </td>
-                        <td className="py-3 px-3 font-mono">{(g.riskScore * 100).toFixed(0)}%</td>
-                        <td className="py-3 px-3 font-mono">{(g as any).accessibility}%</td>
-                        <td className="py-3 px-3 text-right text-sm font-black text-emerald-900">
-                          {(g as any).priorityScore}점
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Digital Twin infection spread simulation dashboard (FR-CTR-004) */}
-        {activeTab === "simulator" && (
-          <motion.div 
-            key="simulator-view"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6"
-          >
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-1.5">
-                🔮 디지털 트윈 기반 예산 및 인원 투입 규모별 확산 차단 효과 (CTR-004)
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                투입되는 연간 지자체 방제 예산과 예찰 요원의 실공수 비중에 따라 향후 3년 간의 예상 감염 면적 변화를 동적 그래프로 대조 예측합니다.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-4 bg-slate-50 border border-slate-200 p-5 rounded-2xl space-y-6 text-xs">
-                <div className="space-y-2">
-                  <div className="flex justify-between font-bold text-slate-700">
-                    <span>지자체 방제 연간 총 예산</span>
-                    <span className="font-mono text-emerald-800 font-bold">{budget} 억원</span>
-                  </div>
-                  <input 
-                    type="range" 
-                    min={1} 
-                    max={50} 
-                    value={budget}
-                    onChange={(e) => setBudget(Number(e.target.value))}
-                    className="w-full accent-emerald-800"
-                  />
-                  <span className="text-[10px] text-slate-400 block font-medium">※ 예산 증가 시 아바멕틴 수간주사 구매 수량 및 대형 파쇄 장비 투입이 비례 증가합니다.</span>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between font-bold text-slate-700">
-                    <span>예찰 및 조사 가용 인력 (공수)</span>
-                    <span className="font-mono text-emerald-800 font-bold">{headcount} 명</span>
-                  </div>
-                  <input 
-                    type="range" 
-                    min={10} 
-                    max={150} 
-                    value={headcount}
-                    onChange={(e) => setHeadcount(Number(e.target.value))}
-                    className="w-full accent-emerald-800"
-                  />
-                  <span className="text-[10px] text-slate-400 block font-medium">※ 요원 수가 증가하면 조기 예찰 확진목 검출 능력이 급격히 제고됩니다.</span>
-                </div>
-              </div>
-
-              <div className="lg:col-span-8 flex flex-col justify-between">
-                {/* Dynamically simulated prediction charts */}
-                <div className="bg-slate-900 rounded-2xl h-[220px] p-6 relative flex flex-col justify-between">
-                  <span className="text-[10px] text-slate-500 font-bold font-mono uppercase tracking-wider">// DYNAMIC PREDICTION GRAPH (EXPECTED TOTAL HA INFESTATION)</span>
-                  
-                  <div className="flex items-end justify-between gap-6 px-4 h-[120px] pt-6 border-b border-slate-800 pb-2">
-                    {[
-                      { year: "2026년", value: 340 },
-                      { year: "2027년 (예측)", value: Math.max(20, Math.round(390 - (budget * 5.4) - (headcount * 0.8))) },
-                      { year: "2028년 (예측)", value: Math.max(10, Math.round(440 - (budget * 9.8) - (headcount * 1.5))) },
-                    ].map((item, idx) => (
-                      <div key={idx} className="flex-1 flex flex-col items-center gap-2">
-                        <motion.div 
-                          animate={{ height: `${(item.value / 450) * 110}px` }}
-                          transition={{ type: "spring", stiffness: 80 }}
-                          className={`w-10 rounded-t-lg text-center flex items-center justify-center text-[10px] font-bold text-white ${
-                            idx === 0 ? "bg-rose-500" : item.value <= 120 ? "bg-emerald-500" : "bg-amber-400"
-                          }`}
+                        <div
+                          className="
+                            flex
+                            h-9
+                            w-9
+                            shrink-0
+                            items-center
+                            justify-center
+                            rounded-full
+                            bg-emerald-800
+                            text-sm
+                            font-bold
+                            text-white
+                          "
                         >
-                          <span className="drop-shadow-sm font-black">{item.value}ha</span>
-                        </motion.div>
-                        <span className="text-[10px] text-slate-400 font-semibold font-sans">{item.year}</span>
+                          김
+                        </div>
+
+                        <div>
+
+                          <div className="flex items-center gap-2">
+
+                            <span className="text-sm font-black text-slate-900">
+                              김예찰
+                            </span>
+
+                            <span
+                              className="
+                                rounded-full
+                                bg-emerald-100
+                                px-2
+                                py-0.5
+                                text-[9px]
+                                font-bold
+                                text-emerald-700
+                              "
+                            >
+                              활동 중
+                            </span>
+
+                          </div>
+
+                          <p className="mt-0.5 text-[9px] text-slate-400">
+                            GPS ID : W-101
+                          </p>
+
+                        </div>
+
                       </div>
-                    ))}
-                  </div>
 
-                  <div className="text-[10px] text-slate-400 font-bold text-center">
-                    연간 예산 및 공수 조절에 따른 3개년 누적 고사목 확산 시뮬레이션
-                  </div>
-                </div>
 
-                <div className="bg-emerald-50 text-emerald-800 p-3.5 rounded-2xl border border-emerald-100 text-xs font-semibold leading-relaxed mt-4">
-                  💡 <b>디지털 트윈 종합 평가:</b> 현재 가용한 {budget}억원의 방제비 및 {headcount}명의 예찰 인력 확보 시, 2년 뒤인 2028년에는 전국의 예상 감염 피해 면적이 약 <b>{Math.max(10, Math.round(440 - (budget * 9.8) - (headcount * 1.5)))} ha</b> 수준으로 수렴 및 통제될 것으로 분석됩니다.
-                </div>
+                      {/* 닫기 */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWorkerId(null)}
+                        className="
+                          flex
+                          h-7
+                          w-7
+                          shrink-0
+                          items-center
+                          justify-center
+                          rounded-full
+                          text-lg
+                          text-slate-400
+                          transition
+                          hover:bg-slate-100
+                          hover:text-slate-700
+                        "
+                        aria-label="팝업 닫기"
+                      >
+                        ×
+                      </button>
+
+                    </div>
+
+
+                    {/* 팝업 내용 */}
+                    <div className="p-3">
+
+                      <div className="grid grid-cols-2 gap-2">
+
+                        {/* 위치 */}
+                        <div className="rounded-xl bg-slate-50 p-2.5">
+
+                          <div
+                            className="
+                              mb-1
+                              flex
+                              items-center
+                              gap-1
+                              text-[9px]
+                              font-bold
+                              text-slate-400
+                            "
+                          >
+                            <MapPin size={11} />
+                            위치
+                          </div>
+
+                          <p
+                            className="
+                              text-[10px]
+                              font-bold
+                              leading-relaxed
+                              text-slate-800
+                            "
+                          >
+                            경북 포항 죽장면
+                            <br />
+                            GRID-3629
+                          </p>
+
+                        </div>
+
+
+                        {/* 배터리 */}
+                        <div className="rounded-xl bg-slate-50 p-2.5">
+
+                          <div
+                            className="
+                              mb-1
+                              flex
+                              items-center
+                              gap-1
+                              text-[9px]
+                              font-bold
+                              text-slate-400
+                            "
+                          >
+                            <Battery size={11} />
+                            배터리
+                          </div>
+
+                          <p className="text-xs font-black text-emerald-600">
+                            87%
+                          </p>
+
+                        </div>
+
+
+                        {/* 진행률 */}
+                        <div className="rounded-xl bg-slate-50 p-2.5">
+
+                          <div
+                            className="
+                              mb-1
+                              flex
+                              items-center
+                              gap-1
+                              text-[9px]
+                              font-bold
+                              text-slate-400
+                            "
+                          >
+                            <Gauge size={11} />
+                            진행률
+                          </div>
+
+                          <p className="text-xs font-black text-slate-800">
+                            75%
+                          </p>
+
+                        </div>
+
+
+                        {/* GPS */}
+                        <div className="rounded-xl bg-slate-50 p-2.5">
+
+                          <div
+                            className="
+                              mb-1
+                              flex
+                              items-center
+                              gap-1
+                              text-[9px]
+                              font-bold
+                              text-slate-400
+                            "
+                          >
+                            <Navigation size={11} />
+                            GPS
+                          </div>
+
+                          <p className="text-[10px] font-black text-emerald-600">
+                            CONNECTED
+                          </p>
+
+                        </div>
+
+                      </div>
+
+
+                      {/* 현재 임무 */}
+                      <div className="mt-2 rounded-xl bg-slate-50 p-2.5">
+
+                        <div className="mb-1 text-[9px] font-bold text-slate-400">
+                          CURRENT MISSION
+                        </div>
+
+                        <p className="text-[10px] leading-relaxed text-slate-700">
+                          시민 제보 지역 주변 감염 의심목 현장 확인 및 시료 채취
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                  </motion.div>
+
+                )}
+
+              </AnimatePresence>
+
+
+              {/* =========================================
+                  박요원 마커
+              ========================================= */}
+              <button
+                type="button"
+                onClick={() => setSelectedWorkerId("W-102")}
+                className="
+                  absolute
+                  bottom-[35%]
+                  right-[25%]
+                  z-30
+                  flex
+                  h-8
+                  w-8
+                  cursor-pointer
+                  items-center
+                  justify-center
+                  rounded-full
+                  border-2
+                  border-white
+                  bg-emerald-800
+                  text-xs
+                  font-bold
+                  text-white
+                  shadow-lg
+                  transition-all
+                  hover:scale-125
+                  focus:outline-none
+                "
+                aria-label="박요원 상세 정보"
+              >
+
+                {selectedWorkerId === "W-102" && (
+                  <span
+                    className="
+                      absolute
+                      inset-[-5px]
+                      rounded-full
+                      border-2
+                      border-emerald-300
+                    "
+                  />
+                )}
+
+                박
+
+              </button>
+
+
+              {/* =========================================
+                  박요원 이름
+              ========================================= */}
+              <div
+                className="
+                  pointer-events-none
+                  absolute
+                  bottom-[42%]
+                  right-[25%]
+                  z-20
+                  translate-x-1/2
+                  whitespace-nowrap
+                  rounded
+                  bg-slate-900
+                  px-2
+                  py-1
+                  text-[9px]
+                  font-bold
+                  text-white
+                "
+              >
+                박요원 · 48% 진행
               </div>
+
+
+              {/* =========================================
+                  박요원 상세 팝업
+                  - 지도 기준 위치
+                  - 마커 위쪽
+        ========================================= */}
+              <AnimatePresence>
+
+                {selectedWorkerId === "W-102" && (
+
+                  <motion.div
+                    initial={{
+                      opacity: 0,
+                      scale: 0.95,
+                      y: 10,
+                    }}
+                    animate={{
+                      opacity: 1,
+                      scale: 1,
+                      y: 0,
+                    }}
+                    exit={{
+                      opacity: 0,
+                      scale: 0.95,
+                      y: 10,
+                    }}
+                    transition={{
+                      duration: 0.2,
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                    className="
+                      absolute
+                      bottom-[42%]
+                      right-[25%]
+                      z-50
+                      w-[280px]
+                      max-w-[calc(100%-32px)]
+                      translate-x-1/2
+                      overflow-hidden
+                      rounded-2xl
+                      border
+                      border-slate-200
+                      bg-white
+                      shadow-2xl
+                    "
+                  >
+
+                    {/* 팝업 헤더 */}
+                    <div
+                      className="
+                        flex
+                        items-center
+                        justify-between
+                        border-b
+                        border-slate-100
+                        px-4
+                        py-3
+                      "
+                    >
+
+                      <div className="flex items-center gap-2">
+
+                        <div
+                          className="
+                            flex
+                            h-9
+                            w-9
+                            shrink-0
+                            items-center
+                            justify-center
+                            rounded-full
+                            bg-emerald-800
+                            text-sm
+                            font-bold
+                            text-white
+                          "
+                        >
+                          박
+                        </div>
+
+                        <div>
+
+                          <div className="flex items-center gap-2">
+
+                            <span className="text-sm font-black text-slate-900">
+                              박요원
+                            </span>
+
+                            <span
+                              className="
+                                rounded-full
+                                bg-emerald-100
+                                px-2
+                                py-0.5
+                                text-[9px]
+                                font-bold
+                                text-emerald-700
+                              "
+                            >
+                              활동 중
+                            </span>
+
+                          </div>
+
+                          <p className="mt-0.5 text-[9px] text-slate-400">
+                            GPS ID : W-102
+                          </p>
+
+                        </div>
+
+                      </div>
+
+
+                      {/* 닫기 */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWorkerId(null)}
+                        className="
+                          flex
+                          h-7
+                          w-7
+                          shrink-0
+                          items-center
+                          justify-center
+                          rounded-full
+                          text-lg
+                          text-slate-400
+                          transition
+                          hover:bg-slate-100
+                          hover:text-slate-700
+                        "
+                        aria-label="팝업 닫기"
+                      >
+                        ×
+                      </button>
+
+                    </div>
+
+
+                    {/* 팝업 내용 */}
+                    <div className="p-3">
+
+                      <div className="grid grid-cols-2 gap-2">
+
+                        {/* 위치 */}
+                        <div className="rounded-xl bg-slate-50 p-2.5">
+
+                          <div
+                            className="
+                              mb-1
+                              flex
+                              items-center
+                              gap-1
+                              text-[9px]
+                              font-bold
+                              text-slate-400
+                            "
+                          >
+                            <MapPin size={11} />
+                            위치
+                          </div>
+
+                          <p
+                            className="
+                              text-[10px]
+                              font-bold
+                              leading-relaxed
+                              text-slate-800
+                            "
+                          >
+                            경북 포항 북구
+                            <br />
+                            GRID-4218
+                          </p>
+
+                        </div>
+
+
+                        {/* 배터리 */}
+                        <div className="rounded-xl bg-slate-50 p-2.5">
+
+                          <div
+                            className="
+                              mb-1
+                              flex
+                              items-center
+                              gap-1
+                              text-[9px]
+                              font-bold
+                              text-slate-400
+                            "
+                          >
+                            <Battery size={11} />
+                            배터리
+                          </div>
+
+                          <p className="text-xs font-black text-emerald-600">
+                            64%
+                          </p>
+
+                        </div>
+
+
+                        {/* 진행률 */}
+                        <div className="rounded-xl bg-slate-50 p-2.5">
+
+                          <div
+                            className="
+                              mb-1
+                              flex
+                              items-center
+                              gap-1
+                              text-[9px]
+                              font-bold
+                              text-slate-400
+                            "
+                          >
+                            <Gauge size={11} />
+                            진행률
+                          </div>
+
+                          <p className="text-xs font-black text-slate-800">
+                            48%
+                          </p>
+
+                        </div>
+
+
+                        {/* GPS */}
+                        <div className="rounded-xl bg-slate-50 p-2.5">
+
+                          <div
+                            className="
+                              mb-1
+                              flex
+                              items-center
+                              gap-1
+                              text-[9px]
+                              font-bold
+                              text-slate-400
+                            "
+                          >
+                            <Navigation size={11} />
+                            GPS
+                          </div>
+
+                          <p className="text-[10px] font-black text-emerald-600">
+                            CONNECTED
+                          </p>
+
+                        </div>
+
+                      </div>
+
+
+                      {/* 현재 임무 */}
+                      <div className="mt-2 rounded-xl bg-slate-50 p-2.5">
+
+                        <div className="mb-1 text-[9px] font-bold text-slate-400">
+                          CURRENT MISSION
+                        </div>
+
+                        <p className="text-[10px] leading-relaxed text-slate-700">
+                          포항 북구 예찰 구역 정기 순찰 및 감염목 의심 개체 조사
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                  </motion.div>
+
+                )}
+
+              </AnimatePresence>
+
+
+              {/* =========================================
+                  감염 의심 위치
+              ========================================= */}
+              <div
+                className="
+                  absolute
+                  right-[20%]
+                  top-[25%]
+                  z-20
+                "
+              >
+
+                <div
+                  className="
+                    h-4
+                    w-4
+                    animate-ping
+                    rounded-full
+                    bg-rose-500
+                  "
+                />
+
+                <span
+                  className="
+                    absolute
+                    left-1/2
+                    top-5
+                    -translate-x-1/2
+                    whitespace-nowrap
+                    rounded
+                    border
+                    border-rose-200
+                    bg-rose-100
+                    px-2
+                    py-1
+                    text-[9px]
+                    font-bold
+                    text-rose-800
+                  "
+                >
+                  감염 의심 지점
+                </span>
+
+              </div>
+
+
+              {/* =========================================
+                  Telemetry
+              ========================================= */}
+              <div
+                className="
+                  absolute
+                  bottom-3
+                  left-3
+                  z-20
+                  rounded-lg
+                  bg-slate-900/90
+                  p-2
+                  font-mono
+                  text-[9px]
+                  text-white
+                "
+              >
+
+                <div>
+                  GPS SYNC: 30s INTERV
+                </div>
+
+                <div>
+                  TELEMETRY ACTIVE
+                </div>
+
+              </div>
+
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
+          </div>
+
+        </section>        
+      </div>  
+        
+
+      {/* ======================================== */}
+      {/* 약제 및 방제 소모품 재고*/}
+      {/* ======================================== */}
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+        {/* =========================================
+            Header
+        ========================================= */}
+        <header className="border-b border-slate-200 bg-white px-5 py-4">
+
+          <div className="flex items-center justify-between gap-4">
+
+            {/* 제목 영역 */}
+            <div className="min-w-0">
+
+              <div className="flex items-center gap-2">
+
+                <DatabaseIcon
+                  size={18}
+                  className="shrink-0 text-emerald-700"
+                />
+
+                <h2 className="text-base font-black text-slate-950">
+                  약제 및 방제 소모품 재고
+                </h2>
+
+              </div>
+
+              <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                실시간 재고 및 방제 장비 가동 현황을 확인합니다.
+              </p>
+
+            </div>
+
+          </div>
+
+        </header>
+
+
+        {/* =========================================
+            재고 카드 영역
+        ========================================= */}
+        <div className="p-4">
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+
+
+            {/* =========================================
+                재고 경고
+            ========================================= */}
+            <div
+              className="
+                flex
+                items-center
+                gap-3
+                rounded-xl
+                border
+                border-red-200
+                bg-red-50
+                p-3.5
+              "
+            >
+
+              <div
+                className="
+                  flex
+                  h-9
+                  w-9
+                  shrink-0
+                  items-center
+                  justify-center
+                  rounded-lg
+                  bg-red-600
+                  text-white
+                "
+              >
+                <AlertCircle size={18} />
+              </div>
+
+
+              <div className="min-w-0">
+
+                <h3 className="text-[11px] font-bold text-red-900">
+                  훈증 천막 재고 소진
+                </h3>
+
+                <p className="mt-0.5 text-[10px] leading-relaxed text-red-700">
+                  포항 보관 창고 잔여 12개 · 긴급 발주 권장
+                </p>
+
+              </div>
+
+            </div>
+
+
+            {/* =========================================
+                아바멕틴
+            ========================================= */}
+            <div
+              className="
+                rounded-xl
+                border
+                border-slate-200
+                bg-white
+                p-3.5
+                transition
+                hover:border-emerald-200
+                hover:shadow-sm
+              "
+            >
+
+              <div className="mb-2.5 flex items-center justify-between gap-2">
+
+                <h3 className="truncate text-[11px] font-bold text-slate-600">
+                  아바멕틴 주사 수간 주입제
+                </h3>
+
+                <span className="shrink-0 text-[10px] font-bold text-emerald-700">
+                  840L · 84%
+                </span>
+
+              </div>
+
+
+              {/* Progress */}
+              <div className="h-5 overflow-hidden rounded-md bg-slate-100 p-0.5">
+
+                <div
+                  className="h-full rounded bg-emerald-600 transition-all"
+                  style={{
+                    width: "84%",
+                  }}
+                />
+
+              </div>
+
+            </div>
+
+
+            {/* =========================================
+                메탐소듐
+            ========================================= */}
+            <div
+              className="
+                rounded-xl
+                border
+                border-slate-200
+                bg-white
+                p-3.5
+                transition
+                hover:border-emerald-200
+                hover:shadow-sm
+              "
+            >
+
+              <div className="mb-2.5 flex items-center justify-between gap-2">
+
+                <h3 className="truncate text-[11px] font-bold text-slate-600">
+                  메탐소듐 훈증 전용 액제
+                </h3>
+
+                <span className="shrink-0 text-[10px] font-bold text-emerald-700">
+                  1,200L · 91%
+                </span>
+
+              </div>
+
+
+              {/* Progress */}
+              <div className="h-5 overflow-hidden rounded-md bg-slate-100 p-0.5">
+
+                <div
+                  className="h-full rounded bg-emerald-600 transition-all"
+                  style={{
+                    width: "91%",
+                  }}
+                />
+
+              </div>
+
+            </div>
+
+
+            {/* =========================================
+                파쇄기
+            ========================================= */}
+            <div
+              className="
+                rounded-xl
+                border
+                border-slate-200
+                bg-white
+                p-3.5
+                transition
+                hover:border-emerald-200
+                hover:shadow-sm
+              "
+            >
+
+              <div className="mb-2.5 flex items-center justify-between gap-2">
+
+                <h3 className="truncate text-[11px] font-bold text-slate-600">
+                  목재 자주식 파쇄기 가동도
+                </h3>
+
+                <span className="shrink-0 text-[10px] font-bold text-emerald-700">
+                  8 / 12대
+                </span>
+
+              </div>
+
+
+              {/* Equipment Status */}
+              <div className="flex h-5 gap-0.5 rounded-md bg-slate-100 p-0.5">
+
+                {Array.from({ length: 12 }).map((_, index) => (
+
+                  <div
+                    key={index}
+                    className={`
+                      flex-1
+                      rounded-sm
+                      transition-all
+                      ${
+                        index < 8
+                          ? "bg-emerald-600"
+                          : "bg-slate-300"
+                      }
+                    `}
+                  />
+
+                ))}
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      </section>
     </div>
+
   );
 }
