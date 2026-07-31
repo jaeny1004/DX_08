@@ -856,7 +856,10 @@ export default function DashboardRiskMapCard({
       !selectedSigunguCode ||
       !infectionSpatialFeatures.length
     ) {
-      setVisibleInfectionHistoryFeatures([]);
+      // 이미 빈 배열이면 같은 참조를 반환해 불필요한 재렌더(무한 루프) 방지
+      setVisibleInfectionHistoryFeatures((prev) =>
+        prev.length === 0 ? prev : [],
+      );
       return;
     }
 
@@ -887,7 +890,13 @@ export default function DashboardRiskMapCard({
       })
       .map(({ feature }) => feature);
 
-    setVisibleInfectionHistoryFeatures(visible);
+    // 내용이 동일하면 같은 참조를 반환해 불필요한 재렌더(무한 루프) 방지
+    setVisibleInfectionHistoryFeatures((prev) =>
+      prev.length === visible.length &&
+      prev.every((feature, index) => feature === visible[index])
+        ? prev
+        : visible,
+    );
   }, [
     infectionSpatialFeatures,
     showInfectionHistory,
