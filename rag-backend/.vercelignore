@@ -1,0 +1,22 @@
+# 환경·캐시
+.env
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# Supabase로 이전된 원본 문서와 로컬 캐시
+data/docs/
+data/docs_text_cache/
+data/chroma/
+data/*.db
+
+# 사용하지 않는 중간 GeoJSON
+data/final_ui_candidate_v4_before_admin.geojson
+data/final_ui_candidate_v4_with_admin.geojson
+
+# 배포 불필요 파일
+scripts/
+ingest.py
+run_rag_server.bat
