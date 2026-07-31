@@ -44,6 +44,123 @@ export interface TreeRecord {
   inspector: string;
   photoUrl?: string;
   timeline: Array<{ stage: string; date: string; note: string; actor: string }>;
+  sourceReportId?: string;
+  aiProbability?: number;
+  latitude?: number;
+  longitude?: number;
+  imageUrl?: string;
+  imageSource?: TreeImageSource;
+imageBucket?: string;
+imagePath?: string;
+
+analysisResult?:
+  TreeThermalAnalysis;
+}
+
+export type FieldPhotoWorkMode =
+  | "surveillance"
+  | "control";
+
+export interface FieldPhotoRecord {
+  id: string;
+
+  workMode:
+    FieldPhotoWorkMode;
+
+  relatedRecordId: string;
+
+  storagePath: string;
+
+  latitude: number;
+  longitude: number;
+
+  altitude?: number;
+
+  capturedAt: string;
+  createdAt?: string;
+
+  uploaderId?: string;
+  note?: string;
+}
+
+export type FieldVoiceLogStatus =
+  | "processing"
+  | "completed"
+  | "error";
+
+export interface FieldVoiceLogRecord {
+  id: string;
+
+  workMode:
+    FieldPhotoWorkMode;
+
+  relatedRecordId: string;
+
+  storageBucket: string;
+  storagePath: string;
+
+  mimeType?: string;
+
+  durationSeconds?: number;
+
+  transcript?: string;
+
+  sttStatus:
+    FieldVoiceLogStatus;
+
+  sttError?: string;
+
+  latitude?: number;
+  longitude?: number;
+
+  capturedAt: string;
+  createdAt?: string;
+
+  uploaderId?: string;
+
+  note?: string;
+}
+
+export type TreeImageSource =
+  | "citizen"
+  | "thermal"
+  | "manual";
+
+export interface TreeThermalPrediction {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  confidence: number;
+  class: string;
+}
+
+export interface TreeThermalAnalysis {
+  ok?: boolean;
+
+  status:
+    | "INFECTED"
+    | "NORMAL";
+
+  infectedCount: number;
+
+  predictions:
+    TreeThermalPrediction[];
+
+  image?: {
+    width?: number;
+    height?: number;
+  } | null;
+
+  storage?: {
+    bucket: string;
+    path: string;
+  };
+
+  selectedPredictionIndex?: number;
+
+  altitude?: number;
+  capturedAt?: string;
 }
 
 export interface WorkerStatus {
@@ -63,7 +180,11 @@ export interface CrowdReport {
   region: string;
   reporter: string;
   date: string;
-  status: "접수" | "검토" | "확진전환" | "반려";
+  status:
+  | "접수 완료"
+  | "조사 완료"
+  | "방제 완료"
+  | "반려";
   aiProbability: number;
   description: string;
   photoUrl?: string;
@@ -269,21 +390,3 @@ export const initialTrees: TreeRecord[] = [
   },
 ];
 
-export const initialWorkers: WorkerStatus[] = [
-  { id: "W-101", name: "김예찰", region: "경북 포항 죽장면", status: "출동", battery: 94, progress: 75, distance: "1.2km", lastActive: "14:32" },
-  { id: "W-102", name: "박조사", region: "경남 밀양 산내면", status: "출동", battery: 82, progress: 40, distance: "3.4km", lastActive: "14:29" },
-  { id: "W-103", name: "이요원", region: "전남 순천 승주읍", status: "대기", battery: 100, progress: 0, distance: "-", lastActive: "14:00" },
-  { id: "W-104", name: "최예찰", region: "강원 원주 신림면", status: "복귀", battery: 45, progress: 100, distance: "8.1km", lastActive: "14:31" },
-];
-
-export const initialCrowdReports: CrowdReport[] = [
-  { id: "CR-9204", title: "학구산 정상 등산로 부근 소나무 집단 변색", region: "전남 순천시 서면", reporter: "이민우", date: "2026-07-07", status: "검토", aiProbability: 84, description: "등산로 우측 20m 지점에 잎이 적갈색으로 완전히 말라버린 소나무 3그루가 밀집해 있습니다." },
-  { id: "CR-9202", title: "농장 경계지 해송 고사 의심", region: "경북 포항시 기계면", reporter: "박순옥", date: "2026-07-06", status: "접수", aiProbability: 76, description: "송진이 전혀 나오지 않고 잎 끝부터 노랗게 타들어가고 있습니다." },
-  { id: "CR-9195", title: "밀양강변 인근 소나무 단일 고사", region: "경남 밀양시 삼문동", reporter: "최범수", date: "2026-07-04", status: "확진전환", aiProbability: 92, description: "강변 자전거도로 인근 소나무 가변이 급속히 일어남." },
-];
-
-export const initialControlTasks: ControlTask[] = [
-  { id: "CTR-034", area: "경북 포항 죽장면 산42", method: "파쇄", status: "진행", company: "동해산림방제(주)", workers: 12, progress: 65, startDate: "2026-07-07", endDate: "2026-07-12" },
-  { id: "CTR-035", area: "경남 밀양 산내면 산5", method: "훈증", status: "예정", company: "영남임업", workers: 8, progress: 0, startDate: "2026-07-10", endDate: "2026-07-15" },
-  { id: "CTR-031", area: "전남 순천 승주읍 산12", method: "나무주사", status: "완료", company: "순천산림조합", workers: 15, progress: 100, startDate: "2026-07-01", endDate: "2026-07-05" },
-];

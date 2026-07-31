@@ -33,7 +33,7 @@ const INITIAL_MESSAGE: Message = {
   id: "initial",
   role: "assistant",
   text:
-    "안녕하세요. 소나무재선충병 예찰·방제지원 AI입니다.\n\n" +
+    "안녕하세요. 아임파인의 AI 챗봇입니다.\n\n" +
     "등록된 백서·방제지침·연구자료와 지도에서 선택한 위험격자 정보를 함께 분석합니다.\n" +
     "답변 하단에서 가장 관련성이 높은 근거 문서와 페이지를 확인할 수 있습니다.\n\n" +
     "AI 답변은 의사결정 지원을 위한 참고자료이며, 최종 판단은 담당자의 검토가 필요합니다.",
@@ -194,7 +194,7 @@ export default function Chatbot({
           text:
             "지식엔진에 연결하지 못했습니다.\n\n" +
             `${errorMessage}\n\n` +
-            "RAG 백엔드가 8788 포트에서 실행 중인지 확인해 주세요.",
+            "지식엔진이 정상적으로 연결되어 있는지 확인해주세요.",
           sources: [],
           error: true,
         },
@@ -232,18 +232,11 @@ export default function Chatbot({
             </span>
 
             <span className="text-[11px] text-slate-400 font-bold">
-              위험격자·백서 통합 분석
+              RAG 지식엔진
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 shrink-0">
-          <Sparkles
-            size={11}
-            className="text-emerald-600"
-          />
-          <span>RAG 지식엔진</span>
-        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 text-sm">
@@ -322,8 +315,8 @@ export default function Chatbot({
 
             <div className="bg-slate-100 text-slate-500 px-4 py-3 rounded-2xl rounded-tl-none border border-slate-200/70">
               {selectedGrid
-                ? "선택 격자 정보와 백서 근거를 함께 분석하고 있습니다..."
-                : "등록된 백서와 방제지침에서 근거를 검색하고 있습니다..."}
+                ? "선택 격자 정보와 백서 근거를 함께 분석하고 있습니다"
+                : "등록된 백서와 방제지침에서 근거를 검색하고 있습니다"}
             </div>
           </div>
         )}
@@ -393,8 +386,8 @@ export default function Chatbot({
             disabled={isLoading}
             placeholder={
               selectedGrid
-                ? "선택 격자의 위험도·예찰 조치를 질문하세요..."
-                : "등록된 백서·방제지침에 대해 질문하세요..."
+                ? "선택 격자의 위험도·예찰 조치를 질문하세요!"
+                : "도움이 필요한 질문을 입력해주세요!"
             }
             className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold outline-none focus:bg-white focus:border-emerald-800 transition-colors"
           />

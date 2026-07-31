@@ -1,1 +1,23 @@
 @import "tailwindcss";
+
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@layer utilities {
+  .text-2xs {
+    font-size: 0.6875rem;
+    line-height: 0.95rem;
+  }
+
+  .text-3xs {
+    font-size: 0.625rem;
+    line-height: 0.875rem;
+  }
+}
