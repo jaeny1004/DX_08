@@ -66,6 +66,7 @@ import Dashboard from "./components/Dashboard";
 import MonitoringSection from "./components/MonitoringSection";
 import FieldSection from "./components/FieldSection";
 import ThermalAnalysisSection from "./components/ThermalAnalysisSection";
+import DroneVisionAnalysisSection from "./components/DroneVisionAnalysisSection";
 import ControlSection from "./components/ControlSection";
 import SimulationSection from "./components/SimulationSection";
 import AdminSection from "./components/AdminSection";
@@ -514,6 +515,7 @@ type ModuleId =
   | "monitoring"
   | "field"
   | "thermal-analysis"
+  | "drone-vision-analysis"
   | "control"
   | "control-status"
   | "control-work"
@@ -1914,9 +1916,17 @@ export default function App() {
                       {/* 실사 드론 사진 감염도 확인 */}
                       <button
                         type="button"
-                        disabled
-                        title="준비 중"
-                        className="flex h-9 w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 text-left text-slate-400 opacity-50"
+                        onClick={() =>
+                          setActiveModule(
+                            "drone-vision-analysis"
+                          )
+                        }
+                        className={
+                          activeModule ===
+                          "drone-vision-analysis"
+                            ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                            : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
                       >
                         <Camera
                           size={16}
@@ -1983,14 +1993,22 @@ export default function App() {
                       {/* 실사 드론 사진 감염도 확인 */}
                       <button
                         type="button"
-                        disabled
-                        title="준비 중"
-                        className="group/submenu relative flex h-10 w-12 cursor-not-allowed items-center justify-center rounded-lg text-slate-300 opacity-50"
+                        onClick={() =>
+                          setActiveModule(
+                            "drone-vision-analysis"
+                          )
+                        }
+                        className={
+                          activeModule ===
+                          "drone-vision-analysis"
+                            ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                            : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
                       >
                         <Camera size={18} />
 
                         <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
-                          실사 드론 사진 감염도 확인 · 준비 중
+                          실사 드론 사진 감염도 확인
                         </span>
                       </button>
 
@@ -2344,6 +2362,14 @@ export default function App() {
                 {activeModule === "thermal-analysis" && (
                   <div className="h-full min-h-0 overflow-y-auto pr-1">
                     <ThermalAnalysisSection
+                      onAddTree={handleAddTree}
+                    />
+                  </div>
+                )}
+
+                {activeModule === "drone-vision-analysis" && (
+                  <div className="h-full min-h-0 overflow-y-auto pr-1">
+                    <DroneVisionAnalysisSection
                       onAddTree={handleAddTree}
                     />
                   </div>

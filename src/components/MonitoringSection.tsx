@@ -139,6 +139,21 @@ function confidencePercent(
   );
 }
 
+function actualConfidencePercent(
+  confidence: number,
+): number {
+  if (!Number.isFinite(confidence)) {
+    return 0;
+  }
+
+  return confidence > 1
+    ? Math.min(confidence, 100)
+    : Math.max(
+      0,
+      Math.min(confidence * 100, 100),
+    );
+}
+
 async function getEdgeFunctionErrorMessage(
   error: unknown,
 ): Promise<string> {
@@ -173,7 +188,8 @@ type TimelineImageSource =
   | "citizen"
   | "field-surveillance"
   | "field-control"
-  | "thermal";
+  | "thermal"
+  | "drone-visible";
 
 type TimelineImageData = {
   id: string;
@@ -666,6 +682,95 @@ export default function MonitoringSection({
 
           actor:
             "드론 열화상 AI 시스템",
+
+          image,
+        });
+      }
+
+      /*
+       * 가시광선 드론 비전 분석에서 전환된 확진목
+       */
+      if (
+        selectedTree.imageSource ===
+        "drone-visible" &&
+        (
+          selectedTree.imagePath ||
+          selectedTree.imageUrl
+        )
+      ) {
+        const visiblePath =
+          selectedTree.imagePath ||
+          selectedTree.imageUrl;
+
+        const isPublicUrl =
+          visiblePath?.startsWith("http");
+
+        const image:
+          TimelineImageData = {
+          id:
+            `drone-visible-${selectedTree.id}`,
+
+          source:
+            "drone-visible",
+
+          title:
+            "드론 실사 비전 AI 판독 이미지",
+
+          capturedAt:
+            selectedTree
+              .analysisResult
+              ?.capturedAt ||
+            selectedTree.confirmedDate,
+
+          latitude:
+            selectedTree.latitude,
+
+          longitude:
+            selectedTree.longitude,
+
+          aiProbability:
+            selectedTree.aiProbability,
+
+          analysisResult:
+            selectedTree.analysisResult,
+
+          directUrl:
+            isPublicUrl
+              ? visiblePath
+              : undefined,
+
+          storageBucket:
+            isPublicUrl
+              ? undefined
+              : (
+                selectedTree
+                  .imageBucket ||
+                "drone-images"
+              ),
+
+          storagePath:
+            isPublicUrl
+              ? undefined
+              : visiblePath,
+        };
+
+        items.push({
+          id:
+            `timeline-drone-visible-${selectedTree.id}`,
+
+          stage:
+            "드론 실사 비전 AI 판독 이미지",
+
+          date:
+            image.capturedAt,
+
+          note:
+            `가시광선 비전 AI 분석 결과입니다. ` +
+            `감염 신뢰도: ` +
+            `${selectedTree.aiProbability ?? 0}%`,
+
+          actor:
+            "드론 실사 비전 AI 시스템",
 
           image,
         });
@@ -1403,6 +1508,9 @@ export default function MonitoringSection({
       case "thermal":
         return "드론 열화상 AI";
 
+      case "drone-visible":
+        return "드론 실사 비전 AI";
+
       default:
         return "현장 이미지";
     }
@@ -1938,7 +2046,9 @@ export default function MonitoringSection({
                                 {item.image && (
                                   <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[9px] font-bold text-emerald-700">
                                     {item.image.source ===
-                                      "thermal" ? (
+                                      "thermal" ||
+                                      item.image.source ===
+                                      "drone-visible" ? (
                                       <Bot size={11} />
                                     ) : (
                                       <Camera size={11} />
@@ -2377,9 +2487,11 @@ export default function MonitoringSection({
                     className="absolute inset-0 h-full w-full object-fill"
                   />
 
-                  {/* 열화상 AI 탐지 박스 */}
-                  {selectedImage.source ===
-                    "thermal" &&
+                  {/* 드론 AI 탐지 박스 */}
+                  {(selectedImage.source ===
+                    "thermal" ||
+                    selectedImage.source ===
+                    "drone-visible") &&
                     selectedImage.analysisResult
                       ?.predictions.map(
                         (
@@ -2490,8 +2602,14 @@ export default function MonitoringSection({
                             >
                               <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-yellow-300 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
                                 #{index + 1}{" "}
-                                {confidencePercent(
-                                  prediction.confidence
+                                {(selectedImage.source ===
+                                  "drone-visible"
+                                  ? actualConfidencePercent(
+                                    prediction.confidence
+                                  )
+                                  : confidencePercent(
+                                    prediction.confidence
+                                  )
                                 ).toFixed(1)}
                                 %
                               </span>
@@ -2564,8 +2682,9 @@ export default function MonitoringSection({
                 </div>
               </div>
 
-              {/* 열화상 AI 정보 */}
-              {selectedImage.source === "thermal" && (
+              {/* 드론 AI 판독 정보 */}
+              {(selectedImage.source === "thermal" ||
+                selectedImage.source === "drone-visible") && (
                 <div className="space-y-3 rounded-2xl border border-rose-100 bg-rose-50 p-4">
                   <div className="flex items-center gap-2">
                     <Bot
@@ -2574,7 +2693,9 @@ export default function MonitoringSection({
                     />
 
                     <span className="text-xs font-black text-rose-700">
-                      AI 열화상 판독 결과
+                      {selectedImage.source === "thermal"
+                        ? "AI 열화상 판독 결과"
+                        : "AI 실사 비전 판독 결과"}
                     </span>
                   </div>
 
