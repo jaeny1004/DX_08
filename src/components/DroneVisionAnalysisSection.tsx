@@ -11,7 +11,9 @@ import {
 import { motion } from "motion/react";
 import {
   Camera,
+  Clock3,
   ImageIcon,
+  LoaderCircle,
   MapPin,
   ScanSearch,
   UploadCloud,
@@ -75,6 +77,7 @@ type VisionProcessStatus =
 
 type VisionProcessItem = {
   status: VisionProcessStatus;
+  startedAt?: number;
   storagePath?: string;
   result?: VisionDetectionResult;
   error?: string;
@@ -191,6 +194,9 @@ export default function DroneVisionAnalysisSection({
   const [batchError, setBatchError] =
     useState("");
 
+  const [elapsedTick, setElapsedTick] =
+    useState(() => Date.now());
+
   const [convertedVisionIds, setConvertedVisionIds] =
     useState<Set<string>>(
       () => new Set(),
@@ -214,6 +220,22 @@ export default function DroneVisionAnalysisSection({
       );
     };
   }, [visionInputs]);
+
+  useEffect(() => {
+    if (!isBatchAnalyzing) {
+      return;
+    }
+
+    setElapsedTick(Date.now());
+
+    const timer = window.setInterval(() => {
+      setElapsedTick(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [isBatchAnalyzing]);
 
   const updateProcess = (
     id: string,
@@ -323,6 +345,7 @@ export default function DroneVisionAnalysisSection({
       try {
         updateProcess(item.id, {
           status: "uploading",
+          startedAt: Date.now(),
           result: undefined,
           error: undefined,
         });
@@ -457,9 +480,54 @@ export default function DroneVisionAnalysisSection({
 
   const progressPercent =
     batchProgress.total > 0
-      ? (batchProgress.completed /
-        batchProgress.total) * 100
+      ? Math.min(
+        100,
+        ((batchProgress.completed +
+          (Object.values(processById).some(
+            (process) =>
+              process.status === "analyzing",
+          )
+            ? 0.7
+            : Object.values(processById).some(
+              (process) =>
+                process.status === "uploading",
+            )
+              ? 0.25
+              : 0)) /
+          batchProgress.total) * 100,
+      )
       : 0;
+
+  const activeProcessEntry =
+    visionInputs
+      .map((item) => ({
+        item,
+        process: processById[item.id],
+      }))
+      .find(
+        ({ process }) =>
+          process?.status === "uploading" ||
+          process?.status === "analyzing",
+      );
+
+  const activeElapsedSeconds =
+    activeProcessEntry?.process?.startedAt
+      ? Math.max(
+        0,
+        Math.floor(
+          (elapsedTick -
+            activeProcessEntry.process.startedAt) /
+          1000,
+        ),
+      )
+      : 0;
+
+  const activeElapsedText =
+    activeElapsedSeconds >= 60
+      ? `${Math.floor(activeElapsedSeconds / 60)}분 ${
+        activeElapsedSeconds % 60
+      }초`
+      : `${activeElapsedSeconds}초`;
 
   const sourceImageWidth =
     selectedResult?.image?.width ||
@@ -825,12 +893,43 @@ export default function DroneVisionAnalysisSection({
 
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
                 <div
-                  className="h-full rounded-full bg-emerald-600 transition-all"
+                  className={`h-full rounded-full bg-emerald-600 transition-all duration-500 ${
+                    isBatchAnalyzing
+                      ? "animate-pulse"
+                      : ""
+                  }`}
                   style={{
                     width: `${progressPercent}%`,
                   }}
                 />
               </div>
+
+              {isBatchAnalyzing &&
+                activeProcessEntry && (
+                  <div className="mt-3 flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+                    <LoaderCircle
+                      size={16}
+                      className="shrink-0 animate-spin text-emerald-700"
+                    />
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[10px] font-black text-emerald-900">
+                        {activeProcessEntry.process.status ===
+                        "uploading"
+                          ? "이미지를 안전하게 업로드하고 있습니다."
+                          : "비전 AI가 감염 의심목을 탐지하고 있습니다."}
+                      </p>
+                      <p className="mt-0.5 text-[8px] font-semibold text-emerald-700/70">
+                        정상적으로 처리 중입니다. 완료될 때까지 창을 닫지 마세요.
+                      </p>
+                    </div>
+
+                    <span className="flex shrink-0 items-center gap-1 text-[9px] font-black tabular-nums text-emerald-700">
+                      <Clock3 size={11} />
+                      {activeElapsedText}
+                    </span>
+                  </div>
+                )}
 
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <div className="rounded-xl bg-slate-50 p-3">
@@ -905,6 +1004,10 @@ export default function DroneVisionAnalysisSection({
                         "bg-rose-100 text-rose-700";
                     }
 
+                    const isProcessing =
+                      process?.status === "uploading" ||
+                      process?.status === "analyzing";
+
                     return (
                       <button
                         key={item.id}
@@ -933,7 +1036,13 @@ export default function DroneVisionAnalysisSection({
                             </p>
                           </div>
 
-                          <span className={`shrink-0 rounded-md px-2 py-1 text-[8px] font-black ${statusClass}`}>
+                          <span className={`flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[8px] font-black ${statusClass}`}>
+                            {isProcessing && (
+                              <LoaderCircle
+                                size={9}
+                                className="animate-spin"
+                              />
+                            )}
                             {statusText}
                           </span>
                         </div>

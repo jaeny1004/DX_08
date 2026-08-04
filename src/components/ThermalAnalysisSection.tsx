@@ -11,6 +11,8 @@ import {
 import { motion } from "motion/react";
 import {
     Camera,
+    Clock3,
+    LoaderCircle,
     MapPin,
     Thermometer,
     UploadCloud,
@@ -81,6 +83,7 @@ type ThermalProcessStatus =
 
 type ThermalProcessItem = {
     status: ThermalProcessStatus;
+    startedAt?: number;
     storagePath?: string;
     result?: ThermalDetectionResult;
     error?: string;
@@ -197,6 +200,9 @@ export default function ThermalAnalysisSection({
     const [batchError, setBatchError] =
         useState("");
 
+    const [elapsedTick, setElapsedTick] =
+        useState(() => Date.now());
+
     const [
         convertedThermalIds,
         setConvertedThermalIds,
@@ -222,6 +228,22 @@ export default function ThermalAnalysisSection({
             );
         };
     }, [thermalInputs]);
+
+    useEffect(() => {
+        if (!isBatchAnalyzing) {
+            return;
+        }
+
+        setElapsedTick(Date.now());
+
+        const timer = window.setInterval(() => {
+            setElapsedTick(Date.now());
+        }, 1000);
+
+        return () => {
+            window.clearInterval(timer);
+        };
+    }, [isBatchAnalyzing]);
 
     const updateThermalProcess = (
         id: string,
@@ -302,6 +324,7 @@ export default function ThermalAnalysisSection({
             try {
                 updateThermalProcess(item.id, {
                     status: "uploading",
+                    startedAt: Date.now(),
                     error: undefined,
                     result: undefined,
                 });
@@ -468,10 +491,64 @@ export default function ThermalAnalysisSection({
 
     const progressPercent =
         batchProgress.total > 0
-            ? (batchProgress.completed /
-                batchProgress.total) *
-            100
+            ? Math.min(
+                100,
+                ((batchProgress.completed +
+                    (Object.values(
+                        thermalProcessById,
+                    ).some(
+                        (process) =>
+                            process.status ===
+                            "analyzing",
+                    )
+                        ? 0.7
+                        : Object.values(
+                            thermalProcessById,
+                        ).some(
+                            (process) =>
+                                process.status ===
+                                "uploading",
+                        )
+                            ? 0.25
+                            : 0)) /
+                    batchProgress.total) *
+                100,
+            )
             : 0;
+
+    const activeProcessEntry = thermalInputs
+        .map((item) => ({
+            item,
+            process:
+                thermalProcessById[item.id],
+        }))
+        .find(
+            ({ process }) =>
+                process?.status === "uploading" ||
+                process?.status === "analyzing",
+        );
+
+    const activeElapsedSeconds =
+        activeProcessEntry?.process?.startedAt
+            ? Math.max(
+                0,
+                Math.floor(
+                    (elapsedTick -
+                        activeProcessEntry.process
+                            .startedAt) /
+                    1000,
+                ),
+            )
+            : 0;
+
+    const activeElapsedText =
+        activeElapsedSeconds >= 60
+            ? `${Math.floor(
+                activeElapsedSeconds / 60,
+            )}분 ${
+                activeElapsedSeconds % 60
+            }초`
+            : `${activeElapsedSeconds}초`;
 
     const handleConvertThermalToTrees = () => {
         if (
@@ -785,15 +862,37 @@ export default function ThermalAnalysisSection({
 
                                 {selectedProcess?.status ===
                                     "uploading" && (
-                                        <div className="absolute inset-0 flex items-center justify-center bg-black/55 text-xs font-black text-white">
-                                            Supabase Storage 업로드 중...
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/55 text-white backdrop-blur-[1px]">
+                                            <LoaderCircle
+                                                size={28}
+                                                className="animate-spin text-emerald-300"
+                                            />
+                                            <div className="text-center">
+                                                <p className="text-xs font-black">
+                                                    Supabase Storage 업로드 중
+                                                </p>
+                                                <p className="mt-1 text-[10px] font-semibold text-white/70">
+                                                    정상적으로 처리 중입니다.
+                                                </p>
+                                            </div>
                                         </div>
                                     )}
 
                                 {selectedProcess?.status ===
                                     "analyzing" && (
-                                        <div className="absolute inset-0 flex items-center justify-center bg-black/55 text-xs font-black text-white">
-                                            Roboflow AI 분석 중...
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/55 text-white backdrop-blur-[1px]">
+                                            <LoaderCircle
+                                                size={28}
+                                                className="animate-spin text-amber-300"
+                                            />
+                                            <div className="text-center">
+                                                <p className="text-xs font-black">
+                                                    Roboflow AI 분석 중
+                                                </p>
+                                                <p className="mt-1 text-[10px] font-semibold text-white/70">
+                                                    열 이상 영역을 탐지하고 있습니다.
+                                                </p>
+                                            </div>
                                         </div>
                                     )}
 
@@ -875,12 +974,44 @@ export default function ThermalAnalysisSection({
 
                             <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                                 <div
-                                    className="h-full rounded-full bg-emerald-600 transition-all duration-300"
+                                    className={`h-full rounded-full bg-emerald-600 transition-all duration-500 ${
+                                        isBatchAnalyzing
+                                            ? "animate-pulse"
+                                            : ""
+                                    }`}
                                     style={{
                                         width: `${progressPercent}%`,
                                     }}
                                 />
                             </div>
+
+                            {isBatchAnalyzing &&
+                                activeProcessEntry && (
+                                    <div className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+                                        <LoaderCircle
+                                            size={16}
+                                            className="shrink-0 animate-spin text-emerald-700"
+                                        />
+
+                                        <div className="min-w-0 flex-1">
+                                            <p className="truncate text-[10px] font-black text-emerald-900">
+                                                {activeProcessEntry.process
+                                                    .status ===
+                                                "uploading"
+                                                    ? "열화상 이미지를 안전하게 업로드하고 있습니다."
+                                                    : "비전 AI가 열 이상 영역을 탐지하고 있습니다."}
+                                            </p>
+                                            <p className="mt-0.5 text-[8px] font-semibold text-emerald-700/70">
+                                                정상적으로 처리 중입니다. 완료될 때까지 창을 닫지 마세요.
+                                            </p>
+                                        </div>
+
+                                        <span className="flex shrink-0 items-center gap-1 text-[9px] font-black tabular-nums text-emerald-700">
+                                            <Clock3 size={11} />
+                                            {activeElapsedText}
+                                        </span>
+                                    </div>
+                                )}
 
                             <div className="grid grid-cols-2 gap-2">
                                 <div className="rounded-xl bg-slate-50 p-3">
@@ -981,6 +1112,12 @@ export default function ThermalAnalysisSection({
                                                 "bg-rose-100 text-rose-700";
                                         }
 
+                                        const isProcessing =
+                                            process?.status ===
+                                                "uploading" ||
+                                            process?.status ===
+                                                "analyzing";
+
                                         return (
                                             <button
                                                 key={item.id}
@@ -1010,8 +1147,14 @@ export default function ThermalAnalysisSection({
                                                     </div>
 
                                                     <span
-                                                        className={`shrink-0 rounded px-2 py-0.5 text-[9px] font-black ${statusClass}`}
+                                                        className={`flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[9px] font-black ${statusClass}`}
                                                     >
+                                                        {isProcessing && (
+                                                            <LoaderCircle
+                                                                size={9}
+                                                                className="animate-spin"
+                                                            />
+                                                        )}
                                                         {statusText}
                                                     </span>
                                                 </div>
