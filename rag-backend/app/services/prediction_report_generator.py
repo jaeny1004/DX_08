@@ -541,7 +541,17 @@ def request_vworld_map(
 
     for params in attempts:
         try:
-            response = httpx.get(endpoint, params=params, timeout=30)
+            response = httpx.get(
+                endpoint,
+                params=params,
+                timeout=httpx.Timeout(10.0, connect=5.0),
+                headers={
+                    "Accept": "image/png,image/*;q=0.9,*/*;q=0.1",
+                    "User-Agent": "PineWiltReportGenerator/1.0",
+                    "Connection": "close",
+                },
+                follow_redirects=True,
+            )
             response.raise_for_status()
             if "image" not in response.headers.get(
                 "content-type",
@@ -566,6 +576,66 @@ def request_vworld_map(
         "VWorld 지도 이미지를 받지 못했습니다. "
         f"마지막 오류: {last_error}"
     )
+
+
+def create_fallback_map_background(
+    center_lon: float,
+    center_lat: float,
+    width: int = MAP_WIDTH,
+    height: int = MAP_HEIGHT,
+) -> Image.Image:
+    """VWorld 장애 시에도 보고서를 만들 수 있는 로컬 분석 배경을 생성한다."""
+    image = Image.new("RGBA", (width, height), (241, 245, 249, 255))
+    draw = ImageDraw.Draw(image, "RGBA")
+
+    # 지도처럼 위치를 가늠할 수 있는 좌표 격자
+    grid_step = 64
+    for x in range(0, width + 1, grid_step):
+        draw.line((x, 0, x, height), fill=(148, 163, 184, 58), width=1)
+    for y in range(0, height + 1, grid_step):
+        draw.line((0, y, width, y), fill=(148, 163, 184, 58), width=1)
+
+    # 외부 타일 없이도 배경과 분석 격자가 구분되도록 단순 지형 요소를 표시
+    river_points = [
+        (-40, int(height * 0.18)),
+        (int(width * 0.18), int(height * 0.28)),
+        (int(width * 0.38), int(height * 0.22)),
+        (int(width * 0.58), int(height * 0.42)),
+        (int(width * 0.78), int(height * 0.38)),
+        (width + 40, int(height * 0.52)),
+    ]
+    draw.line(river_points, fill=(125, 211, 252, 95), width=42, joint="curve")
+    draw.line(river_points, fill=(56, 189, 248, 115), width=5, joint="curve")
+
+    road_points = [
+        (int(width * 0.05), height + 30),
+        (int(width * 0.24), int(height * 0.72)),
+        (int(width * 0.42), int(height * 0.62)),
+        (int(width * 0.63), int(height * 0.44)),
+        (int(width * 0.82), int(height * 0.16)),
+        (width + 20, int(height * 0.08)),
+    ]
+    draw.line(road_points, fill=(255, 255, 255, 235), width=18, joint="curve")
+    draw.line(road_points, fill=(245, 158, 11, 155), width=4, joint="curve")
+
+    center_x, center_y = width // 2, height // 2
+    draw.line((center_x - 18, center_y, center_x + 18, center_y), fill=(15, 23, 42, 150), width=2)
+    draw.line((center_x, center_y - 18, center_x, center_y + 18), fill=(15, 23, 42, 150), width=2)
+
+    small_font = find_font(16, bold=False)
+    label = (
+        "외부 배경지도 연결 불가 · 로컬 격자 분석 배경 "
+        f"({center_lat:.5f}, {center_lon:.5f})"
+    )
+    draw.rounded_rectangle(
+        (18, 18, 610, 50),
+        radius=8,
+        fill=(255, 255, 255, 225),
+        outline=(148, 163, 184, 180),
+        width=1,
+    )
+    draw.text((28, 25), label, font=small_font, fill=(71, 85, 105, 255))
+    return image
 
 
 def find_font(
@@ -600,6 +670,7 @@ def render_vworld_overlay(
     record: ReportRecord,
     source: ReportSourceData,
     zoom: int,
+    background_source: str = "VWorld",
 ) -> tuple[Image.Image, dict[str, Any]]:
     static = source.static
     center_coordinates = static["center_point_4326"]["coordinates"]
@@ -799,7 +870,10 @@ def render_vworld_overlay(
         fill=(20, 20, 20, 255),
     )
 
-    source_text = "배경지도: VWorld | 격자: 2016~2021 감염 발생 이력"
+    source_text = (
+        f"배경지도: {background_source} | "
+        "격자: 2016~2021 감염 발생 이력"
+    )
     source_box = draw.textbbox((0, 0), source_text, font=small_font)
     source_width = source_box[2] - source_box[0]
     draw.rounded_rectangle(
@@ -833,20 +907,46 @@ def build_vworld_overlay_map(
     background: Image.Image | None = None,
 ) -> dict[str, Any]:
     center = source.static["center_point_4326"]["coordinates"]
-    background = background or request_vworld_map(
-        api_key=api_key,
-        domain=domain,
-        center_lon=float(center[0]),
-        center_lat=float(center[1]),
-        zoom=zoom,
-        basemap=basemap,
-    )
+    background_source = "VWorld"
+
+    if background is None:
+        try:
+            remote_default = "false" if os.getenv("VERCEL") else "true"
+            remote_enabled = os.getenv(
+                "VWORLD_REMOTE_ENABLED",
+                remote_default,
+            ).strip().lower() in {"1", "true", "yes", "on"}
+            if not remote_enabled:
+                raise RuntimeError("현재 배포 환경에서 VWorld 원격 요청을 사용하지 않습니다.")
+            if not api_key or not domain:
+                raise RuntimeError("VWORLD_API_KEY 또는 VWORLD_API_DOMAIN이 없습니다.")
+            background = request_vworld_map(
+                api_key=api_key,
+                domain=domain,
+                center_lon=float(center[0]),
+                center_lat=float(center[1]),
+                zoom=zoom,
+                basemap=basemap,
+            )
+        except Exception as exc:  # 외부 지도 장애가 보고서 전체를 막지 않도록 한다.
+            print(
+                "[prediction-report] VWorld 배경지도 요청 실패. "
+                f"로컬 대체 배경을 사용합니다: {type(exc).__name__}: {exc}"
+            )
+            background = create_fallback_map_background(
+                center_lon=float(center[0]),
+                center_lat=float(center[1]),
+            )
+            background_source = "로컬 대체 배경"
+
     result, trace = render_vworld_overlay(
         background,
         record,
         source,
         zoom,
+        background_source=background_source,
     )
+    trace["background_source"] = background_source
     output_path.parent.mkdir(parents=True, exist_ok=True)
     result.save(output_path, quality=95)
     return trace
@@ -1484,11 +1584,6 @@ def generate_single_prediction_report(
     api_key = os.getenv("VWORLD_API_KEY", "").strip()
     domain = os.getenv("VWORLD_API_DOMAIN", "").strip()
     basemap = os.getenv("VWORLD_BASEMAP", "GRAPHIC").strip() or "GRAPHIC"
-    if not api_key:
-        raise RuntimeError("rag-backend/.env에 VWORLD_API_KEY가 없습니다.")
-    if not domain:
-        raise RuntimeError("rag-backend/.env에 VWORLD_API_DOMAIN이 없습니다.")
-
     validate_prediction_template(TEMPLATE_PATH)
     center_grid_id = int(center_grid_id)
     selected_zoom = zoom or int(
