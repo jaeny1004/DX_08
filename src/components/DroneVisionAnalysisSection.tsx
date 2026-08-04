@@ -818,8 +818,62 @@ export default function DroneVisionAnalysisSection({
                   },
                 )}
 
+                {(selectedProcess?.status ===
+                  "uploading" ||
+                  selectedProcess?.status ===
+                  "analyzing") && (
+                  <div className="absolute inset-0 z-20 flex items-center justify-center overflow-hidden bg-slate-950/65 text-white backdrop-blur-[1px]">
+                    {selectedProcess.status ===
+                      "analyzing" && (
+                      <motion.div
+                        className="absolute left-[8%] right-[8%] h-px bg-gradient-to-r from-transparent via-emerald-300 to-transparent shadow-[0_0_14px_rgba(110,231,183,0.9)]"
+                        animate={{
+                          top: [
+                            "12%",
+                            "88%",
+                            "12%",
+                          ],
+                        }}
+                        transition={{
+                          duration: 3,
+                          repeat: Infinity,
+                          ease: "easeInOut",
+                        }}
+                      />
+                    )}
+
+                    <div className="relative flex min-w-[260px] flex-col items-center rounded-2xl border border-white/15 bg-slate-950/75 px-7 py-6 text-center shadow-2xl backdrop-blur-md">
+                      <LoaderCircle
+                        size={32}
+                        className={`animate-spin ${
+                          selectedProcess.status ===
+                          "uploading"
+                            ? "text-sky-300"
+                            : "text-emerald-300"
+                        }`}
+                      />
+
+                      <p className="mt-3 text-sm font-black">
+                        {selectedProcess.status ===
+                        "uploading"
+                          ? "실사 이미지를 업로드하고 있습니다."
+                          : "비전 AI가 감염 의심목을 탐지하고 있습니다."}
+                      </p>
+
+                      <p className="mt-1 text-[10px] font-semibold text-white/65">
+                        정상적으로 처리 중입니다. 잠시만 기다려 주세요.
+                      </p>
+
+                      <span className="mt-3 flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[10px] font-black tabular-nums text-white/85">
+                        <Clock3 size={12} />
+                        경과 {activeElapsedText}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {selectedInput && (
-                  <div className="absolute right-4 top-4 rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 font-mono text-[9px] font-bold leading-5 text-white shadow-xl backdrop-blur">
+                  <div className="absolute right-4 top-4 z-30 rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 font-mono text-[9px] font-bold leading-5 text-white shadow-xl backdrop-blur">
                     <div>
                       ALT: {selectedInput.gps.altitude.toFixed(1)}m
                     </div>
