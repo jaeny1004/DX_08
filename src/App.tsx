@@ -4,68 +4,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import {
-  TreePine,
-  MessageSquare,
-  X,
-  LayoutDashboard,
-  Radar,
-  Footprints,
-  ShieldCheck,
-  FileText,
-  Settings,
-  FlaskConical,
-  AlertTriangle,
-  PanelLeftOpen,
-  PanelLeftClose,
-  Clock3,
-  MapPinned,
-  Radio,
-  LogOut,
-} from "lucide-react";
-
-import Dashboard from "./components/Dashboard";
-import MonitoringSection from "./components/MonitoringSection";
-import FieldSection from "./components/FieldSection";
-import ControlSection from "./components/ControlSection";
-import AdminSection from "./components/AdminSection";
-import SystemSection from "./components/SystemSection";
-import Chatbot from "./components/Chatbot";
-import SimulationSection from "./components/SimulationSection";
-import AuthScreen from "./components/auth/AuthScreen";
-
-import {
-  getAccessToken,
-  getCurrentUser,
-  logout,
-} from "./services/authApi";
-
-import {
-  AuthUser,
-} from "./types/auth";
-
-import {
-  initialGrids,
-  initialTrees,
-  initialWorkers,
-  initialControlTasks,
-  GridCell,
-  TreeRecord,
-  WorkerStatus,
-  CrowdReport,
-  ControlTask,
-} from "./types";
-
-import {
-  DispatchAssignment,
-  DispatchStatus,
-} from "./types/dispatch";
-
-import {
-  createClient
-} from "@supabase/supabase-js";
-
+import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL as string;
 
@@ -82,14 +21,392 @@ const supabase = createClient(
   SUPABASE_URL,
   SUPABASE_ANON_KEY
 );
+import { motion, AnimatePresence } from "motion/react";
+import {
+  TreePine,
+  MessageSquare,
+  X,
+  LayoutDashboard,
+  Radar,
+  Footprints,
+  ShieldCheck,
+  ClipboardCheck,
+  FileText,
+  Settings,
+  FlaskConical,
+  AlertTriangle,
+  PanelLeftOpen,
+  PanelLeftClose,
+  Clock3,
+  MapPinned,
+  Radio,
+  LogOut,
+  Search,
+  Plus,
+  ChevronDown,
+  History,
+  Video,
+  PlayCircle,
+  MapPin,
+  Bot,
+  UserRound,
+  CalendarDays,
+  ShieldAlert,
+  HomeIcon,
+  TreesIcon,
+  VideoIcon,
+  MemoryStickIcon,
+  FileUpIcon,
+  ShieldOffIcon,
+  ShieldHalfIcon,
+  Camera
+} from "lucide-react";
 
-type PineRecordStatus =
-  | "pending"
-  | "in_progress"
-  | "completed";
+import Dashboard from "./components/Dashboard";
+import MonitoringSection from "./components/MonitoringSection";
+import FieldSection from "./components/FieldSection";
+import ThermalAnalysisSection from "./components/ThermalAnalysisSection";
+import DroneVisionAnalysisSection from "./components/DroneVisionAnalysisSection";
+import ControlSection from "./components/ControlSection";
+import SimulationSection from "./components/SimulationSection";
+import AdminSection from "./components/AdminSection";
+import Chatbot from "./components/Chatbot";
+import AuthScreen from "./components/auth/AuthScreen";
+
+import {
+  getAccessToken,
+  getCurrentUser,
+  logout,
+} from "./services/authApi";
+
+import {
+  AuthUser,
+} from "./types/auth";
+
+import {
+  initialGrids,
+  GridCell,
+  FieldPhotoRecord,
+  FieldVoiceLogRecord,
+  TreeRecord,
+  WorkerStatus,
+  CrowdReport,
+  ControlTask,
+} from "./types";
+
+import {
+  DispatchAssignment,
+  DispatchStatus,
+} from "./types/dispatch";
+type PineRecordRow = {
+  id: string | number;
+  created_at?: string | null;
+  phone_number?: string | null;
+  reporter?: string | null;
+  status?: string | null;
+  dashboard_status?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  image_url?: string | null;
+  ai_probability?: number | null;
+  ai_label?: string | null;
+  ai_status?: string | null;
+};
+
+type ConfirmedTreeRow = {
+  id: string;
+  region: string;
+  species: string;
+  confirmed_date: string;
+  status: string;
+  severity: string;
+  x: number;
+  y: number;
+  inspector: string;
+  timeline: TreeRecord["timeline"] | null;
+
+  source_report_id?: string | null;
+  ai_probability?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  image_url?: string | null;
+  image_source?:
+  TreeRecord["imageSource"] | null;
+
+  image_bucket?: string | null;
+  image_path?: string | null;
+
+  analysis_result?:
+  TreeRecord["analysisResult"] | null;
+};
+
+type FieldPhotoRow = {
+  id: string | number;
+
+  work_mode:
+  | "surveillance"
+  | "control";
+
+  related_record_id:
+  string | number;
+
+  storage_path: string;
+
+  latitude:
+  number | null;
+
+  longitude:
+  number | null;
+
+  altitude?:
+  number | null;
+
+  captured_at:
+  string;
+
+  created_at?:
+  string | null;
+
+  uploader_id?:
+  string | null;
+
+  note?:
+  string | null;
+};
+
+type FieldVoiceLogRow = {
+  id: string | number;
+
+  work_mode:
+  | "surveillance"
+  | "control";
+
+  related_record_id:
+  string | number;
+
+  storage_bucket:
+  string | null;
+
+  storage_path:
+  string;
+
+  mime_type?:
+  string | null;
+
+  duration_seconds?:
+  number | null;
+
+  transcript?:
+  string | null;
+
+  stt_status:
+  | "processing"
+  | "completed"
+  | "error";
+
+  stt_error?:
+  string | null;
+
+  latitude?:
+  number | null;
+
+  longitude?:
+  number | null;
+
+  captured_at:
+  string;
+
+  created_at?:
+  string | null;
+
+  uploader_id?:
+  string | null;
+
+  note?:
+  string | null;
+};
+
+function mapConfirmedTreeRowToTreeRecord(
+  row: ConfirmedTreeRow
+): TreeRecord {
+  return {
+    id: row.id,
+    region: row.region,
+    species: row.species as TreeRecord["species"],
+    confirmedDate: row.confirmed_date,
+    status: row.status as TreeRecord["status"],
+    severity: row.severity as TreeRecord["severity"],
+    x: Number(row.x ?? 0),
+    y: Number(row.y ?? 0),
+    inspector: row.inspector,
+    timeline: Array.isArray(row.timeline)
+      ? row.timeline
+      : [],
+
+    sourceReportId:
+      row.source_report_id || undefined,
+
+    aiProbability:
+      row.ai_probability === null ||
+        row.ai_probability === undefined
+        ? undefined
+        : Number(row.ai_probability),
+
+    latitude:
+      row.latitude === null ||
+        row.latitude === undefined
+        ? undefined
+        : Number(row.latitude),
+
+    longitude:
+      row.longitude === null ||
+        row.longitude === undefined
+        ? undefined
+        : Number(row.longitude),
+
+    imageUrl:
+      row.image_url || undefined,
+
+    imageSource:
+      row.image_source || undefined,
+
+    imageBucket:
+      row.image_bucket || undefined,
+
+    imagePath:
+      row.image_path || undefined,
+
+    analysisResult:
+      row.analysis_result || undefined,
+  };
+}
+
+function mapFieldPhotoRowToRecord(
+  row: FieldPhotoRow
+): FieldPhotoRecord {
+  return {
+    id:
+      String(row.id),
+
+    workMode:
+      row.work_mode,
+
+    relatedRecordId:
+      String(
+        row.related_record_id
+      ),
+
+    storagePath:
+      row.storage_path,
+
+    latitude:
+      Number(
+        row.latitude ?? 0
+      ),
+
+    longitude:
+      Number(
+        row.longitude ?? 0
+      ),
+
+    altitude:
+      row.altitude === null ||
+        row.altitude === undefined
+        ? undefined
+        : Number(row.altitude),
+
+    capturedAt:
+      row.captured_at,
+
+    createdAt:
+      row.created_at || undefined,
+
+    uploaderId:
+      row.uploader_id || undefined,
+
+    note:
+      row.note || undefined,
+  };
+}
+
+function mapFieldVoiceLogRowToRecord(
+  row: FieldVoiceLogRow
+): FieldVoiceLogRecord {
+  return {
+    id:
+      String(row.id),
+
+    workMode:
+      row.work_mode,
+
+    relatedRecordId:
+      String(
+        row.related_record_id
+      ),
+
+    storageBucket:
+      row.storage_bucket ||
+      "field-audio",
+
+    storagePath:
+      row.storage_path,
+
+    mimeType:
+      row.mime_type ||
+      undefined,
+
+    durationSeconds:
+      row.duration_seconds ===
+        null ||
+        row.duration_seconds ===
+        undefined
+        ? undefined
+        : Number(
+          row.duration_seconds
+        ),
+
+    transcript:
+      row.transcript ||
+      undefined,
+
+    sttStatus:
+      row.stt_status,
+
+    sttError:
+      row.stt_error ||
+      undefined,
+
+    latitude:
+      row.latitude === null ||
+        row.latitude === undefined
+        ? undefined
+        : Number(row.latitude),
+
+    longitude:
+      row.longitude === null ||
+        row.longitude === undefined
+        ? undefined
+        : Number(row.longitude),
+
+    capturedAt:
+      row.captured_at,
+
+    createdAt:
+      row.created_at ||
+      undefined,
+
+    uploaderId:
+      row.uploader_id ||
+      undefined,
+
+    note:
+      row.note ||
+      undefined,
+  };
+}
 
 function mapPineStatusToCrowdStatus(
-  status: PineRecordStatus | string | null | undefined
+  status: string | null | undefined
 ): CrowdReport["status"] {
   switch (status) {
     case "pending":
@@ -101,28 +418,11 @@ function mapPineStatusToCrowdStatus(
     case "completed":
       return "방제 완료";
 
+    case "rejected":
+      return "반려";
+
     default:
       return "접수 완료";
-  }
-}
-
-function mapCrowdStatusToPineStatus(
-  status: CrowdReport["status"]
-): PineRecordStatus {
-  switch (status) {
-    case "접수 완료":
-      return "pending";
-
-    case "조사 완료":
-      return "in_progress";
-
-    case "방제 완료":
-      return "completed";
-
-    default:
-      throw new Error(
-        `지원하지 않는 민원 상태입니다: ${String(status)}`
-      );
   }
 }
 
@@ -130,14 +430,12 @@ function mapPineRecordToCrowdReport(
   row: PineRecordRow
 ): CrowdReport {
   const latitude =
-    row.latitude === null ||
-      row.latitude === undefined
+    row.latitude === null || row.latitude === undefined
       ? undefined
       : Number(row.latitude);
 
   const longitude =
-    row.longitude === null ||
-      row.longitude === undefined
+    row.longitude === null || row.longitude === undefined
       ? undefined
       : Number(row.longitude);
 
@@ -190,32 +488,39 @@ function mapPineRecordToCrowdReport(
   };
 }
 
-type PineRecordRow = {
-  id: string | number;
+function mapCrowdStatusToPineStatus(
+  status: CrowdReport["status"]
+):
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "rejected" {
+  switch (status) {
+    case "접수 완료":
+      return "pending";
 
-  created_at?: string | null;
-  phone_number?: string | null;
-  reporter?: string | null;
+    case "조사 완료":
+      return "in_progress";
 
-  status?: PineRecordStatus | null;
+    case "방제 완료":
+      return "completed";
 
-  latitude?: number | null;
-  longitude?: number | null;
-  image_url?: string | null;
-
-  ai_probability?: number | null;
-  ai_label?: string | null;
-  ai_status?: string | null;
-};
+    case "반려":
+      return "rejected";
+  }
+}
 
 type ModuleId =
   | "dashboard"
   | "monitoring"
   | "field"
+  | "thermal-analysis"
+  | "drone-vision-analysis"
   | "control"
-  | "admin"
-  | "system"
-  | "simulation";
+  | "control-status"
+  | "control-work"
+  | "admin-report"
+  | "admin-species";
 
 export default function App() {
   const [activeModule, setActiveModule] =
@@ -225,16 +530,105 @@ export default function App() {
     useState<GridCell[]>(initialGrids);
 
   const [trees, setTrees] =
-    useState<TreeRecord[]>(initialTrees);
+    useState<TreeRecord[]>([]);
+
+  const handleAddTree = (
+    newTree: TreeRecord
+  ) => {
+    setTrees((previous) => {
+      const exists = previous.some(
+        (tree) => tree.id === newTree.id
+      );
+
+      return exists
+        ? previous
+        : [newTree, ...previous];
+    });
+
+    void (async () => {
+      const { error } = await supabase
+        .from("confirmed_trees")
+        .insert({
+          id: newTree.id,
+          region: newTree.region,
+          species: newTree.species,
+          confirmed_date:
+            newTree.confirmedDate,
+          status: newTree.status,
+          severity: newTree.severity,
+          x: newTree.x,
+          y: newTree.y,
+          inspector: newTree.inspector,
+          timeline: newTree.timeline,
+
+          source_report_id:
+            newTree.sourceReportId ?? null,
+
+          ai_probability:
+            newTree.aiProbability ?? null,
+
+          latitude:
+            newTree.latitude ?? null,
+
+          longitude:
+            newTree.longitude ?? null,
+
+          image_url:
+            newTree.imageUrl ?? null,
+
+          image_source:
+            newTree.imageSource ?? null,
+
+          image_bucket:
+            newTree.imageBucket ?? null,
+
+          image_path:
+            newTree.imagePath ?? null,
+
+          analysis_result:
+            newTree.analysisResult ?? null,
+        });
+
+      if (error) {
+        console.error(
+          "확진목 저장 실패:",
+          error
+        );
+
+        setTrees((previous) =>
+          previous.filter(
+            (tree) =>
+              tree.id !== newTree.id
+          )
+        );
+
+        window.alert(
+          "확진목을 저장하지 못했습니다."
+        );
+      }
+    })();
+  };
 
   const [workers, setWorkers] =
-    useState<WorkerStatus[]>(initialWorkers);
+    useState<WorkerStatus[]>([]);
+
+  const [tasks, setTasks] =
+    useState<ControlTask[]>([]);
 
   const [reports, setReports] =
     useState<CrowdReport[]>([]);
 
-  const [tasks, setTasks] =
-    useState<ControlTask[]>(initialControlTasks);
+  const [
+    fieldPhotos,
+    setFieldPhotos,
+  ] = useState<FieldPhotoRecord[]>([]);
+
+  const [
+    fieldVoiceLogs,
+    setFieldVoiceLogs,
+  ] = useState<FieldVoiceLogRecord[]>([]);
+
+
 
   const [selectedGrid, setSelectedGrid] =
     useState<any>(null);
@@ -306,9 +700,6 @@ export default function App() {
   }, [dispatchAssignments]);
 
   useEffect(() => {
-    /*
-     * 로그인 전에는 민원 데이터를 조회하지 않습니다.
-     */
     if (!authUser) {
       setReports([]);
       return;
@@ -316,47 +707,41 @@ export default function App() {
 
     let cancelled = false;
 
-    const fetchPineRecordsAsReports =
-      async () => {
-        const { data, error } =
-          await supabase
-            .from("pine_records")
-            .select("*")
-            .order("created_at", {
-              ascending: false,
-            });
+    const fetchPineRecords = async () => {
+      const { data, error } = await supabase
+        .from("pine_records")
+        .select("*")
+        .or(
+          "dashboard_status.is.null,dashboard_status.neq.confirmed"
+        )
+        .order("created_at", {
+          ascending: false,
+        });
 
-        if (error) {
-          console.error(
-            "pine_records 조회 실패:",
-            error
-          );
+      if (error) {
+        console.error(
+          "pine_records 조회 실패:",
+          error
+        );
+        return;
+      }
 
-          return;
-        }
+      if (cancelled) {
+        return;
+      }
 
-        if (cancelled) {
-          return;
-        }
+      const mappedReports = (data || []).map(
+        (row) =>
+          mapPineRecordToCrowdReport(
+            row as PineRecordRow
+          )
+      );
 
-        const mappedReports =
-          (data || []).map(
-            row =>
-              mapPineRecordToCrowdReport(
-                row as PineRecordRow
-              )
-          );
+      setReports(mappedReports);
+    };
 
-        setReports(mappedReports);
-      };
+    void fetchPineRecords();
 
-    void fetchPineRecordsAsReports();
-
-    /*
-     * 모바일 앱이나 Supabase에서
-     * INSERT·UPDATE·DELETE가 발생하면
-     * 대시보드를 즉시 갱신합니다.
-     */
     const channel = supabase
       .channel(
         `pine-records-dashboard-${authUser.id}`
@@ -368,10 +753,8 @@ export default function App() {
           schema: "public",
           table: "pine_records",
         },
-        payload => {
-          if (
-            payload.eventType === "DELETE"
-          ) {
+        (payload) => {
+          if (payload.eventType === "DELETE") {
             const deletedId = String(
               (
                 payload.old as {
@@ -380,10 +763,35 @@ export default function App() {
               ).id
             );
 
+            setReports((previous) =>
+              previous.filter(
+                (report) =>
+                  report.id !== deletedId
+              )
+            );
+
+            return;
+          }
+
+          const changedRow =
+            payload.new as PineRecordRow;
+
+          /*
+           * 확진목으로 전환된 제보는
+           * 예찰 리스트에서 제거합니다.
+           */
+          if (
+            changedRow.dashboard_status ===
+            "confirmed"
+          ) {
+            const convertedReportId =
+              String(changedRow.id);
+
             setReports(previous =>
               previous.filter(
                 report =>
-                  report.id !== deletedId
+                  report.id !==
+                  convertedReportId
               )
             );
 
@@ -392,16 +800,14 @@ export default function App() {
 
           const changedReport =
             mapPineRecordToCrowdReport(
-              payload.new as PineRecordRow
+              changedRow
             );
 
-          setReports(previous => {
-            const exists =
-              previous.some(
-                report =>
-                  report.id ===
-                  changedReport.id
-              );
+          setReports((previous) => {
+            const exists = previous.some(
+              (report) =>
+                report.id === changedReport.id
+            );
 
             if (!exists) {
               return [
@@ -410,22 +816,15 @@ export default function App() {
               ];
             }
 
-            return previous.map(
-              report =>
-                report.id ===
-                  changedReport.id
-                  ? changedReport
-                  : report
+            return previous.map((report) =>
+              report.id === changedReport.id
+                ? changedReport
+                : report
             );
           });
         }
       )
-      .subscribe(status => {
-        console.log(
-          "pine_records realtime:",
-          status
-        );
-      });
+      .subscribe();
 
     return () => {
       cancelled = true;
@@ -433,45 +832,449 @@ export default function App() {
     };
   }, [authUser]);
 
-  const handleAddTree = (
-    newTree: TreeRecord
-  ) => {
-    setTrees((prev) => [
-      newTree,
-      ...prev,
-    ]);
-  };
 
-  const handleUpdateTreeStatus = (
+  useEffect(() => {
+    if (!authUser) {
+      setTrees([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchConfirmedTrees = async () => {
+      const { data, error } = await supabase
+        .from("confirmed_trees")
+        .select("*")
+        .order("created_at", {
+          ascending: false,
+        });
+
+      if (error) {
+        console.error(
+          "confirmed_trees 조회 실패:",
+          error
+        );
+        return;
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      setTrees(
+        (data || []).map((row) =>
+          mapConfirmedTreeRowToTreeRecord(
+            row as ConfirmedTreeRow
+          )
+        )
+      );
+    };
+
+    void fetchConfirmedTrees();
+
+    const channel = supabase
+      .channel(
+        `confirmed-trees-${authUser.id}`
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "confirmed_trees",
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const deletedId = String(
+              (
+                payload.old as {
+                  id?: string;
+                }
+              ).id
+            );
+
+            setTrees((previous) =>
+              previous.filter(
+                (tree) =>
+                  tree.id !== deletedId
+              )
+            );
+
+            return;
+          }
+
+          const changedTree =
+            mapConfirmedTreeRowToTreeRecord(
+              payload.new as ConfirmedTreeRow
+            );
+
+          setTrees((previous) => {
+            const exists = previous.some(
+              (tree) =>
+                tree.id === changedTree.id
+            );
+
+            if (!exists) {
+              return [
+                changedTree,
+                ...previous,
+              ];
+            }
+
+            return previous.map((tree) =>
+              tree.id === changedTree.id
+                ? changedTree
+                : tree
+            );
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [authUser]);
+
+
+  useEffect(() => {
+    if (!authUser) {
+      setFieldPhotos([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchFieldPhotos =
+      async () => {
+        const { data, error } =
+          await supabase
+            .from("field_photos")
+            .select("*")
+            .order(
+              "captured_at",
+              {
+                ascending: false,
+              }
+            );
+
+        if (error) {
+          console.error(
+            "field_photos 조회 실패:",
+            error
+          );
+
+          return;
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setFieldPhotos(
+          (data || []).map(
+            row =>
+              mapFieldPhotoRowToRecord(
+                row as FieldPhotoRow
+              )
+          )
+        );
+      };
+
+    void fetchFieldPhotos();
+
+    const channel = supabase
+      .channel(
+        `field-photos-${authUser.id}`
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "field_photos",
+        },
+        payload => {
+          if (
+            payload.eventType ===
+            "DELETE"
+          ) {
+            const deletedId =
+              String(
+                (
+                  payload.old as {
+                    id?: string | number;
+                  }
+                ).id
+              );
+
+            setFieldPhotos(
+              previous =>
+                previous.filter(
+                  photo =>
+                    photo.id !==
+                    deletedId
+                )
+            );
+
+            return;
+          }
+
+          const changedPhoto =
+            mapFieldPhotoRowToRecord(
+              payload.new as FieldPhotoRow
+            );
+
+          setFieldPhotos(
+            previous => {
+              const exists =
+                previous.some(
+                  photo =>
+                    photo.id ===
+                    changedPhoto.id
+                );
+
+              if (!exists) {
+                return [
+                  changedPhoto,
+                  ...previous,
+                ];
+              }
+
+              return previous.map(
+                photo =>
+                  photo.id ===
+                    changedPhoto.id
+                    ? changedPhoto
+                    : photo
+              );
+            }
+          );
+        }
+      )
+      .subscribe(status => {
+        console.log(
+          "field_photos Realtime:",
+          status
+        );
+      });
+
+    return () => {
+      cancelled = true;
+
+      void supabase.removeChannel(
+        channel
+      );
+    };
+  }, [authUser]);
+
+  useEffect(() => {
+    if (!authUser) {
+      setFieldVoiceLogs([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchFieldVoiceLogs =
+      async () => {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from(
+            "field_voice_logs"
+          )
+          .select("*")
+          .order(
+            "captured_at",
+            {
+              ascending: false,
+            }
+          );
+
+        if (error) {
+          console.error(
+            "field_voice_logs 조회 실패:",
+            error
+          );
+
+          return;
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setFieldVoiceLogs(
+          (data || []).map(
+            row =>
+              mapFieldVoiceLogRowToRecord(
+                row as FieldVoiceLogRow
+              )
+          )
+        );
+      };
+
+    void fetchFieldVoiceLogs();
+
+    const channel = supabase
+      .channel(
+        `field-voice-logs-${authUser.id}`
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table:
+            "field_voice_logs",
+        },
+        payload => {
+          if (
+            payload.eventType ===
+            "DELETE"
+          ) {
+            const deletedId =
+              String(
+                (
+                  payload.old as {
+                    id?:
+                    string |
+                    number;
+                  }
+                ).id
+              );
+
+            setFieldVoiceLogs(
+              previous =>
+                previous.filter(
+                  log =>
+                    log.id !==
+                    deletedId
+                )
+            );
+
+            return;
+          }
+
+          const changedLog =
+            mapFieldVoiceLogRowToRecord(
+              payload.new as
+              FieldVoiceLogRow
+            );
+
+          setFieldVoiceLogs(
+            previous => {
+              const exists =
+                previous.some(
+                  log =>
+                    log.id ===
+                    changedLog.id
+                );
+
+              if (!exists) {
+                return [
+                  changedLog,
+                  ...previous,
+                ];
+              }
+
+              return previous.map(
+                log =>
+                  log.id ===
+                    changedLog.id
+                    ? changedLog
+                    : log
+              );
+            }
+          );
+        }
+      )
+      .subscribe(status => {
+        console.log(
+          "field_voice_logs Realtime:",
+          status
+        );
+      });
+
+    return () => {
+      cancelled = true;
+
+      void supabase.removeChannel(
+        channel
+      );
+    };
+  }, [authUser]);
+
+
+
+  const handleUpdateTreeStatus = async (
     id: string,
     newStatus: TreeRecord["status"]
   ) => {
-    setTrees((prev) =>
-      prev.map((tree) => {
-        if (tree.id !== id) {
-          return tree;
-        }
-
-        const updatedTimeline = [
-          ...tree.timeline,
-          {
-            stage: `상태 변경: ${newStatus}`,
-            date: new Date().toLocaleString(),
-            note:
-              `운영 서버에서 상태를 ` +
-              `[${tree.status}]에서 ` +
-              `[${newStatus}]로 조정 연동 완료.`,
-            actor: "산림청 통합시스템",
-          },
-        ];
-
-        return {
-          ...tree,
-          status: newStatus,
-          timeline: updatedTimeline,
-        };
-      })
+    const targetTree = trees.find(
+      (tree) => tree.id === id
     );
+
+    if (!targetTree) {
+      window.alert(
+        "상태를 변경할 확진목을 찾을 수 없습니다."
+      );
+      return;
+    }
+
+    const previousTrees = trees;
+
+    const updatedTimeline = [
+      ...targetTree.timeline,
+      {
+        stage: `상태 변경: ${newStatus}`,
+        date: new Date().toLocaleString(),
+        note:
+          `운영 서버에서 상태를 ` +
+          `[${targetTree.status}]에서 ` +
+          `[${newStatus}]로 변경했습니다.`,
+        actor: "산림청 통합시스템",
+      },
+    ];
+
+    // 화면을 먼저 변경
+    setTrees((previous) =>
+      previous.map((tree) =>
+        tree.id === id
+          ? {
+            ...tree,
+            status: newStatus,
+            timeline: updatedTimeline,
+          }
+          : tree
+      )
+    );
+
+    // Supabase에도 영구 저장
+    const { error } = await supabase
+      .from("confirmed_trees")
+      .update({
+        status: newStatus,
+        timeline: updatedTimeline,
+      })
+      .eq("id", id);
+
+    if (error) {
+      console.error(
+        "확진목 상태 저장 실패:",
+        error
+      );
+
+      // 저장 실패 시 화면 원상복구
+      setTrees(previousTrees);
+
+      window.alert(
+        "확진목 상태를 저장하지 못했습니다."
+      );
+    }
   };
 
   const handleUpdateWorkerStatus = (
@@ -535,60 +1338,193 @@ export default function App() {
     );
   };
 
-  const handleUpdateReportStatus =
-    async (
-      id: string,
-      status: CrowdReport["status"]
-    ) => {
-      const previousReports = reports;
+  const handleUpdateReportStatus = async (
+    id: string,
+    status: CrowdReport["status"]
+  ) => {
+    const previousReports = reports;
 
-      /*
-       * 서버 응답 전에 화면부터 즉시 변경합니다.
-       */
-      setReports(previous =>
-        previous.map(report =>
-          report.id === id
-            ? {
-              ...report,
-              status,
-            }
-            : report
-        )
+    // 화면부터 즉시 변경
+    setReports((previous) =>
+      previous.map((report) =>
+        report.id === id
+          ? {
+            ...report,
+            status,
+          }
+          : report
+      )
+    );
+
+    const pineStatus =
+      mapCrowdStatusToPineStatus(status);
+
+    const { error } = await supabase
+      .from("pine_records")
+      .update({
+        status: pineStatus,
+      })
+      .eq("id", id);
+
+    if (error) {
+      console.error(
+        "민원 처리 상태 저장 실패:",
+        error
       );
 
-      const { error } =
-        await supabase
-          .from("pine_records")
-          .update({
-            dashboard_status: status,
-          })
-          .eq("id", id);
+      setReports(previousReports);
 
-      if (error) {
-        console.error(
-          "대시보드 민원 상태 저장 실패:",
-          error
-        );
+      window.alert(
+        "민원 처리 상태를 저장하지 못했습니다."
+      );
+    }
+  };
 
-        /*
-         * DB 저장이 실패하면
-         * 화면을 이전 상태로 복구합니다.
-         */
-        setReports(previousReports);
+  const handleConfirmInfection = async (
+    report: CrowdReport
+  ) => {
+    const newTree: TreeRecord = {
+      id:
+        `PT-${new Date().getFullYear()}-` +
+        `${Math.floor(
+          1000 + Math.random() * 9000
+        )}`,
+      region: report.region,
+      species: "소나무",
+      confirmedDate:
+        new Date()
+          .toISOString()
+          .split("T")[0],
+      status: "확진완료",
+      severity:
+        report.aiProbability >= 75
+          ? "심"
+          : report.aiProbability >= 45
+            ? "중"
+            : "경",
+      x:
+        362947 +
+        Math.floor(
+          Math.random() * 400
+        ),
+      y:
+        289014 +
+        Math.floor(
+          Math.random() * 400
+        ),
+      inspector:
+        "시민 " + report.reporter,
 
-        window.alert(
-          "민원 상태를 저장하지 못했습니다."
-        );
+      sourceReportId:
+        String(report.id),
 
-        return;
-      }
+      aiProbability:
+        report.aiProbability,
 
-      /*
-       * 성공하면 Realtime UPDATE가 들어와서
-       * DB의 최종 데이터로 다시 정리됩니다.
-       */
+      latitude:
+        report.latitude,
+
+      longitude:
+        report.longitude,
+
+      imageUrl:
+        (
+          report as CrowdReport & {
+            photoUrl?: string;
+            image_url?: string;
+            imageUrl?: string;
+          }
+        ).photoUrl ||
+
+        (
+          report as CrowdReport & {
+            image_url?: string;
+            imageUrl?: string;
+          }
+        ).image_url ||
+        (
+          report as CrowdReport & {
+            imageUrl?: string;
+          }
+        ).imageUrl,
+
+      imageSource:
+        "citizen",
+
+      timeline: [
+        {
+          stage:
+            "시민 제보 확진 대장 전환 완료 " +
+            "(FR-FLD-006)",
+          date:
+            new Date().toLocaleString(),
+          note:
+            `시민 제보 [${report.title}] ` +
+            `기반으로 전주기 타임라인 대입 연동. ` +
+            `AI 신뢰도: ${report.aiProbability}%`,
+          actor: "행정관 주무관",
+        },
+      ],
     };
 
+    /*
+ * 1. confirmed_trees에 확진목 추가
+ */
+    handleAddTree(newTree);
+
+    /*
+     * 2. 원본 시민 제보를 확진 전환 완료 상태로 표시
+     *
+     * pine_records 자체를 삭제하지는 않습니다.
+     * 사진·현장사진·음성 기록의 연결 기준으로
+     * 계속 사용해야 하기 때문입니다.
+     */
+    const {
+      error: reportUpdateError,
+    } = await supabase
+      .from("pine_records")
+      .update({
+        dashboard_status:
+          "confirmed",
+      })
+      .eq(
+        "id",
+        report.id
+      );
+
+    if (reportUpdateError) {
+      console.error(
+        "시민 제보 확진 전환 상태 저장 실패:",
+        reportUpdateError
+      );
+
+      window.alert(
+        "확진목은 등록됐지만 원본 제보의 전환 상태를 저장하지 못했습니다."
+      );
+
+      return;
+    }
+
+    /*
+     * 3. 현재 화면에서도 즉시 제거
+     */
+    setReports(previous =>
+      previous.filter(
+        item =>
+          item.id !==
+          String(report.id)
+      )
+    );
+
+    /*
+     * 4. 확진목 모니터링 화면으로 이동
+     */
+    setActiveModule(
+      "monitoring"
+    );
+
+
+  };
 
   const handleAddTask = (
     newTask: ControlTask
@@ -624,42 +1560,41 @@ export default function App() {
     );
   };
 
+  const adminGroup = {
+    id: "admin",
+    label: "행정 기안 지원",
+    icon: FileText,
+    items: [
+      {
+        id: "admin-report",
+        label: "보고서 생성 및 조회",
+        icon: FileText,
+      },
+      {
+        id: "admin-species",
+        label: "AI 친환경 수종전환 추천",
+        icon: TreePine,
+      },
+    ],
+  } as const;
+
   const modules = [
     {
       id: "dashboard",
-      label: "종합 상황판",
-      icon: LayoutDashboard,
+      label: "홈",
+      icon: HomeIcon,
     },
     {
       id: "monitoring",
-      label: "병해충 모니터링",
-      icon: Radar,
-    },
-    {
-      id: "field",
-      label: "현장 스마트 예찰",
-      icon: Footprints,
+      label: "확진목 모니터링",
+      icon: TreesIcon,
     },
     {
       id: "control",
-      label: "방제 사업 관리",
+      label: "실시간 방제 현황",
       icon: ShieldCheck,
     },
-    {
-      id: "admin",
-      label: "행정 기안 지원",
-      icon: FileText,
-    },
-    {
-      id: "system",
-      label: "시스템 보안 관제",
-      icon: Settings,
-    },
-    {
-      id: "simulation",
-      label: "확산 시뮬레이션",
-      icon: FlaskConical,
-    },
+    ...adminGroup.items,
   ] as const;
 
   const activeModuleLabel =
@@ -727,8 +1662,8 @@ export default function App() {
         className="grid h-full transition-[grid-template-columns] duration-300 ease-out"
         style={{
           gridTemplateColumns: isSidebarOpen
-            ? "260px minmax(0, 1fr)"
-            : "88px minmax(0, 1fr)",
+            ? "240px minmax(0, 1fr)"
+            : "50px minmax(0, 1fr)",
         }}
       >
         <aside className="relative flex h-full min-w-0 flex-col border-r border-slate-200 bg-white py-4 shadow-sm">
@@ -746,17 +1681,15 @@ export default function App() {
               }
               className={
                 isAlertPanelOpen
-                  ? "relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-rose-300 bg-rose-100 text-rose-700 shadow-sm"
-                  : "relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm"
+                  ? "relative flex h-10 w-10 shrink-0 items-center justify-center text-rose-700 transition hover:text-rose-900"
+                  : liveAlerts.length > 0
+                    ? "relative flex h-10 w-10 shrink-0 items-center justify-center text-rose-600 transition hover:text-rose-700"
+                    : "relative flex h-10 w-10 shrink-0 items-center justify-center text-emerald-800 transition hover:text-emerald-900"
               }
               aria-label="실시간 알림 열기"
               title="실시간 알림"
             >
-              <AlertTriangle size={25} />
-
-              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-rose-500 px-1 text-[10px] font-black text-white">
-                {liveAlerts.length}
-              </span>
+              <AlertTriangle size={22} />
             </button>
 
             {isSidebarOpen && (
@@ -783,7 +1716,7 @@ export default function App() {
             onClick={() =>
               setIsSidebarOpen((previous) => !previous)
             }
-            className="absolute -right-4 top-[86px] z-30 flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition hover:text-emerald-700"
+            className="absolute -right-4 top-1/2 z-30 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition hover:text-emerald-700"
             aria-label={
               isSidebarOpen
                 ? "사이드바 닫기"
@@ -813,32 +1746,43 @@ export default function App() {
           <nav
             className={
               isSidebarOpen
-                ? "flex flex-1 flex-col gap-2 px-3"
-                : "flex flex-1 flex-col items-center gap-2"
+                ? "flex flex-1 flex-col gap-0.5 px-2"
+                : "flex flex-1 flex-col items-center gap-1"
             }
           >
-            {modules.map((module) => {
+            {/* =========================
+                홈
+            ========================== */}
+            {(() => {
+              const module = modules.find(
+                (item) => item.id === "dashboard"
+              );
+
+              if (!module) return null;
+
               const Icon = module.icon;
-              const active = activeModule === module.id;
+              const active =
+                activeModule === module.id;
 
               return (
                 <button
-                  key={module.id}
                   type="button"
-                  onClick={() => setActiveModule(module.id)}
+                  onClick={() =>
+                    setActiveModule(module.id)
+                  }
                   title={module.label}
                   aria-label={module.label}
                   className={
                     isSidebarOpen
                       ? active
-                        ? "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-100 px-3 text-left text-emerald-900 shadow-sm"
-                        : "group relative flex h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 text-left text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                        ? "group relative flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                        : "group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                       : active
-                        ? "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-100 text-emerald-900 shadow-sm"
-                        : "group relative flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                        ? "group relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
+                        : "group relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                   }
                 >
-                  <Icon size={21} className="shrink-0" />
+                  <Icon size={20} className="shrink-0" />
 
                   {isSidebarOpen ? (
                     <span className="truncate text-sm font-extrabold">
@@ -851,94 +1795,583 @@ export default function App() {
                   )}
                 </button>
               );
-            })}
-          </nav>
+            })()}
 
-          <div
-            className={
-              isSidebarOpen
-                ? "mx-3 mt-3 flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 text-emerald-800"
-                : "mx-auto mt-3 flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-emerald-800"
-            }
-          >
-            <TreePine size={21} className="shrink-0" />
+            {/* =========================
+                재선충 모니터링
+            ========================== */}
+            {(() => {
+              const module = modules.find(
+                (item) => item.id === "monitoring"
+              );
 
-            {isSidebarOpen && (
-              <div className="min-w-0">
-                <div className="truncate text-xs font-extrabold">
-                  PWD-ISCP
+              if (!module) return null;
+
+              const Icon = module.icon;
+              const active =
+                activeModule === module.id;
+
+              return (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveModule(module.id)
+                  }
+                  title={module.label}
+                  aria-label={module.label}
+                  className={
+                    isSidebarOpen
+                      ? active
+                        ? "group relative flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                        : "group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                      : active
+                        ? "group relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
+                        : "group relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                  }
+                >
+                  <Icon size={20} className="shrink-0" />
+
+                  {isSidebarOpen ? (
+                    <span className="truncate text-sm font-extrabold">
+                      {module.label}
+                    </span>
+                  ) : (
+                    <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                      {module.label}
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
+
+            {/* =========================
+    예찰
+========================== */}
+            <div className="group relative mt-1">
+
+              {/* 예찰 부모 메뉴 */}
+              <div
+                className={
+                  isSidebarOpen
+                    ? "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                    : "flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                }
+              >
+                <Footprints
+                  size={20}
+                  className="shrink-0"
+                />
+
+                {isSidebarOpen && (
+                  <span className="truncate text-sm font-extrabold">
+                    예찰
+                  </span>
+                )}
+
+                {!isSidebarOpen && (
+                  <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                    예찰
+                  </span>
+                )}
+              </div>
+
+              {/* 사이드바 펼침 상태 */}
+              {isSidebarOpen && (
+                <div className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:grid-rows-[1fr] group-hover:opacity-100">
+                  <div className="overflow-hidden">
+                    <div className="mt-1 space-y-1 pl-8">
+
+                      {/* 실시간 예찰 현황 */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveModule("field")
+                        }
+                        className={
+                          activeModule === "field"
+                            ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                            : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
+                      >
+                        <Radar
+                          size={16}
+                          className="shrink-0"
+                        />
+
+                        <span className="truncate text-xs font-extrabold">
+                          실시간 예찰 현황
+                        </span>
+                      </button>
+
+                      {/* 열화상 감염도 확인 */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveModule(
+                            "thermal-analysis"
+                          )
+                        }
+                        className={
+                          activeModule ===
+                            "thermal-analysis"
+                            ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                            : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
+                      >
+                        <MemoryStickIcon
+                          size={16}
+                          className="shrink-0"
+                        />
+
+                        <span className="truncate text-xs font-extrabold">
+                          열화상 감염도 확인
+                        </span>
+                      </button>
+
+                      {/* 실사 드론 사진 감염도 확인 */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveModule(
+                            "drone-vision-analysis"
+                          )
+                        }
+                        className={
+                          activeModule ===
+                          "drone-vision-analysis"
+                            ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                            : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
+                      >
+                        <Camera
+                          size={16}
+                          className="shrink-0"
+                        />
+
+                        <span className="truncate text-xs font-extrabold">
+                          실사 드론 사진 감염도 확인
+                        </span>
+                      </button>
+
+                    </div>
+                  </div>
                 </div>
-                <div className="truncate text-[9px] font-bold text-slate-400">
-                  의사결정 지원 플랫폼
+              )}
+
+              {/* 사이드바 접힘 상태 */}
+              {!isSidebarOpen && (
+                <div className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:grid-rows-[1fr] group-hover:opacity-100">
+                  <div className="overflow-hidden">
+                    <div className="mt-1 flex flex-col items-center gap-1">
+
+                      {/* 실시간 예찰 현황 */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveModule("field")
+                        }
+                        className={
+                          activeModule === "field"
+                            ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                            : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
+                      >
+                        <Radar size={18} />
+
+                        <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                          실시간 예찰 현황
+                        </span>
+                      </button>
+
+                      {/* 열화상 감염도 확인 */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveModule(
+                            "thermal-analysis"
+                          )
+                        }
+                        className={
+                          activeModule ===
+                            "thermal-analysis"
+                            ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                            : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
+                      >
+                        <MemoryStickIcon size={18} />
+
+                        <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                          열화상 감염도 확인
+                        </span>
+                      </button>
+
+                      {/* 실사 드론 사진 감염도 확인 */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveModule(
+                            "drone-vision-analysis"
+                          )
+                        }
+                        className={
+                          activeModule ===
+                          "drone-vision-analysis"
+                            ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                            : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
+                      >
+                        <Camera size={18} />
+
+                        <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                          실사 드론 사진 감염도 확인
+                        </span>
+                      </button>
+
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* =========================
+                방제
+                ========================= */}
+            <div className="group relative mt-1">
+
+              {/* 방제 부모 메뉴 */}
+              <div
+                className={
+                  isSidebarOpen
+                    ? "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                    : "flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                }
+              >
+                <ShieldCheck
+                  size={20}
+                  className="shrink-0"
+                />
+
+                {isSidebarOpen && (
+                  <span className="truncate text-sm font-extrabold">
+                    실시간 방제 현황
+                  </span>
+                )}
+
+                {/* 접힌 상태에서 방제 이름 Tooltip */}
+                {!isSidebarOpen && (
+                  <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                    실시간 방제 현황
+                  </span>
+                )}
+              </div>
+
+
+              {/* ==================================================
+                  사이드바 펼침 상태
+                  기존처럼 텍스트 메뉴
+              ================================================== */}
+              {isSidebarOpen && (
+                <div className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:grid-rows-[1fr] group-hover:opacity-100">
+                  <div className="overflow-hidden">
+                    <div className="mt-1 space-y-1 pl-8">
+
+                      {/* 작업 현황 */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveModule("control-status")
+                        }
+                        className={
+                          activeModule === "control-status"
+                            ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                            : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
+                      >
+                        <ShieldOffIcon
+                          size={16}
+                          className="shrink-0"
+                        />
+
+                        <span className="truncate text-xs font-extrabold">
+                          작업 현황
+                        </span>
+                      </button>
+
+
+                      {/* 시뮬레이션 */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveModule("control-work")
+                        }
+                        className={
+                          activeModule === "control-work"
+                            ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                            : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
+                      >
+                        <VideoIcon
+                          size={16}
+                          className="shrink-0"
+                        />
+
+                        <span className="truncate text-xs font-extrabold">
+                          시뮬레이션
+                        </span>
+                      </button>
+
+                    </div>
+                  </div>
+                </div>
+              )}
+
+
+              {/* ==================================================
+                  사이드바 접힘 상태
+                  같은 메뉴 영역 안에서 아래로 확장
+                  → Admin이 아래로 밀림
+              ================================================== */}
+              {!isSidebarOpen && (
+                <div
+                  className="
+                    grid
+                    grid-rows-[0fr]
+                    opacity-0
+                    transition-all
+                    duration-200
+                    group-hover:grid-rows-[1fr]
+                    group-hover:opacity-100
+                  "
+                >
+                  <div className="overflow-hidden">
+                    <div className="mt-1 flex flex-col items-center gap-1">
+
+                      {/* 작업 현황 */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveModule("control-status")
+                        }
+                        className={
+                          activeModule === "control-status"
+                            ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                            : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
+                      >
+                        <ShieldOffIcon size={18} />
+
+                        {/* 아이콘 Tooltip */}
+                        <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                          작업 현황
+                        </span>
+                      </button>
+
+
+                      {/* 시뮬레이션 */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveModule("control-work")
+                        }
+                        className={
+                          activeModule === "control-work"
+                            ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                            : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
+                      >
+                        <VideoIcon size={18} />
+
+                        {/* 아이콘 Tooltip */}
+                        <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                          시뮬레이션
+                        </span>
+                      </button>
+
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* =========================
+                행정 기안 지원
+            ========================== */}
+            <div className="group relative mt-1">
+              <div
+                className={
+                  isSidebarOpen
+                    ? adminGroup.items.some(
+                      (item) =>
+                        item.id === activeModule
+                    )
+                      ? "flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-emerald-900"
+                      : "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                    : adminGroup.items.some(
+                      (item) =>
+                        item.id === activeModule
+                    )
+                      ? "flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
+                      : "flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                }
+              >
+                <FileText
+                  size={20}
+                  className="shrink-0"
+                />
+
+                {isSidebarOpen ? (
+                  <span className="truncate text-sm font-extrabold">
+                    {adminGroup.label}
+                  </span>
+                ) : (
+                  <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                    {adminGroup.label}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:grid-rows-[1fr] group-hover:opacity-100">
+                <div className="overflow-hidden">
+                  <div
+                    className={
+                      isSidebarOpen
+                        ? "mt-1 space-y-1 pl-8"
+                        : "mt-1 flex flex-col items-center gap-1"
+                    }
+                  >
+                    {adminGroup.items.map(
+                      (item) => {
+                        const Icon = item.icon;
+                        const active =
+                          activeModule === item.id;
+
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() =>
+                              setActiveModule(
+                                item.id
+                              )
+                            }
+                            title={item.label}
+                            aria-label={item.label}
+                            className={
+                              isSidebarOpen
+                                ? active
+                                  ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                                  : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                                : active
+                                  ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                                  : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                            }
+                          >
+                            <Icon
+                              size={
+                                isSidebarOpen
+                                  ? 16
+                                  : 18
+                              }
+                              className="shrink-0"
+                            />
+
+                            {isSidebarOpen ? (
+                              <span className="truncate text-xs font-extrabold">
+                                {item.label}
+                              </span>
+                            ) : (
+                              <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                                {item.label}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
                 </div>
               </div>
+            </div>
+          </nav>
+
+          <div className="mt-3 border-t border-slate-200 pt-3">
+            <button
+              type="button"
+              className={
+                isSidebarOpen
+                  ? "mx-3 flex h-12 w-[calc(100%-24px)] items-center gap-3 rounded-xl px-3 text-slate-600 transition hover:bg-slate-50"
+                  : "mx-auto flex h-12 w-12 items-center justify-center rounded-xl text-slate-600 transition hover:bg-slate-50"
+              }
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-black text-emerald-800">
+                {authUser.name?.slice(0, 1)}
+              </div>
+
+              {isSidebarOpen && (
+                <div className="min-w-0 text-left">
+                  <div className="truncate text-xs font-extrabold">
+                    {authUser.name}
+                  </div>
+
+                  <div className="truncate text-[9px] font-bold text-slate-400">
+                    {authUser.organization}
+                  </div>
+                </div>
+              )}
+            </button>
+
+            <div
+              className={
+                isSidebarOpen
+                  ? "mx-3 mt-2 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2"
+                  : "mx-auto mt-2 flex h-9 w-12 items-center justify-center rounded-xl bg-emerald-50"
+              }
+            >
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+
+              {isSidebarOpen && (
+                <span className="text-[10px] font-bold text-emerald-700">
+                  행정망 연동 정상
+                </span>
+              )}
+            </div>
+
+            {isSidebarOpen && (
+              <div className="mx-3 mt-2 rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-500">
+                PR-AUC 0.3183
+              </div>
             )}
+
+            <button
+              type="button"
+              onClick={() => {
+                logout();
+                setAuthUser(null);
+                setSelectedGrid(null);
+                setIsChatOpen(false);
+                setIsAlertPanelOpen(false);
+              }}
+              className={
+                isSidebarOpen
+                  ? "mx-3 mt-2 flex h-11 w-[calc(100%-24px)] items-center gap-3 rounded-xl px-3 text-slate-500 transition hover:bg-rose-50 hover:text-rose-700"
+                  : "mx-auto mt-2 flex h-11 w-12 items-center justify-center rounded-xl text-slate-500 transition hover:bg-rose-50 hover:text-rose-700"
+              }
+            >
+              <LogOut size={19} />
+
+              {isSidebarOpen && (
+                <span className="text-xs font-extrabold">
+                  로그아웃
+                </span>
+              )}
+            </button>
           </div>
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-col">
-          <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
-            <div className="flex min-w-0 items-center gap-4">
-              <div>
-                <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-700">
-                  Pine Wilt Control Center
-                </div>
-
-                <h1 className="mt-0.5 text-3xl font-black tracking-tight text-slate-950">
-                  {activeModule === "dashboard"
-                    ? "홈"
-                    : activeModuleLabel}
-                </h1>
-              </div>
-
-              <div className="hidden h-9 w-px bg-slate-200 xl:block" />
-
-              <div className="hidden max-w-[560px] truncate text-xs font-semibold text-slate-500 xl:block">
-                AI 기반 소나무재선충병 신규 확산위험 후보 분석 및 우선 예찰 의사결정 지원
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="hidden items-center gap-4 text-[11px] font-bold text-slate-500 xl:flex">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  행정망 연동 정상
-                </span>
-
-                <span className="rounded-full bg-slate-100 px-3 py-1.5">
-                  PR-AUC 0.3183
-                </span>
-              </div>
-
-              <div className="hidden text-right sm:block">
-                <div className="text-xs font-extrabold text-slate-800">
-                  {authUser.name}
-                </div>
-                <div className="mt-0.5 max-w-[180px] truncate text-[10px] font-bold text-slate-400">
-                  {authUser.organization}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  logout();
-                  setAuthUser(null);
-                  setSelectedGrid(null);
-                  setIsChatOpen(false);
-                  setIsAlertPanelOpen(false);
-                }}
-                className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-extrabold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-              >
-                <LogOut size={16} />
-                <span className="hidden md:inline">
-                  로그아웃
-                </span>
-              </button>
-            </div>
-          </header>
-
-          <main className="min-h-0 min-w-0 w-full flex-1 overflow-hidden p-3 xl:p-4">
+          <main className="min-h-0 flex-1 overflow-hidden p-3 xl:p-4">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeModule}
@@ -946,33 +2379,41 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.18 }}
-                className="h-full w-full min-h-0 min-w-0"
+                className="h-full min-h-0"
               >
                 {activeModule === "dashboard" && (
-                  <Dashboard
-                    grids={grids}
-                    trees={trees}
-                    workers={workers}
-                    reports={reports}
-                    dispatchAssignments={dispatchAssignments}
-                    onAssignWorker={handleAssignWorker}
-                    onGridSelect={setSelectedGrid}
-                    authUser={authUser}
-                  />
-                )}
-
-                {activeModule === "monitoring" && (
-                  <div className="h-full overflow-y-auto pr-1">
-                    <MonitoringSection
+                  <div className="h-full min-h-0 overflow-y-auto pr-1">
+                    <Dashboard
+                      title={activeModuleLabel}
+                      grids={grids}
                       trees={trees}
-                      onAddTree={handleAddTree}
-                      onUpdateTreeStatus={handleUpdateTreeStatus}
+                      workers={workers}
+                      reports={reports}
+                      dispatchAssignments={dispatchAssignments}
+                      onAssignWorker={handleAssignWorker}
+                      onGridSelect={setSelectedGrid}
+                      authUser={authUser}
+                      liveAlerts={liveAlerts}
                     />
                   </div>
                 )}
 
+                {activeModule === "monitoring" && (
+                  <MonitoringSection
+                    trees={trees}
+                    fieldPhotos={fieldPhotos}
+                    fieldVoiceLogs={
+                      fieldVoiceLogs
+                    }
+                    onAddTree={handleAddTree}
+                    onUpdateTreeStatus={
+                      handleUpdateTreeStatus
+                    }
+                  />
+                )}
+
                 {activeModule === "field" && (
-                  <div className="h-full w-full min-w-0 overflow-x-hidden overflow-y-auto pr-1">
+                  <div className="h-full overflow-y-auto pr-1">
                     <FieldSection
                       workers={workers}
                       reports={reports}
@@ -981,13 +2422,31 @@ export default function App() {
                       onCancelDispatch={handleCancelDispatch}
                       onUpdateWorkerStatus={handleUpdateWorkerStatus}
                       onUpdateReportStatus={handleUpdateReportStatus}
+                      onConfirmInfection={handleConfirmInfection}
                     />
                   </div>
                 )}
 
-                {activeModule === "control" && (
+                {activeModule === "thermal-analysis" && (
+                  <div className="h-full min-h-0 overflow-y-auto pr-1">
+                    <ThermalAnalysisSection
+                      onAddTree={handleAddTree}
+                    />
+                  </div>
+                )}
+
+                {activeModule === "drone-vision-analysis" && (
+                  <div className="h-full min-h-0 overflow-y-auto pr-1">
+                    <DroneVisionAnalysisSection
+                      onAddTree={handleAddTree}
+                    />
+                  </div>
+                )}
+
+                {activeModule === "control-status" && (
                   <div className="h-full overflow-y-auto pr-1">
                     <ControlSection
+                      mode="status"
                       tasks={tasks}
                       grids={grids}
                       onAddTask={handleAddTask}
@@ -996,21 +2455,24 @@ export default function App() {
                   </div>
                 )}
 
-                {activeModule === "admin" && (
-                  <div className="h-full overflow-y-auto pr-1">
-                    <AdminSection />
-                  </div>
-                )}
-
-                {activeModule === "system" && (
-                  <div className="h-full overflow-y-auto pr-1">
-                    <SystemSection />
-                  </div>
-                )}
-
-                {activeModule === "simulation" && (
-                  <div className="h-full overflow-y-auto pr-1">
+                {activeModule === "control-work" && (
+                  <div className="h-full min-h-0 overflow-y-auto pr-1">
                     <SimulationSection />
+                  </div>
+                )}
+
+                {(activeModule === "admin-report" ||
+                  activeModule === "admin-species") && (
+                  <div className="h-full overflow-y-auto pr-1">
+                    <AdminSection
+                      title={activeModuleLabel}
+                      view={
+                        activeModule ===
+                        "admin-species"
+                          ? "species"
+                          : "report"
+                      }
+                    />
                   </div>
                 )}
               </motion.div>
@@ -1055,10 +2517,6 @@ export default function App() {
             >
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <div>
-                  <div className="text-xs font-extrabold text-rose-600">
-                    REAL-TIME ALERT
-                  </div>
-
                   <h2 className="mt-1 text-xl font-black text-slate-950">
                     실시간 통합 알림
                   </h2>
@@ -1080,18 +2538,18 @@ export default function App() {
 
                   const toneClass =
                     alert.tone === "danger"
-                      ? "border-rose-200 bg-rose-50 text-rose-800"
+                      ? "text-rose-800"
                       : alert.tone === "warning"
-                        ? "border-amber-200 bg-amber-50 text-amber-800"
-                        : "border-blue-200 bg-blue-50 text-blue-800";
+                        ? "text-amber-800"
+                        : "text-blue-800";
 
                   return (
                     <article
                       key={alert.id}
-                      className={`rounded-2xl border p-4 ${toneClass}`}
+                      className={`p-1 ${toneClass}`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80">
+                        <div className="mt-0.5 flex shrink-0 items-center justify-center">
                           <Icon size={18} />
                         </div>
 
@@ -1150,7 +2608,7 @@ export default function App() {
                 stiffness: 320,
                 damping: 34,
               }}
-              className="fixed bottom-0 right-0 top-0 z-[60] w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[630px]"
+              className="fixed bottom-0 right-0 top-0 z-[60] w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[480px]"
             >
               <button
                 type="button"
@@ -1168,26 +2626,28 @@ export default function App() {
       </AnimatePresence>
 
       {!isChatOpen && (
-        <div className="fixed bottom-6 right-6 z-50">
-          <motion.button
-            type="button"
-            onClick={() => setIsChatOpen(true)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="group relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-emerald-400/35 bg-emerald-800 text-white shadow-xl transition-colors hover:bg-emerald-900"
-            aria-label="AI 챗봇 열기"
-          >
-            <MessageSquare size={22} />
+        <motion.button
+          type="button"
+          onClick={() => setIsChatOpen(true)}
+          whileHover={{ width: 62 }}
+          whileTap={{ scale: 0.95 }}
+          className="group fixed right-0 top-1/2 z-50 flex h-15 w-10 -translate-y-1/2 flex-col items-center justify-center rounded-l-2xl border border-emerald-700 border-r-0 bg-emerald-800 text-white shadow-xl transition-all hover:bg-emerald-900"
+          aria-label="AI 챗봇 열기"
+        >
+          <MessageSquare size={23} />
 
-            <span className="absolute -right-1 -top-1 animate-bounce rounded-full border border-white bg-amber-400 px-1.5 py-0.5 text-[9px] font-black text-emerald-950">
-              AI
-            </span>
+          <span className="mt-2 text-[9px] font-black tracking-[0.2em] [writing-mode:vertical-rl]">
 
-            <span className="pointer-events-none absolute right-16 whitespace-nowrap rounded-xl bg-slate-900/90 px-2.5 py-1 text-[10px] font-bold text-white opacity-0 shadow transition-all group-hover:opacity-100">
-              위험격자·백서 통합 질의 비서
-            </span>
-          </motion.button>
-        </div>
+          </span>
+
+          <span className="absolute -left-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-amber-400 px-1 text-[8px] font-black text-emerald-950">
+            AI
+          </span>
+
+          <span className="pointer-events-none absolute right-14 whitespace-nowrap rounded-xl bg-slate-900/90 px-3 py-2 text-[10px] font-bold text-white opacity-0 shadow-lg transition group-hover:opacity-100">
+            위험격자·백서 통합 질의 비서
+          </span>
+        </motion.button>
       )}
     </div>
   );
