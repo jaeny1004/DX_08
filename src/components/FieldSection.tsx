@@ -5,6 +5,7 @@ import {
   ListCheckIcon,
   MapPin,
   UserCheck,
+  Users,
 } from "lucide-react";
 
 import {
@@ -18,6 +19,11 @@ import {
 } from "../types/dispatch";
 
 import { LeafletMap } from "./LeafletMap";
+import { InventoryPanel } from "./InventoryPanel";
+import {
+  FIELD_WORKERS,
+  type FieldWorkerMarker,
+} from "../config/operationsMockData";
 
 interface FieldSectionProps {
   reports: CrowdReport[];
@@ -183,6 +189,9 @@ export default function FieldSection({
   const [selectedReportId, setSelectedReportId] =
     useState<string | null>(null);
 
+  const [selectedWorkerId, setSelectedWorkerId] =
+    useState<string | null>(null);
+
   const [convertedReportIds, setConvertedReportIds] =
     useState<Set<string>>(() => new Set());
 
@@ -190,6 +199,11 @@ export default function FieldSection({
     reports.find(
       (report) =>
         String(report.id) === selectedReportId
+    ) || null;
+
+  const selectedWorker =
+    FIELD_WORKERS.find(
+      (worker) => worker.id === selectedWorkerId
     ) || null;
 
   useEffect(() => {
@@ -237,8 +251,9 @@ export default function FieldSection({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="grid h-full w-full min-w-0 grid-cols-1 items-start gap-5 xl:grid-cols-12"
+      className="h-full w-full min-w-0 space-y-6"
     >
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12">
       {/* 왼쪽: 목록과 선택 항목 상세를 하나의 패널에 통합 */}
       <section className="min-w-0 xl:col-span-6">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -508,20 +523,28 @@ export default function FieldSection({
       <section className="min-w-0 xl:col-span-6">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <header className="border-b border-slate-200 px-5 py-4">
-            <div className="flex items-center gap-2">
-              <MapPin
-                size={18}
-                className="shrink-0 text-rose-500"
-              />
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <MapPin
+                    size={18}
+                    className="shrink-0 text-rose-500"
+                  />
 
-              <h2 className="text-base font-black text-slate-950">
-                시민 제보 위치 지도
-              </h2>
+                  <h2 className="text-base font-black text-slate-950">
+                    시민 제보 및 현장 예찰 요원 지도
+                  </h2>
+                </div>
+
+                <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                  제보 마커와 현장 예찰 요원의 현재 위치를 함께 확인합니다.
+                </p>
+              </div>
+
+              <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">
+                <Users size={12} /> 요원 {FIELD_WORKERS.length}명
+              </span>
             </div>
-
-            <p className="mt-1 text-[10px] font-semibold text-slate-400">
-              지도 마커를 눌러 해당 제보의 상세 정보를 확인할 수 있습니다.
-            </p>
           </header>
 
           <div className="h-[600px] w-full min-w-0">
@@ -533,9 +556,16 @@ export default function FieldSection({
               onMarkerClick={(
                 record: CrowdReport
               ) => {
+                setSelectedWorkerId(null);
                 setSelectedReportId(
                   String(record.id)
                 );
+              }}
+              workers={FIELD_WORKERS}
+              selectedWorkerId={selectedWorkerId}
+              onWorkerClick={(worker: FieldWorkerMarker) => {
+                setSelectedReportId(null);
+                setSelectedWorkerId(worker.id);
               }}
             />
           </div>
@@ -553,7 +583,9 @@ export default function FieldSection({
                         selectedReport
                       )
                     )
-                  : "제보를 선택하세요"}
+                  : selectedWorker
+                    ? selectedWorker.latitude.toFixed(7)
+                    : "마커를 선택하세요"}
               </div>
             </div>
 
@@ -569,12 +601,17 @@ export default function FieldSection({
                         selectedReport
                       )
                     )
-                  : "제보를 선택하세요"}
+                  : selectedWorker
+                    ? selectedWorker.longitude.toFixed(7)
+                    : "마커를 선택하세요"}
               </div>
             </div>
           </div>
         </div>
       </section>
+      </div>
+
+      <InventoryPanel />
     </motion.div>
   );
 }
