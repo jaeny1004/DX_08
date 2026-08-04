@@ -2,7 +2,12 @@ import React, {
   useEffect,
   useState,
 } from "react";
-import { createClient } from "@supabase/supabase-js";
+import {
+  createClient,
+  FunctionsFetchError,
+  FunctionsHttpError,
+  FunctionsRelayError,
+} from "@supabase/supabase-js";
 import { motion } from "motion/react";
 import {
   Camera,
@@ -126,19 +131,34 @@ function confidencePercent(
     );
 }
 
-function formatApiError(payload: unknown) {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "error" in payload
-  ) {
-    return String(
-      (payload as { error?: unknown }).error ??
-      "Roboflow 분석에 실패했습니다.",
-    );
+async function getEdgeFunctionErrorMessage(
+  error: unknown,
+): Promise<string> {
+  if (error instanceof FunctionsHttpError) {
+    try {
+      const payload = await error.context.json();
+
+      return (
+        payload?.error ??
+        payload?.message ??
+        JSON.stringify(payload)
+      );
+    } catch {
+      return error.message;
+    }
   }
 
-  return "Roboflow 분석에 실패했습니다.";
+  if (error instanceof FunctionsRelayError) {
+    return `Supabase 중계 오류: ${error.message}`;
+  }
+
+  if (error instanceof FunctionsFetchError) {
+    return `Edge Function 연결 오류: ${error.message}`;
+  }
+
+  return error instanceof Error
+    ? error.message
+    : "알 수 없는 분석 오류입니다.";
 }
 
 export default function DroneVisionAnalysisSection({
@@ -252,57 +272,37 @@ export default function DroneVisionAnalysisSection({
     return filePath;
   };
 
-  const createAnalysisUrl = async (
-    storagePath: string,
-  ) => {
-    const { data, error } = await supabase
-      .storage
-      .from(DRONE_BUCKET)
-      .createSignedUrl(storagePath, 600);
-
-    if (error || !data?.signedUrl) {
-      throw new Error(
-        `분석용 이미지 주소 생성 실패: ${error?.message ?? "주소가 없습니다."}`,
-      );
-    }
-
-    return data.signedUrl;
-  };
-
   const requestRoboflowAnalysis = async (
-    imageUrl: string,
+    storagePath: string,
   ): Promise<VisionDetectionResult> => {
-    const response = await fetch(
-      "/api/roboflow",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+    const { data, error } =
+      await supabase.functions.invoke<VisionDetectionResult>(
+        "drone-visible-detection",
+        {
+          body: {
+            bucket: DRONE_BUCKET,
+            path: storagePath,
+            confidence: 15,
+            overlap: 30,
+          },
         },
-        body: JSON.stringify({
-          imageUrl,
-          confidence: 40,
-          overlap: 30,
-        }),
-      },
-    );
+      );
 
-    const payload = await response.json()
-      .catch(() => null);
+    if (error) {
+      const detail =
+        await getEdgeFunctionErrorMessage(error);
 
-    if (!response.ok) {
+      throw new Error(detail);
+    }
+
+    if (!data?.ok) {
       throw new Error(
-        formatApiError(payload),
+        data?.error ??
+        "Roboflow 분석에 실패했습니다.",
       );
     }
 
-    if (!payload?.ok) {
-      throw new Error(
-        formatApiError(payload),
-      );
-    }
-
-    return payload as VisionDetectionResult;
+    return data;
   };
 
   const analyzeBatch = async (
@@ -335,12 +335,9 @@ export default function DroneVisionAnalysisSection({
           storagePath,
         });
 
-        const imageUrl =
-          await createAnalysisUrl(storagePath);
-
         const result =
           await requestRoboflowAnalysis(
-            imageUrl,
+            storagePath,
           );
 
         updateProcess(item.id, {
