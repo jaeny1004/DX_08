@@ -20,6 +20,12 @@ const AUTH_PREVIEW_MODE =
 const TOKEN_KEY = "pine-wilt-access-token";
 const PREVIEW_USER_KEY = "pine-wilt-preview-user";
 const PREVIEW_VERIFICATION_CODE = "123456";
+const SESSION_EXPIRED_KEY = "pine-wilt-session-expired";
+
+export const AUTH_SESSION_EXPIRED_MESSAGE =
+  "로그인 세션이 만료되었습니다. 다시 로그인해 주세요.";
+
+let reloadScheduled = false;
 
 const buildUrl = buildApiUrl;
 
@@ -104,12 +110,43 @@ function readPreviewUser(): AuthUser {
   }
 }
 
-export function getAccessToken() {
-  if (AUTH_PREVIEW_MODE) {
-    return sessionStorage.getItem(TOKEN_KEY);
+function readStoredAccessToken(): string | null {
+  return AUTH_PREVIEW_MODE
+    ? sessionStorage.getItem(TOKEN_KEY)
+    : localStorage.getItem(TOKEN_KEY);
+}
+
+function isJwtExpired(token: string): boolean {
+  if (AUTH_PREVIEW_MODE || token === "preview-token") {
+    return false;
   }
 
-  return localStorage.getItem(TOKEN_KEY);
+  try {
+    const payloadPart = token.split(".")[1];
+    if (!payloadPart) return true;
+
+    const base64 = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(padded)) as { exp?: number };
+
+    return typeof payload.exp !== "number" || payload.exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
+}
+
+export function getAccessToken(): string | null {
+  const token = readStoredAccessToken();
+
+  if (!token) return null;
+
+  if (isJwtExpired(token)) {
+    clearAccessToken();
+    sessionStorage.setItem(SESSION_EXPIRED_KEY, AUTH_SESSION_EXPIRED_MESSAGE);
+    return null;
+  }
+
+  return token;
 }
 
 export function saveAccessToken(token: string) {
@@ -125,6 +162,24 @@ export function clearAccessToken() {
   localStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(PREVIEW_USER_KEY);
+}
+
+/** 보호 API가 401을 반환하면 오래된 로그인 화면을 유지하지 않는다. */
+export function expireAuthSession(
+  message = AUTH_SESSION_EXPIRED_MESSAGE,
+) {
+  clearAccessToken();
+  sessionStorage.setItem(SESSION_EXPIRED_KEY, message);
+
+  if (typeof window === "undefined" || reloadScheduled) return;
+  reloadScheduled = true;
+  window.setTimeout(() => window.location.reload(), 50);
+}
+
+export function consumeAuthSessionMessage(): string | null {
+  const message = sessionStorage.getItem(SESSION_EXPIRED_KEY);
+  sessionStorage.removeItem(SESSION_EXPIRED_KEY);
+  return message;
 }
 
 export async function checkEmailAvailability(
@@ -336,6 +391,11 @@ export async function getCurrentUser(): Promise<AuthUser> {
       },
     },
   );
+
+  if (response.status === 401) {
+    expireAuthSession();
+    throw new Error(AUTH_SESSION_EXPIRED_MESSAGE);
+  }
 
   return parseResponse<AuthUser>(response);
 }

@@ -1,5 +1,9 @@
 import { buildApiUrl } from "../config/api";
-import { getAccessToken } from "./authApi";
+import {
+  AUTH_SESSION_EXPIRED_MESSAGE,
+  expireAuthSession,
+  getAccessToken,
+} from "./authApi";
 
 const API_BASE = buildApiUrl("/api/report-drafts");
 
@@ -90,10 +94,23 @@ export interface RegisterDraftResponse {
 
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
   const token = getAccessToken();
+
+  if (!token) {
+    expireAuthSession();
+    throw new Error(AUTH_SESSION_EXPIRED_MESSAGE);
+  }
+
   return {
     ...(extra ?? {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    Authorization: `Bearer ${token}`,
   };
+}
+
+function handleUnauthorized(response: Response): void {
+  if (response.status === 401) {
+    expireAuthSession();
+    throw new Error(AUTH_SESSION_EXPIRED_MESSAGE);
+  }
 }
 
 async function readApiError(response: Response): Promise<string> {
@@ -115,6 +132,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
       ...((init?.headers as Record<string, string>) ?? {}),
     }),
   });
+  handleUnauthorized(response);
   if (!response.ok) throw new Error(await readApiError(response));
   return response.json() as Promise<T>;
 }
@@ -124,6 +142,7 @@ async function requestBlob(url: string, init?: RequestInit): Promise<Blob> {
     ...init,
     headers: authHeaders((init?.headers as Record<string, string>) ?? {}),
   });
+  handleUnauthorized(response);
   if (!response.ok) throw new Error(await readApiError(response));
   return response.blob();
 }
@@ -169,6 +188,7 @@ export async function downloadDraftFile(draftId: string, format: DraftExportForm
     `${API_BASE}/${encodeURIComponent(draftId)}/export/${format}`,
     { method: "POST", headers: authHeaders() },
   );
+  handleUnauthorized(response);
   if (!response.ok) throw new Error(await readApiError(response));
 
   const blob = await response.blob();

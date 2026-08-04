@@ -15,11 +15,11 @@
 /**
  * 프론트 .env 우선순위
  *
- * 1. VITE_RAG_API_BASE
- * 2. VITE_API_BASE_URL
- * 3. 네이버클라우드 공용 FastAPI 서버
+ * 1. VITE_API_BASE_URL (행정문서·인증과 같은 공용 백엔드)
+ * 2. VITE_RAG_API_BASE (기존 설정 호환)
+ * 3. 운영 FastAPI 서버
  */
-const DEFAULT_RAG_API_BASE = "http://101.79.24.212:8788";
+const DEFAULT_RAG_API_BASE = "https://dx-08-backend.vercel.app";
 
 /**
  * RAG 요청 제한 시간
@@ -57,7 +57,7 @@ const envApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
  * 최종적으로 사용하는 RAG API 주소
  */
 export const RAG_API_BASE = normalizeBaseUrl(
-  envRagApiBase || envApiBaseUrl || DEFAULT_RAG_API_BASE
+  envApiBaseUrl || envRagApiBase || DEFAULT_RAG_API_BASE
 );
 
 /**
@@ -65,7 +65,7 @@ export const RAG_API_BASE = normalizeBaseUrl(
  *
  * 예:
  * buildRagApiUrl("/chat")
- * → http://101.79.24.212:8788/chat
+ * → https://dx-08-backend.vercel.app/chat
  */
 export function buildRagApiUrl(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
@@ -93,12 +93,32 @@ export interface RagChatHistoryItem {
 export type RagHistoryItem = RagChatHistoryItem;
 export type ChatHistoryItem = RagChatHistoryItem;
 
+/** 지도에서 선택한 위험격자의 RAG 질문 문맥 */
+export interface GridContext {
+  grid_id?: string | number;
+  risk_score?: number;
+  risk_grade?: string;
+  risk_stage_label?: string;
+  field_priority_score_v3?: number;
+  field_priority_grade_v3?: string;
+  priority_stage_label?: string;
+  pine_ratio?: number;
+  infection_pressure?: number;
+  access_score_v3?: number;
+  road_class_near?: string;
+  road_dist_m?: number;
+  river_dist_m?: number;
+  env_flag?: string | number | boolean;
+  [key: string]: unknown;
+}
+
 /**
  * FastAPI POST /chat 요청 구조
  */
 export interface RagChatRequest {
   question: string;
   history: RagChatHistoryItem[];
+  grid_context: GridContext | null;
 }
 
 /**
@@ -417,7 +437,8 @@ async function readErrorResponse(
  */
 export async function askRagChat(
   question: string,
-  history: RagChatHistoryItem[] = []
+  history: RagChatHistoryItem[] = [],
+  gridContext: GridContext | null = null,
 ): Promise<RagChatResponse> {
   const normalizedQuestion =
     typeof question === "string" ? question.trim() : "";
@@ -429,6 +450,7 @@ export async function askRagChat(
   const payload: RagChatRequest = {
     question: normalizedQuestion,
     history: normalizeHistory(history),
+    grid_context: gridContext,
   };
 
   const controller = new AbortController();

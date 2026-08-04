@@ -4,11 +4,12 @@
  * 우선순위:
  * 1. VITE_API_BASE_URL
  * 2. VITE_RAG_API_BASE (기존 환경변수 호환)
- * 3. 현재 페이지와 같은 origin (운영 Nginx /api 프록시 권장)
- * 4. 개발 기본값 http://127.0.0.1:8788
+ * 3. 운영 공용 FastAPI 서버
+ * 4. 로컬 개발 기본값 http://127.0.0.1:8788
  */
 
 const DEVELOPMENT_API_BASE = "http://127.0.0.1:8788";
+const PRODUCTION_API_BASE = "https://dx-08-backend.vercel.app";
 
 function normalizeBaseUrl(value: string): string {
   const normalized = value.trim().replace(/\/+$/, "");
@@ -34,14 +35,9 @@ const configuredApiBase =
   import.meta.env.VITE_RAG_API_BASE ||
   "";
 
-const sameOriginBase =
-  typeof window !== "undefined" && window.location.origin
-    ? window.location.origin
-    : "";
-
 export const API_BASE_URL = normalizeBaseUrl(
   configuredApiBase ||
-    (import.meta.env.PROD ? sameOriginBase : DEVELOPMENT_API_BASE),
+    (import.meta.env.PROD ? PRODUCTION_API_BASE : DEVELOPMENT_API_BASE),
 );
 
 /** 기존 코드 호환용 별칭 */
