@@ -40,56 +40,6 @@ type WebhookPayload = {
   record?: PineRecord;
 };
 
-type RoboflowPrediction = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  confidence: number;
-  class: string;
-};
-
-function normalizeConfidence(value: unknown) {
-  const confidence = Number(value ?? 0);
-
-  if (!Number.isFinite(confidence)) {
-    return 0;
-  }
-
-  return confidence > 1
-    ? Math.min(confidence / 100, 1)
-    : Math.max(0, Math.min(confidence, 1));
-}
-
-function getDetectionPredictions(
-  result: any
-): RoboflowPrediction[] {
-  if (!Array.isArray(result?.predictions)) {
-    return [];
-  }
-
-  return result.predictions
-    .map((prediction: any) => ({
-      x: Number(prediction?.x ?? 0),
-      y: Number(prediction?.y ?? 0),
-      width: Number(prediction?.width ?? 0),
-      height: Number(prediction?.height ?? 0),
-      confidence: normalizeConfidence(
-        prediction?.confidence
-      ),
-      class: String(
-        prediction?.class ??
-        prediction?.label ??
-        "infected_tree"
-      ),
-    }))
-    .filter(
-      (prediction: RoboflowPrediction) =>
-        prediction.width > 0 &&
-        prediction.height > 0
-    );
-}
-
 function getBestPrediction(result: any) {
   const predictions = Array.isArray(result?.predictions)
     ? result.predictions
@@ -159,8 +109,6 @@ export default async function handler(
     const body = req.body as WebhookPayload & {
       imageUrl?: string;
       recordId?: string | number;
-      confidence?: number;
-      overlap?: number;
     };
 
     const isWebhook = Boolean(body.record);
@@ -210,25 +158,8 @@ export default async function handler(
 
     const base64Image = imageBuffer.toString("base64");
 
-    const roboflowUrl = new URL(
-      `https://serverless.roboflow.com/${ROBOFLOW_MODEL_ID}`
-    );
-
-    roboflowUrl.searchParams.set(
-      "api_key",
-      ROBOFLOW_API_KEY
-    );
-    roboflowUrl.searchParams.set(
-      "confidence",
-      String(body.confidence ?? 40)
-    );
-    roboflowUrl.searchParams.set(
-      "overlap",
-      String(body.overlap ?? 30)
-    );
-
     const roboflowResponse = await fetch(
-      roboflowUrl,
+      `https://serverless.roboflow.com/${ROBOFLOW_MODEL_ID}?api_key=${ROBOFLOW_API_KEY}`,
       {
         method: "POST",
         headers: {
@@ -249,22 +180,11 @@ export default async function handler(
     }
 
     const rawResult = JSON.parse(responseText);
-    const predictions =
-      getDetectionPredictions(rawResult);
     const prediction = getBestPrediction(rawResult);
 
     const probability = Number(
       prediction.probability.toFixed(1)
     );
-
-    const isInfected =
-      predictions.length > 0 ||
-      prediction.label
-        .toLowerCase()
-        .includes("infected") ||
-      prediction.label
-        .toLowerCase()
-        .includes("disease");
 
     if (recordId && supabaseAdmin) {
       const { error: updateError } =
@@ -289,27 +209,16 @@ export default async function handler(
 
     return res.status(200).json({
       ok: true,
-      status:
-        predictions.length > 0
-          ? "INFECTED"
-          : "NORMAL",
-      infectedCount: predictions.length,
-      predictions,
-      image: {
-        width: Number(
-          rawResult?.image?.width ?? 0
-        ),
-        height: Number(
-          rawResult?.image?.height ?? 0
-        ),
-      },
       label: prediction.label,
       score: probability,
-      level: isInfected
-        ? "danger"
-        : "safe",
+      level:
+        prediction.label.toLowerCase().includes("infected") ||
+          prediction.label.toLowerCase().includes("disease")
+          ? "danger"
+          : "safe",
       message:
-        isInfected
+        prediction.label.toLowerCase().includes("infected") ||
+          prediction.label.toLowerCase().includes("disease")
           ? `소나무 재선충병 감염 의심 - 확률 ${probability}%`
           : `정상 또는 낮은 위험 - 확률 ${probability}%`,
       raw: rawResult,
