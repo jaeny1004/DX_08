@@ -66,6 +66,7 @@ import Dashboard from "./components/Dashboard";
 import MonitoringSection from "./components/MonitoringSection";
 import FieldSection from "./components/FieldSection";
 import ThermalAnalysisSection from "./components/ThermalAnalysisSection";
+import DroneVisionAnalysisSection from "./components/DroneVisionAnalysisSection";
 import ControlSection from "./components/ControlSection";
 import SimulationSection from "./components/SimulationSection";
 import AdminSection from "./components/AdminSection";
@@ -514,10 +515,12 @@ type ModuleId =
   | "monitoring"
   | "field"
   | "thermal-analysis"
+  | "drone-vision-analysis"
   | "control"
   | "control-status"
   | "control-work"
-  | "admin";
+  | "admin-report"
+  | "admin-species";
 
 export default function App() {
   const [activeModule, setActiveModule] =
@@ -1557,6 +1560,24 @@ export default function App() {
     );
   };
 
+  const adminGroup = {
+    id: "admin",
+    label: "행정 기안 지원",
+    icon: FileText,
+    items: [
+      {
+        id: "admin-report",
+        label: "보고서 생성 및 조회",
+        icon: FileText,
+      },
+      {
+        id: "admin-species",
+        label: "AI 친환경 수종전환 추천",
+        icon: TreePine,
+      },
+    ],
+  } as const;
+
   const modules = [
     {
       id: "dashboard",
@@ -1573,11 +1594,7 @@ export default function App() {
       label: "실시간 방제 현황",
       icon: ShieldCheck,
     },
-    {
-      id: "admin",
-      label: "행정 문서 작성",
-      icon: FileText,
-    },
+    ...adminGroup.items,
   ] as const;
 
   const activeModuleLabel =
@@ -1914,9 +1931,17 @@ export default function App() {
                       {/* 실사 드론 사진 감염도 확인 */}
                       <button
                         type="button"
-                        disabled
-                        title="준비 중"
-                        className="flex h-9 w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 text-left text-slate-400 opacity-50"
+                        onClick={() =>
+                          setActiveModule(
+                            "drone-vision-analysis"
+                          )
+                        }
+                        className={
+                          activeModule ===
+                          "drone-vision-analysis"
+                            ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                            : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
                       >
                         <Camera
                           size={16}
@@ -1983,14 +2008,22 @@ export default function App() {
                       {/* 실사 드론 사진 감염도 확인 */}
                       <button
                         type="button"
-                        disabled
-                        title="준비 중"
-                        className="group/submenu relative flex h-10 w-12 cursor-not-allowed items-center justify-center rounded-lg text-slate-300 opacity-50"
+                        onClick={() =>
+                          setActiveModule(
+                            "drone-vision-analysis"
+                          )
+                        }
+                        className={
+                          activeModule ===
+                          "drone-vision-analysis"
+                            ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                            : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                        }
                       >
                         <Camera size={18} />
 
                         <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
-                          실사 드론 사진 감염도 확인 · 준비 중
+                          실사 드론 사진 감염도 확인
                         </span>
                       </button>
 
@@ -2163,51 +2196,104 @@ export default function App() {
             </div>
 
             {/* =========================
-                행정 레포트
+                행정 기안 지원
             ========================== */}
-            {(() => {
-              const module = modules.find(
-                (item) => item.id === "admin"
-              );
+            <div className="group relative mt-1">
+              <div
+                className={
+                  isSidebarOpen
+                    ? adminGroup.items.some(
+                      (item) =>
+                        item.id === activeModule
+                    )
+                      ? "flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-emerald-900"
+                      : "flex h-10 w-full items-center gap-3 rounded-lg px-3 text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                    : adminGroup.items.some(
+                      (item) =>
+                        item.id === activeModule
+                    )
+                      ? "flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
+                      : "flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                }
+              >
+                <FileText
+                  size={20}
+                  className="shrink-0"
+                />
 
-              if (!module) return null;
+                {isSidebarOpen ? (
+                  <span className="truncate text-sm font-extrabold">
+                    {adminGroup.label}
+                  </span>
+                ) : (
+                  <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
+                    {adminGroup.label}
+                  </span>
+                )}
+              </div>
 
-              const Icon = module.icon;
-              const active =
-                activeModule === module.id;
+              <div className="grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:grid-rows-[1fr] group-hover:opacity-100">
+                <div className="overflow-hidden">
+                  <div
+                    className={
+                      isSidebarOpen
+                        ? "mt-1 space-y-1 pl-8"
+                        : "mt-1 flex flex-col items-center gap-1"
+                    }
+                  >
+                    {adminGroup.items.map(
+                      (item) => {
+                        const Icon = item.icon;
+                        const active =
+                          activeModule === item.id;
 
-              return (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActiveModule(module.id)
-                  }
-                  title={module.label}
-                  aria-label={module.label}
-                  className={
-                    isSidebarOpen
-                      ? active
-                        ? "group relative flex h-10 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
-                        : "group relative flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
-                      : active
-                        ? "group relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-900"
-                        : "group relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
-                  }
-                >
-                  <Icon size={20} className="shrink-0" />
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() =>
+                              setActiveModule(
+                                item.id
+                              )
+                            }
+                            title={item.label}
+                            aria-label={item.label}
+                            className={
+                              isSidebarOpen
+                                ? active
+                                  ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
+                                  : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                                : active
+                                  ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
+                                  : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
+                            }
+                          >
+                            <Icon
+                              size={
+                                isSidebarOpen
+                                  ? 16
+                                  : 18
+                              }
+                              className="shrink-0"
+                            />
 
-                  {isSidebarOpen ? (
-                    <span className="truncate text-sm font-extrabold">
-                      {module.label}
-                    </span>
-                  ) : (
-                    <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
-                      {module.label}
-                    </span>
-                  )}
-                </button>
-              );
-            })()}
+                            {isSidebarOpen ? (
+                              <span className="truncate text-xs font-extrabold">
+                                {item.label}
+                              </span>
+                            ) : (
+                              <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
+                                {item.label}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </nav>
 
           <div className="mt-3 border-t border-slate-200 pt-3">
@@ -2349,6 +2435,14 @@ export default function App() {
                   </div>
                 )}
 
+                {activeModule === "drone-vision-analysis" && (
+                  <div className="h-full min-h-0 overflow-y-auto pr-1">
+                    <DroneVisionAnalysisSection
+                      onAddTree={handleAddTree}
+                    />
+                  </div>
+                )}
+
                 {activeModule === "control-status" && (
                   <div className="h-full overflow-y-auto pr-1">
                     <ControlSection
@@ -2367,9 +2461,18 @@ export default function App() {
                   </div>
                 )}
 
-                {activeModule === "admin" && (
+                {(activeModule === "admin-report" ||
+                  activeModule === "admin-species") && (
                   <div className="h-full overflow-y-auto pr-1">
-                    <AdminSection title="행정 문서 작성" />
+                    <AdminSection
+                      title={activeModuleLabel}
+                      view={
+                        activeModule ===
+                        "admin-species"
+                          ? "species"
+                          : "report"
+                      }
+                    />
                   </div>
                 )}
               </motion.div>

@@ -124,6 +124,7 @@ export interface FieldVoiceLogRecord {
 export type TreeImageSource =
   | "citizen"
   | "thermal"
+  | "drone-visible"
   | "manual";
 
 export interface TreeThermalPrediction {
