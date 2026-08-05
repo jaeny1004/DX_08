@@ -272,9 +272,9 @@ interface MonitoringSectionProps {
       TreeRecord["status"]
   ) => void;
 
-  onDeleteTree: (
-    id: string
-  ) => Promise<boolean>;
+  onDeleteTrees: (
+    ids: string[]
+  ) => Promise<string[]>;
 }
 
 export default function MonitoringSection({
@@ -283,7 +283,7 @@ export default function MonitoringSection({
   fieldVoiceLogs,
   onAddTree,
   onUpdateTreeStatus,
-  onDeleteTree,
+  onDeleteTrees,
 }: MonitoringSectionProps) {
 
   // =========================================================
@@ -318,8 +318,16 @@ export default function MonitoringSection({
   const [searchText, setSearchText] =
     useState("");
 
-  const [deletingTreeId, setDeletingTreeId] =
-    useState<string | null>(null);
+  const [isDeleteMode, setIsDeleteMode] =
+    useState(false);
+
+  const [selectedDeleteIds, setSelectedDeleteIds] =
+    useState<Set<string>>(
+      () => new Set()
+    );
+
+  const [isDeletingTrees, setIsDeletingTrees] =
+    useState(false);
 
 
   // =========================================================
@@ -331,11 +339,42 @@ export default function MonitoringSection({
       trees[0]?.id ?? null
     );
 
-  const handleDeleteTree = async (
-    tree: TreeRecord
+  const toggleDeleteSelection = (
+    id: string
   ) => {
+    setSelectedDeleteIds((previous) => {
+      const next = new Set(previous);
+
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+
+      return next;
+    });
+  };
+
+  const cancelDeleteMode = () => {
+    if (isDeletingTrees) {
+      return;
+    }
+
+    setIsDeleteMode(false);
+    setSelectedDeleteIds(new Set());
+  };
+
+  const handleDeleteSelectedTrees = async () => {
+    const ids = Array.from(
+      selectedDeleteIds
+    );
+
+    if (ids.length === 0) {
+      return;
+    }
+
     const confirmed = window.confirm(
-      `[${tree.id}] 확진목을 삭제하시겠습니까?\n\n` +
+      `선택한 확진목 ${ids.length}건을 삭제하시겠습니까?\n\n` +
       "확진목 목록과 타임라인에서는 사라지지만, " +
       "STT·이미지·시민 제보 원본은 Supabase에 보존됩니다."
     );
@@ -344,25 +383,48 @@ export default function MonitoringSection({
       return;
     }
 
-    setDeletingTreeId(tree.id);
+    setIsDeletingTrees(true);
 
     try {
-      const deleted = await onDeleteTree(
-        tree.id
+      const deletedIds = await onDeleteTrees(
+        ids
       );
 
-      if (deleted) {
-        setIsVideoOpen(false);
-        setIsImageOpen(false);
-        setSelectedImage(null);
-        setIsAudioOpen(false);
-        setSelectedAudio(null);
+      if (deletedIds.length > 0) {
+        const deletedIdSet = new Set(
+          deletedIds
+        );
+
+        setSelectedDeleteIds((previous) => {
+          const next = new Set(previous);
+
+          deletedIds.forEach((id) => {
+            next.delete(id);
+          });
+
+          return next;
+        });
+
+        if (
+          selectedTreeId &&
+          deletedIdSet.has(selectedTreeId)
+        ) {
+          setIsVideoOpen(false);
+          setIsImageOpen(false);
+          setSelectedImage(null);
+          setIsAudioOpen(false);
+          setSelectedAudio(null);
+        }
+      }
+
+      if (deletedIds.length === ids.length) {
+        setIsDeleteMode(false);
+        setSelectedDeleteIds(new Set());
       }
     } finally {
-      setDeletingTreeId(null);
+      setIsDeletingTrees(false);
     }
   };
-
 
   // =========================================================
   // 영상 패널
@@ -1217,6 +1279,34 @@ export default function MonitoringSection({
 
     });
 
+  const visibleTreeIds = filteredTrees.map(
+    (tree) => tree.id
+  );
+
+  const allVisibleTreesSelected =
+    visibleTreeIds.length > 0 &&
+    visibleTreeIds.every((id) =>
+      selectedDeleteIds.has(id)
+    );
+
+  const toggleAllVisibleTrees = () => {
+    setSelectedDeleteIds((previous) => {
+      const next = new Set(previous);
+
+      if (allVisibleTreesSelected) {
+        visibleTreeIds.forEach((id) => {
+          next.delete(id);
+        });
+      } else {
+        visibleTreeIds.forEach((id) => {
+          next.add(id);
+        });
+      }
+
+      return next;
+    });
+  };
+
 
   // =========================================================
   // 신규 감염목 등록
@@ -1693,6 +1783,59 @@ export default function MonitoringSection({
                 {/* 오른쪽 : 검색 + 신규 등록 */}
                 <div className="flex shrink-0 items-center gap-2">
 
+                  {/* 선택 삭제 */}
+
+                  {isDeleteMode ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={cancelDeleteMode}
+                        disabled={isDeletingTrees}
+                        className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <X size={15} />
+                        취소
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleDeleteSelectedTrees();
+                        }}
+                        disabled={
+                          selectedDeleteIds.size === 0 ||
+                          isDeletingTrees
+                        }
+                        className="flex h-10 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isDeletingTrees ? (
+                          <LoaderCircle
+                            size={15}
+                            className="animate-spin"
+                          />
+                        ) : (
+                          <Trash2 size={15} />
+                        )}
+
+                        {isDeletingTrees
+                          ? "삭제 중"
+                          : `선택 삭제 (${selectedDeleteIds.size})`}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDeleteMode(true);
+                        setSelectedDeleteIds(new Set());
+                      }}
+                      className="flex h-10 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-600 transition hover:bg-rose-100"
+                    >
+                      <Trash2 size={15} />
+                      삭제
+                    </button>
+                  )}
+
                   {/* 검색 */}
 
                   <div className="relative">
@@ -1765,6 +1908,22 @@ export default function MonitoringSection({
 
                   <tr>
 
+                    {isDeleteMode && (
+                      <th className="w-12 px-3 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={allVisibleTreesSelected}
+                          onChange={toggleAllVisibleTrees}
+                          disabled={
+                            visibleTreeIds.length === 0 ||
+                            isDeletingTrees
+                          }
+                          aria-label="현재 검색 결과 전체 선택"
+                          className="h-4 w-4 cursor-pointer accent-rose-600 disabled:cursor-not-allowed"
+                        />
+                      </th>
+                    )}
+
                     <th className="px-5 py-3 text-left text-[11px] font-black text-slate-500">
                       관리 ID
                     </th>
@@ -1785,10 +1944,6 @@ export default function MonitoringSection({
                       상태
                     </th>
 
-                    <th className="px-5 py-3 text-center text-[11px] font-black text-slate-500">
-                      관리
-                    </th>
-
                   </tr>
 
                 </thead>
@@ -1803,9 +1958,10 @@ export default function MonitoringSection({
                         selectedTreeId ===
                         tree.id;
 
-                      const isDeleting =
-                        deletingTreeId ===
-                        tree.id;
+                      const isCheckedForDelete =
+                        selectedDeleteIds.has(
+                          tree.id
+                        );
 
                       return (
 
@@ -1826,6 +1982,28 @@ export default function MonitoringSection({
                               : "cursor-pointer border-b border-slate-100 transition hover:bg-slate-50"
                           }
                         >
+
+                          {isDeleteMode && (
+                            <td
+                              className="w-12 px-3 py-4 text-center"
+                              onClick={(event) =>
+                                event.stopPropagation()
+                              }
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isCheckedForDelete}
+                                onChange={() =>
+                                  toggleDeleteSelection(
+                                    tree.id
+                                  )
+                                }
+                                disabled={isDeletingTrees}
+                                aria-label={`${tree.id} 삭제 선택`}
+                                className="h-4 w-4 cursor-pointer accent-rose-600 disabled:cursor-not-allowed"
+                              />
+                            </td>
+                          )}
 
                           <td className="px-5 py-4">
 
@@ -1882,7 +2060,7 @@ export default function MonitoringSection({
                               onClick={(event) =>
                                 event.stopPropagation()
                               }
-                              disabled={isDeleting}
+                              disabled={isDeletingTrees}
                               className={`rounded-lg border px-3 py-1.5 text-[10px] font-black outline-none ${getStatusClass(
                                 tree.status
                               )}`}
@@ -1923,38 +2101,6 @@ export default function MonitoringSection({
                             </select>
 
                           </td>
-
-
-                          <td className="px-5 py-4 text-center">
-
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void handleDeleteTree(tree);
-                              }}
-                              disabled={
-                                deletingTreeId !== null
-                              }
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[10px] font-black text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                              aria-label={`${tree.id} 확진목 삭제`}
-                            >
-                              {isDeleting ? (
-                                <LoaderCircle
-                                  size={13}
-                                  className="animate-spin"
-                                />
-                              ) : (
-                                <Trash2 size={13} />
-                              )}
-
-                              {isDeleting
-                                ? "삭제 중"
-                                : "삭제"}
-                            </button>
-
-                          </td>
-
                         </tr>
 
                       );
@@ -1968,7 +2114,9 @@ export default function MonitoringSection({
                     <tr>
 
                       <td
-                        colSpan={6}
+                        colSpan={
+                          isDeleteMode ? 6 : 5
+                        }
                         className="px-5 py-20 text-center text-xs font-bold text-slate-400"
                       >
                         검색 결과가 없습니다.

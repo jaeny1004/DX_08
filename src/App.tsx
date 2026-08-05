@@ -1277,13 +1277,21 @@ export default function App() {
     }
   };
 
-  const handleDeleteTree = async (
-    id: string
-  ): Promise<boolean> => {
+  const handleDeleteTrees = async (
+    ids: string[]
+  ): Promise<string[]> => {
+    const uniqueIds = Array.from(
+      new Set(ids.filter(Boolean))
+    );
+
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
     const { data, error } = await supabase
       .from("confirmed_trees")
       .delete()
-      .eq("id", id)
+      .in("id", uniqueIds)
       .select("id");
 
     if (error) {
@@ -1296,30 +1304,42 @@ export default function App() {
         "확진목을 삭제하지 못했습니다. Supabase DELETE 정책과 콘솔 오류를 확인해 주세요."
       );
 
-      return false;
+      return [];
     }
 
-    const deleted =
-      Array.isArray(data) &&
-      data.some(
-        (row) => String(row.id) === id
-      );
+    const deletedIds = Array.isArray(data)
+      ? data.map((row) => String(row.id))
+      : [];
 
-    if (!deleted) {
+    if (deletedIds.length === 0) {
       window.alert(
         "삭제 요청은 처리됐지만 실제 삭제된 행이 없습니다. Supabase DELETE 정책을 확인해 주세요."
       );
 
-      return false;
+      return [];
     }
+
+    const deletedIdSet = new Set(
+      deletedIds
+    );
 
     setTrees((previous) =>
       previous.filter(
-        (tree) => tree.id !== id
+        (tree) =>
+          !deletedIdSet.has(tree.id)
       )
     );
 
-    return true;
+    if (
+      deletedIds.length !==
+      uniqueIds.length
+    ) {
+      window.alert(
+        `${uniqueIds.length}건 중 ${deletedIds.length}건만 삭제되었습니다.`
+      );
+    }
+
+    return deletedIds;
   };
 
   const handleUpdateWorkerStatus = (
@@ -2454,8 +2474,8 @@ export default function App() {
                     onUpdateTreeStatus={
                       handleUpdateTreeStatus
                     }
-                    onDeleteTree={
-                      handleDeleteTree
+                    onDeleteTrees={
+                      handleDeleteTrees
                     }
                   />
                 )}
