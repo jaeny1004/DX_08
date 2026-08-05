@@ -1277,6 +1277,51 @@ export default function App() {
     }
   };
 
+  const handleDeleteTree = async (
+    id: string
+  ): Promise<boolean> => {
+    const { data, error } = await supabase
+      .from("confirmed_trees")
+      .delete()
+      .eq("id", id)
+      .select("id");
+
+    if (error) {
+      console.error(
+        "확진목 삭제 실패:",
+        error
+      );
+
+      window.alert(
+        "확진목을 삭제하지 못했습니다. Supabase DELETE 정책과 콘솔 오류를 확인해 주세요."
+      );
+
+      return false;
+    }
+
+    const deleted =
+      Array.isArray(data) &&
+      data.some(
+        (row) => String(row.id) === id
+      );
+
+    if (!deleted) {
+      window.alert(
+        "삭제 요청은 처리됐지만 실제 삭제된 행이 없습니다. Supabase DELETE 정책을 확인해 주세요."
+      );
+
+      return false;
+    }
+
+    setTrees((previous) =>
+      previous.filter(
+        (tree) => tree.id !== id
+      )
+    );
+
+    return true;
+  };
+
   const handleUpdateWorkerStatus = (
     id: string,
     status: WorkerStatus["status"]
@@ -2408,6 +2453,9 @@ export default function App() {
                     onAddTree={handleAddTree}
                     onUpdateTreeStatus={
                       handleUpdateTreeStatus
+                    }
+                    onDeleteTree={
+                      handleDeleteTree
                     }
                   />
                 )}

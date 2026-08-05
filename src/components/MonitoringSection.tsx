@@ -26,6 +26,7 @@ import {
   LoaderCircle,
   Mic,
   PlayCircle,
+  Trash2,
 } from "lucide-react";
 
 import {
@@ -270,6 +271,10 @@ interface MonitoringSectionProps {
     newStatus:
       TreeRecord["status"]
   ) => void;
+
+  onDeleteTree: (
+    id: string
+  ) => Promise<boolean>;
 }
 
 export default function MonitoringSection({
@@ -278,6 +283,7 @@ export default function MonitoringSection({
   fieldVoiceLogs,
   onAddTree,
   onUpdateTreeStatus,
+  onDeleteTree,
 }: MonitoringSectionProps) {
 
   // =========================================================
@@ -312,6 +318,9 @@ export default function MonitoringSection({
   const [searchText, setSearchText] =
     useState("");
 
+  const [deletingTreeId, setDeletingTreeId] =
+    useState<string | null>(null);
+
 
   // =========================================================
   // 선택된 감염목
@@ -321,6 +330,38 @@ export default function MonitoringSection({
     useState<string | null>(
       trees[0]?.id ?? null
     );
+
+  const handleDeleteTree = async (
+    tree: TreeRecord
+  ) => {
+    const confirmed = window.confirm(
+      `[${tree.id}] 확진목을 삭제하시겠습니까?\n\n` +
+      "확진목 목록과 타임라인에서는 사라지지만, " +
+      "STT·이미지·시민 제보 원본은 Supabase에 보존됩니다."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingTreeId(tree.id);
+
+    try {
+      const deleted = await onDeleteTree(
+        tree.id
+      );
+
+      if (deleted) {
+        setIsVideoOpen(false);
+        setIsImageOpen(false);
+        setSelectedImage(null);
+        setIsAudioOpen(false);
+        setSelectedAudio(null);
+      }
+    } finally {
+      setDeletingTreeId(null);
+    }
+  };
 
 
   // =========================================================
@@ -1744,6 +1785,10 @@ export default function MonitoringSection({
                       상태
                     </th>
 
+                    <th className="px-5 py-3 text-center text-[11px] font-black text-slate-500">
+                      관리
+                    </th>
+
                   </tr>
 
                 </thead>
@@ -1756,6 +1801,10 @@ export default function MonitoringSection({
 
                       const selected =
                         selectedTreeId ===
+                        tree.id;
+
+                      const isDeleting =
+                        deletingTreeId ===
                         tree.id;
 
                       return (
@@ -1833,6 +1882,7 @@ export default function MonitoringSection({
                               onClick={(event) =>
                                 event.stopPropagation()
                               }
+                              disabled={isDeleting}
                               className={`rounded-lg border px-3 py-1.5 text-[10px] font-black outline-none ${getStatusClass(
                                 tree.status
                               )}`}
@@ -1874,6 +1924,37 @@ export default function MonitoringSection({
 
                           </td>
 
+
+                          <td className="px-5 py-4 text-center">
+
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleDeleteTree(tree);
+                              }}
+                              disabled={
+                                deletingTreeId !== null
+                              }
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[10px] font-black text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={`${tree.id} 확진목 삭제`}
+                            >
+                              {isDeleting ? (
+                                <LoaderCircle
+                                  size={13}
+                                  className="animate-spin"
+                                />
+                              ) : (
+                                <Trash2 size={13} />
+                              )}
+
+                              {isDeleting
+                                ? "삭제 중"
+                                : "삭제"}
+                            </button>
+
+                          </td>
+
                         </tr>
 
                       );
@@ -1887,7 +1968,7 @@ export default function MonitoringSection({
                     <tr>
 
                       <td
-                        colSpan={5}
+                        colSpan={6}
                         className="px-5 py-20 text-center text-xs font-bold text-slate-400"
                       >
                         검색 결과가 없습니다.
