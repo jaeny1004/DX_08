@@ -636,25 +636,7 @@ export default function App() {
   const [
     dispatchAssignments,
     setDispatchAssignments,
-  ] = useState<DispatchAssignment[]>(() => {
-    try {
-      const saved = localStorage.getItem(
-        "pwd-dispatch-assignments"
-      );
-
-      if (!saved) {
-        return [];
-      }
-
-      const parsed = JSON.parse(saved);
-
-      return Array.isArray(parsed)
-        ? parsed
-        : [];
-    } catch {
-      return [];
-    }
-  });
+  ] = useState<DispatchAssignment[]>([]);
 
   const [isChatOpen, setIsChatOpen] =
     useState(false);
@@ -691,13 +673,6 @@ export default function App() {
         setIsAuthChecking(false);
       });
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem(
-      "pwd-dispatch-assignments",
-      JSON.stringify(dispatchAssignments)
-    );
-  }, [dispatchAssignments]);
 
   useEffect(() => {
     if (!authUser) {
