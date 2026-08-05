@@ -1648,6 +1648,22 @@ def create_docx(
     for prefix, value in paragraphs.items():
         set_paragraph(document, prefix, value)
 
+    # Vercel의 DOCX→PDF 변환 환경에는 일부 원문 기호 글리프가 없어
+    # ❍, ―, Ⅳ 등이 네모(속칭 엑박)로 출력될 수 있다. 문단 탐색과 내용
+    # 치환을 먼저 끝낸 뒤, PDF 호환성이 높은 ASCII 표기로 정규화한다.
+    replace_everywhere(
+        document,
+        {
+            "Ⅰ": "I",
+            "Ⅱ": "II",
+            "Ⅲ": "III",
+            "Ⅳ": "IV",
+            "Ⅴ": "V",
+            "❍": "-",
+            "―": "-",
+        },
+    )
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     document.save(output_path)
     report_appendix, aerial_plan = create_filled_appendix_images(
