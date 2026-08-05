@@ -1,0 +1,45 @@
+# Node / frontend
+node_modules/
+**/node_modules/
+build/
+dist/
+coverage/
+*.log
+.vercel/
+
+# Environment variables
+.env
+**/.env
+.env*
+**/.env*
+!.env.example
+!**/.env.example
+
+# Migration secret files
+rag-backend/migration/migration.env
+rag-backend/migration/storage.env
+
+# Python / RAG runtime
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+rag-backend/.pytest_cache/
+
+# Local vector database
+rag-backend/data/chroma/
+
+# Temporary backend backup
+rag-backend/app_backup/
+
+# OS files
+.DS_Store
+Thumbs.db
+__MACOSX/
+
+# GitHub 업로드 제외 대용량 파일
+/data/admin/BND_ADM_DONG_PG.shp
+/public/data/simulation_candidate_top30_v4.geojson
+/rag-backend/data/docs/소나무재선충병 바로 알기(국립산림과학원).pdf

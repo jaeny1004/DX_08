@@ -1,0 +1,12 @@
+[
+  {
+    "dataset_version": "3.0",
+    "data_source": "SYNTHETIC",
+    "is_sample": 1,
+    "import_batch_id": "WF_V3_ALL_REGIONS_20260718",
+    "region_count": 149,
+    "worker_count": 914,
+    "generated_at": "2026-07-18T12:18:26",
+    "note": "시연용 합성 데이터. 실제 기관·인력 현황이 아님."
+  }
+]
