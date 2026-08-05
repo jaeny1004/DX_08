@@ -2596,7 +2596,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[55] bg-slate-950/25 backdrop-blur-[1px]"
+              className="fixed inset-0 z-[2000] bg-slate-950/25 backdrop-blur-[1px]"
             />
 
             <motion.aside
@@ -2608,7 +2608,7 @@ export default function App() {
                 stiffness: 320,
                 damping: 34,
               }}
-              className="fixed bottom-0 right-0 top-0 z-[60] w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[480px]"
+              className="fixed bottom-0 right-0 top-0 z-[2010] w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[480px]"
             >
               <button
                 type="button"
