@@ -627,6 +627,8 @@ export default function DashboardRiskMapCard({
   const selectedRegionCapacityRef = useRef<RegionWorkforceCapacity | null>(null);
   const infectionHistoryIndexRef = useRef<Map<string, any>>(new Map());
   const initialRegionAppliedRef = useRef(false);
+  const pendingAdminPopupRef = useRef(false);
+  const adminPopupTimerRef = useRef<number | null>(null);
 
   const [geojson, setGeojson] = useState<any>(null);
   const [infectionHistory, setInfectionHistory] = useState<any>(null);
@@ -1284,6 +1286,10 @@ export default function DashboardRiskMapCard({
     return () => {
       map.off("zoomend", handleZoomEnd);
       resizeObserver.disconnect();
+      if (adminPopupTimerRef.current !== null) {
+        window.clearTimeout(adminPopupTimerRef.current);
+        adminPopupTimerRef.current = null;
+      }
       map.remove();
       leafletMapRef.current = null;
       gridLayerRef.current = null;
@@ -1347,6 +1353,7 @@ export default function DashboardRiskMapCard({
         });
         path.on("click", (event: L.LeafletMouseEvent) => {
           if (!code) return;
+          pendingAdminPopupRef.current = true;
           setSelectedSigunguCode(code);
           setSelectedEmdCode("");
           setSelected(null);
@@ -1445,26 +1452,37 @@ export default function DashboardRiskMapCard({
         animate: false,
         maxZoom: selectedEmdCode ? 13 : 11,
       });
-      window.setTimeout(() => {
-        const currentSummary = selectedAdminSummaryRef.current;
-        if (!currentSummary) return;
-        popupRef.current?.remove();
-        popupRef.current = L.popup({
-          maxWidth: 320,
-          minWidth: 240,
-          closeButton: true,
-          autoPan: true,
-          offset: L.point(18, -8),
-          className: "pine-admin-popup",
-        })
-          .setLatLng(map.getCenter())
-          .setContent(
-            createAdminPopupHtml(currentSummary, selectedRegionCapacityRef.current),
-          )
-          .openOn(map);
-      }, 80);
+      // 지역을 사용자가 직접 선택한 경우에만 행정구역 요약을 연다.
+      // 챗봇 열기처럼 부모 화면만 다시 렌더링되는 경우에는 지도 팝업을
+      // 자동으로 다시 열지 않는다.
+      if (pendingAdminPopupRef.current) {
+        adminPopupTimerRef.current = window.setTimeout(() => {
+          pendingAdminPopupRef.current = false;
+          adminPopupTimerRef.current = null;
+          const currentSummary = selectedAdminSummaryRef.current;
+          if (!currentSummary) return;
+          popupRef.current?.remove();
+          popupRef.current = L.popup({
+            maxWidth: 320,
+            minWidth: 240,
+            closeButton: true,
+            autoPan: true,
+            offset: L.point(18, -8),
+            className: "pine-admin-popup",
+          })
+            .setLatLng(map.getCenter())
+            .setContent(
+              createAdminPopupHtml(currentSummary, selectedRegionCapacityRef.current),
+            )
+            .openOn(map);
+        }, 80);
+      }
     }
     return () => {
+      if (adminPopupTimerRef.current !== null) {
+        window.clearTimeout(adminPopupTimerRef.current);
+        adminPopupTimerRef.current = null;
+      }
       layer.removeFrom(map);
       if (gridLayerRef.current === layer) gridLayerRef.current = null;
     };
@@ -1625,6 +1643,7 @@ export default function DashboardRiskMapCard({
   }
 
   function handleResetAdmin() {
+    pendingAdminPopupRef.current = false;
     setSelectedSigunguCode("");
     setSelectedEmdCode("");
     setSelected(null);
@@ -1769,6 +1788,7 @@ export default function DashboardRiskMapCard({
               <select
                 value={selectedSigunguCode}
                 onChange={(event) => {
+                  pendingAdminPopupRef.current = Boolean(event.target.value);
                   setSelectedSigunguCode(event.target.value);
                   setSelectedEmdCode("");
                   setSelected(null);
@@ -1787,6 +1807,7 @@ export default function DashboardRiskMapCard({
               <select
                 value={selectedEmdCode}
                 onChange={(event) => {
+                  pendingAdminPopupRef.current = true;
                   setSelectedEmdCode(event.target.value);
                   setSelected(null);
                   setAssignmentMessage("");
