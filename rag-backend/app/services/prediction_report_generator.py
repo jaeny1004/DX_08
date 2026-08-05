@@ -8,6 +8,7 @@ import re
 import time
 import zipfile
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -37,8 +38,14 @@ DEFAULT_OUTPUT_ROOT = (
 
 MAP_WIDTH = 1024
 MAP_HEIGHT = 704
+MAP_TILE_SIZE = 256
 DEFAULT_ZOOM = 10
 HISTORY_LAST_YEAR = 2021
+
+DEFAULT_REPORT_TILE_URL = (
+    "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+)
+DEFAULT_REPORT_TILE_ATTRIBUTION = "© OpenStreetMap contributors"
 
 RISK_COLORS = {
     "매우 높음": (255, 59, 91, 200),
@@ -578,6 +585,93 @@ def request_vworld_map(
     )
 
 
+def request_xyz_tile_map(
+    center_lon: float,
+    center_lat: float,
+    zoom: int,
+    *,
+    tile_url: str = DEFAULT_REPORT_TILE_URL,
+    width: int = MAP_WIDTH,
+    height: int = MAP_HEIGHT,
+    referer: str | None = None,
+) -> Image.Image:
+    """Leaflet과 같은 XYZ 타일을 합쳐 보고서용 실제 배경지도를 만든다.
+
+    한 장이라도 내려받지 못하면 예외를 발생시킨다. 호출부에서 다음 지도
+    공급자 또는 완전 로컬 배경으로 전환하므로, 일부만 빈 지도가 PDF에
+    들어가는 상황을 방지한다.
+    """
+    required_tokens = ("{z}", "{x}", "{y}")
+    if not all(token in tile_url for token in required_tokens):
+        raise ValueError(
+            "REPORT_MAP_TILE_URL에는 {z}, {x}, {y}가 모두 필요합니다."
+        )
+
+    center_x, center_y = lonlat_to_world_pixel(
+        center_lon,
+        center_lat,
+        zoom,
+    )
+    left = center_x - width / 2.0
+    top = center_y - height / 2.0
+    right = left + width
+    bottom = top + height
+
+    min_tile_x = math.floor(left / MAP_TILE_SIZE)
+    max_tile_x = math.floor((right - 1) / MAP_TILE_SIZE)
+    min_tile_y = math.floor(top / MAP_TILE_SIZE)
+    max_tile_y = math.floor((bottom - 1) / MAP_TILE_SIZE)
+    tile_count = 2**zoom
+
+    canvas = Image.new("RGBA", (width, height), (241, 245, 249, 255))
+    headers = {
+        "Accept": "image/png,image/jpeg,image/*;q=0.9,*/*;q=0.1",
+        "User-Agent": "PineWiltAdministrativeReport/1.0",
+    }
+    if referer:
+        headers["Referer"] = referer
+
+    with httpx.Client(
+        timeout=httpx.Timeout(4.0, connect=3.0),
+        headers=headers,
+        follow_redirects=True,
+    ) as client:
+        for tile_y in range(min_tile_y, max_tile_y + 1):
+            if tile_y < 0 or tile_y >= tile_count:
+                raise RuntimeError(
+                    f"지도 타일 Y 좌표가 범위를 벗어났습니다: {tile_y}"
+                )
+            for tile_x in range(min_tile_x, max_tile_x + 1):
+                wrapped_x = tile_x % tile_count
+                url = (
+                    tile_url.replace("{s}", "a")
+                    .replace("{z}", str(zoom))
+                    .replace("{x}", str(wrapped_x))
+                    .replace("{y}", str(tile_y))
+                )
+                response = client.get(url)
+                response.raise_for_status()
+                if "image" not in response.headers.get(
+                    "content-type",
+                    "",
+                ).lower():
+                    raise RuntimeError(
+                        "지도 타일 서버가 이미지가 아닌 응답을 반환했습니다: "
+                        f"{response.text[:200]}"
+                    )
+                tile = Image.open(io.BytesIO(response.content)).convert("RGBA")
+                if tile.size != (MAP_TILE_SIZE, MAP_TILE_SIZE):
+                    tile = tile.resize(
+                        (MAP_TILE_SIZE, MAP_TILE_SIZE),
+                        Image.Resampling.LANCZOS,
+                    )
+                paste_x = round(tile_x * MAP_TILE_SIZE - left)
+                paste_y = round(tile_y * MAP_TILE_SIZE - top)
+                canvas.paste(tile, (paste_x, paste_y))
+
+    return canvas
+
+
 def create_fallback_map_background(
     center_lon: float,
     center_lat: float,
@@ -638,11 +732,47 @@ def create_fallback_map_background(
     return image
 
 
+@lru_cache(maxsize=32)
 def find_font(
     size: int,
     bold: bool = False,
 ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    bundled_font_dir = BACKEND_ROOT / "assets" / "fonts"
     candidates = [
+        str(
+            bundled_font_dir
+            / (
+                "NotoSansKR-Bold.ttf"
+                if bold
+                else "NotoSansKR-Regular.ttf"
+            )
+        ),
+        str(
+            bundled_font_dir
+            / (
+                "NotoSansKR-Bold.otf"
+                if bold
+                else "NotoSansKR-Regular.otf"
+            )
+        ),
+        str(
+            bundled_font_dir
+            / (
+                "NotoSansKR-Bold.woff"
+                if bold
+                else "NotoSansKR-Regular.woff"
+            )
+        ),
+        (
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
+            if bold
+            else "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+        ),
+        (
+            "/usr/share/fonts/truetype/noto/NotoSansKR-Bold.ttf"
+            if bold
+            else "/usr/share/fonts/truetype/noto/NotoSansKR-Regular.ttf"
+        ),
         (
             "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"
             if bold
@@ -907,35 +1037,80 @@ def build_vworld_overlay_map(
     background: Image.Image | None = None,
 ) -> dict[str, Any]:
     center = source.static["center_point_4326"]["coordinates"]
-    background_source = "VWorld"
+    center_lon = float(center[0])
+    center_lat = float(center[1])
+    background_source = "제공된 배경지도"
 
     if background is None:
-        try:
-            remote_default = "false" if os.getenv("VERCEL") else "true"
-            remote_enabled = os.getenv(
-                "VWORLD_REMOTE_ENABLED",
-                remote_default,
-            ).strip().lower() in {"1", "true", "yes", "on"}
-            if not remote_enabled:
-                raise RuntimeError("현재 배포 환경에서 VWorld 원격 요청을 사용하지 않습니다.")
-            if not api_key or not domain:
-                raise RuntimeError("VWORLD_API_KEY 또는 VWORLD_API_DOMAIN이 없습니다.")
-            background = request_vworld_map(
-                api_key=api_key,
-                domain=domain,
-                center_lon=float(center[0]),
-                center_lat=float(center[1]),
-                zoom=zoom,
-                basemap=basemap,
-            )
-        except Exception as exc:  # 외부 지도 장애가 보고서 전체를 막지 않도록 한다.
+        errors: list[str] = []
+        remote_default = "false" if os.getenv("VERCEL") else "true"
+        vworld_enabled = os.getenv(
+            "VWORLD_REMOTE_ENABLED",
+            remote_default,
+        ).strip().lower() in {"1", "true", "yes", "on"}
+
+        # 1순위: 대시보드가 사용하는 것과 같은 VWorld Base WMTS 타일.
+        if vworld_enabled and api_key:
+            try:
+                background = request_xyz_tile_map(
+                    center_lon,
+                    center_lat,
+                    zoom,
+                    tile_url=(
+                        "https://api.vworld.kr/req/wmts/1.0.0/"
+                        f"{api_key}/Base/{{z}}/{{y}}/{{x}}.png"
+                    ),
+                    referer=domain or None,
+                )
+                background_source = "© VWorld"
+            except Exception as exc:
+                errors.append(f"VWorld WMTS: {type(exc).__name__}: {exc}")
+
+        # 2순위: 프론트엔드의 VWorld 키 미설정 시와 동일한 OSM 실제 지도.
+        if background is None:
+            tile_url = os.getenv(
+                "REPORT_MAP_TILE_URL",
+                DEFAULT_REPORT_TILE_URL,
+            ).strip() or DEFAULT_REPORT_TILE_URL
+            tile_attribution = os.getenv(
+                "REPORT_MAP_TILE_ATTRIBUTION",
+                DEFAULT_REPORT_TILE_ATTRIBUTION,
+            ).strip() or DEFAULT_REPORT_TILE_ATTRIBUTION
+            try:
+                background = request_xyz_tile_map(
+                    center_lon,
+                    center_lat,
+                    zoom,
+                    tile_url=tile_url,
+                )
+                background_source = tile_attribution
+            except Exception as exc:
+                errors.append(f"XYZ 실제 지도: {type(exc).__name__}: {exc}")
+
+        # 3순위: 타일 공급자가 모두 실패했을 때 기존 VWorld 정적 API도 시도한다.
+        if background is None and vworld_enabled and api_key and domain:
+            try:
+                background = request_vworld_map(
+                    api_key=api_key,
+                    domain=domain,
+                    center_lon=center_lon,
+                    center_lat=center_lat,
+                    zoom=zoom,
+                    basemap=basemap,
+                )
+                background_source = "© VWorld"
+            except Exception as exc:
+                errors.append(f"VWorld 정적 지도: {type(exc).__name__}: {exc}")
+
+        # 최종 안전장치: 모든 외부 지도 서비스가 실패해도 문서 생성은 계속한다.
+        if background is None:
             print(
-                "[prediction-report] VWorld 배경지도 요청 실패. "
-                f"로컬 대체 배경을 사용합니다: {type(exc).__name__}: {exc}"
+                "[prediction-report] 모든 실제 배경지도 요청 실패. "
+                "로컬 대체 배경을 사용합니다: " + " | ".join(errors)
             )
             background = create_fallback_map_background(
-                center_lon=float(center[0]),
-                center_lat=float(center[1]),
+                center_lon=center_lon,
+                center_lat=center_lat,
             )
             background_source = "로컬 대체 배경"
 
