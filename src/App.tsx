@@ -1591,7 +1591,7 @@ export default function App() {
     },
     {
       id: "control",
-      label: "실시간 방제 현황",
+      label: "방제",
       icon: ShieldCheck,
     },
     ...adminGroup.items,
@@ -2054,14 +2054,14 @@ export default function App() {
 
                 {isSidebarOpen && (
                   <span className="truncate text-sm font-extrabold">
-                    실시간 방제 현황
+                    방제
                   </span>
                 )}
 
                 {/* 접힌 상태에서 방제 이름 Tooltip */}
                 {!isSidebarOpen && (
                   <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
-                    실시간 방제 현황
+                    방제
                   </span>
                 )}
               </div>

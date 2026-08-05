@@ -274,7 +274,7 @@ export default function FieldSection({
             </p>
           </header>
 
-          <div className="max-h-[calc(100vh-125px)] space-y-2 overflow-y-auto p-4 pr-3">
+          <div className="custom-scrollbar max-h-[calc(100vh-220px)] min-h-0 space-y-2 overflow-y-scroll p-4 pr-3">
             {reports.length === 0 && (
               <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-xs font-bold text-slate-400">
                 Supabase에 등록된 시민 제보가 없습니다.

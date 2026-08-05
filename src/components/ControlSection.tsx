@@ -228,7 +228,7 @@ export default function ControlSection({
               )}
             </AnimatePresence>
 
-            <div className="max-h-[600px] overflow-auto">
+            <div className="custom-scrollbar max-h-[calc(100vh-220px)] overflow-x-auto overflow-y-scroll">
               <table className="w-full min-w-[660px] text-left text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50">
                   <tr className="border-b border-slate-200">

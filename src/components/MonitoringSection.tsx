@@ -1591,7 +1591,7 @@ export default function MonitoringSection({
 
   return (
 
-    <div className="flex min-h-0 flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
 
       {/* =====================================================
           메인 영역
@@ -1599,7 +1599,7 @@ export default function MonitoringSection({
           우측 : 영상 패널
       ====================================================== */}
 
-      <div className="flex min-h-0 flex-1 gap-4">
+      <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
 
 
         {/* ===================================================
@@ -1609,8 +1609,8 @@ export default function MonitoringSection({
         <div
           className={
             isVideoOpen
-              ? "flex min-w-0 flex-1 flex-col gap-4"
-              : "flex min-w-0 flex-1 flex-col gap-4"
+              ? "flex min-h-0 min-w-0 flex-1 flex-col gap-4"
+              : "flex min-h-0 min-w-0 flex-1 flex-col gap-4"
           }
         >
 
@@ -1619,9 +1619,9 @@ export default function MonitoringSection({
               확진목 리스트 Header
           ================================================== */}
 
-          <section className="min-h-[300px] flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <section className="flex min-h-[300px] flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 
-            <header className="border-b border-slate-200 bg-white px-5 py-4">
+            <header className="shrink-0 border-b border-slate-200 bg-white px-5 py-4">
 
               <div className="flex items-center justify-between gap-4">
 
@@ -1716,7 +1716,7 @@ export default function MonitoringSection({
 
             </header>
 
-            <div className="h-full overflow-y-auto">
+            <div className="custom-scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-scroll">
 
               <table className="w-full border-collapse">
 
