@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   Image as ImageIcon,
@@ -185,11 +185,15 @@ export default function FieldSection({
   reports,
   onUpdateReportStatus,
   onConfirmInfection,
+  dispatchAssignments = [],
 }: FieldSectionProps) {
   const [selectedReportId, setSelectedReportId] =
     useState<string | null>(null);
 
   const [selectedWorkerId, setSelectedWorkerId] =
+    useState<string | null>(null);
+
+  const [selectedAssignmentId, setSelectedAssignmentId] =
     useState<string | null>(null);
 
   const [convertedReportIds, setConvertedReportIds] =
@@ -206,6 +210,22 @@ export default function FieldSection({
       (worker) => worker.id === selectedWorkerId
     ) || null;
 
+  const surveyAssignments = useMemo(
+    () => dispatchAssignments.filter(
+      (assignment) =>
+        assignment.taskType === "SURVEY" &&
+        assignment.status !== "복귀 완료"
+    ),
+    [dispatchAssignments]
+  );
+
+  const selectedAssignment =
+    surveyAssignments.find(
+      (assignment) =>
+        assignment.assignmentId ===
+        selectedAssignmentId
+    ) || null;
+
   useEffect(() => {
     if (
       selectedReportId !== null &&
@@ -217,6 +237,19 @@ export default function FieldSection({
       setSelectedReportId(null);
     }
   }, [reports, selectedReportId]);
+
+  useEffect(() => {
+    if (
+      selectedAssignmentId !== null &&
+      !surveyAssignments.some(
+        (assignment) =>
+          assignment.assignmentId ===
+          selectedAssignmentId
+      )
+    ) {
+      setSelectedAssignmentId(null);
+    }
+  }, [surveyAssignments, selectedAssignmentId]);
 
   const handleToggleReport = (
     reportId: string
@@ -275,11 +308,87 @@ export default function FieldSection({
           </header>
 
           <div className="custom-scrollbar max-h-[calc(100vh-220px)] min-h-0 space-y-2 overflow-y-scroll p-4 pr-3">
-            {reports.length === 0 && (
+            {reports.length === 0 && surveyAssignments.length === 0 && (
               <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-xs font-bold text-slate-400">
-                Supabase에 등록된 시민 제보가 없습니다.
+                등록된 시민 제보 또는 예찰 배정이 없습니다.
               </div>
             )}
+
+            {surveyAssignments.map((assignment) => {
+              const isSelected =
+                selectedAssignmentId ===
+                assignment.assignmentId;
+              const latitude =
+                assignment.targetLatitude;
+              const longitude =
+                assignment.targetLongitude;
+
+              return (
+                <article
+                  key={assignment.assignmentId}
+                  className={`overflow-hidden rounded-2xl border transition-all ${
+                    isSelected
+                      ? "border-emerald-300 shadow-sm"
+                      : "border-emerald-100"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedAssignmentId(
+                        assignment.assignmentId
+                      );
+                      setSelectedReportId(null);
+                      setSelectedWorkerId(null);
+                    }}
+                    className={`w-full p-4 text-left transition ${
+                      isSelected
+                        ? "bg-emerald-50"
+                        : "bg-emerald-50/40 hover:bg-emerald-50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex min-w-0 gap-3">
+                        <span className="mt-1.5 h-3 w-3 shrink-0 rounded-full bg-emerald-600" />
+
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-bold text-slate-400">
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-black text-emerald-700">
+                              격자 예찰 배정
+                            </span>
+                            <span>
+                              {new Date(
+                                assignment.assignedAt
+                              ).toLocaleDateString("ko-KR")}
+                            </span>
+                          </div>
+
+                          <h3 className="mt-1 truncate text-sm font-bold text-slate-800">
+                            GRID-{assignment.gridId} 예찰 작업
+                          </h3>
+
+                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                            위도 {formatCoordinate(latitude)}, 경도 {formatCoordinate(longitude)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 text-right">
+                        <div className="text-[10px] font-bold text-slate-400">
+                          담당 요원
+                        </div>
+                        <div className="mt-0.5 text-sm font-black text-emerald-700">
+                          {assignment.workerName}
+                        </div>
+                        <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black text-emerald-700">
+                          {assignment.status}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                </article>
+              );
+            })}
 
             {reports.map((report) => {
               const reportId = String(report.id);
@@ -557,14 +666,25 @@ export default function FieldSection({
                 record: CrowdReport
               ) => {
                 setSelectedWorkerId(null);
+                setSelectedAssignmentId(null);
                 setSelectedReportId(
                   String(record.id)
                 );
               }}
               workers={FIELD_WORKERS}
+              assignments={surveyAssignments}
+              selectedAssignmentId={selectedAssignmentId}
+              onAssignmentClick={(assignment: DispatchAssignment) => {
+                setSelectedReportId(null);
+                setSelectedWorkerId(null);
+                setSelectedAssignmentId(
+                  assignment.assignmentId
+                );
+              }}
               selectedWorkerId={selectedWorkerId}
               onWorkerClick={(worker: FieldWorkerMarker) => {
                 setSelectedReportId(null);
+                setSelectedAssignmentId(null);
                 setSelectedWorkerId(worker.id);
               }}
             />
@@ -583,6 +703,9 @@ export default function FieldSection({
                         selectedReport
                       )
                     )
+                  : selectedAssignment &&
+                      typeof selectedAssignment.targetLatitude === "number"
+                    ? selectedAssignment.targetLatitude.toFixed(7)
                   : selectedWorker
                     ? selectedWorker.latitude.toFixed(7)
                     : "마커를 선택하세요"}
@@ -601,6 +724,9 @@ export default function FieldSection({
                         selectedReport
                       )
                     )
+                  : selectedAssignment &&
+                      typeof selectedAssignment.targetLongitude === "number"
+                    ? selectedAssignment.targetLongitude.toFixed(7)
                   : selectedWorker
                     ? selectedWorker.longitude.toFixed(7)
                     : "마커를 선택하세요"}

@@ -1410,9 +1410,20 @@ export default function DashboardRiskMapCard({
         const props = feature?.properties ?? {};
         path.on("click", (event: L.LeafletMouseEvent) => {
           L.DomEvent.stopPropagation(event);
-          setSelected({ ...props, __lat: event.latlng.lat, __lon: event.latlng.lng });
+          const featureCenter = getFeatureCenter(feature);
+          const targetLatitude =
+            featureCenter?.[1] ?? event.latlng.lat;
+          const targetLongitude =
+            featureCenter?.[0] ?? event.latlng.lng;
+          const selectedGridData = {
+            ...props,
+            __lat: targetLatitude,
+            __lon: targetLongitude,
+          };
+
+          setSelected(selectedGridData);
           setAssignmentMessage("");
-          onGridSelectRef.current?.(props);
+          onGridSelectRef.current?.(selectedGridData);
           popupRef.current?.remove();
           popupRef.current = L.popup({
             maxWidth: 310,
@@ -1605,6 +1616,8 @@ export default function DashboardRiskMapCard({
       targetEmdCode: normalizeCode(selected.emd_code ?? selectedEmdCode),
       targetEmdName: String(selected.emd_name ?? selectedAdminSummary?.emdName ?? ""),
       gridId,
+      targetLatitude: safeNumber(selected.__lat),
+      targetLongitude: safeNumber(selected.__lon),
       priorityGrade: normalizePriorityGrade(selected),
       riskGrade: normalizeRiskGrade(selected),
       riskScore: safeNumber(selected.risk_score),
