@@ -2492,8 +2492,10 @@ export default function App() {
                       mode="status"
                       tasks={tasks}
                       grids={grids}
+                      dispatchAssignments={dispatchAssignments}
                       onAddTask={handleAddTask}
                       onUpdateTaskProgress={handleUpdateTaskProgress}
+                      onUpdateDispatchStatus={handleUpdateDispatchStatus}
                     />
                   </div>
                 )}

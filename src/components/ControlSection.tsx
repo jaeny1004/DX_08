@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Battery,
@@ -12,6 +12,10 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 import type { ControlTask, GridCell } from "../types";
+import type {
+  DispatchAssignment,
+  DispatchStatus,
+} from "../types/dispatch";
 import {
   CONTROL_OPERATIONS,
   attachFallbackOperationLocation,
@@ -24,8 +28,73 @@ interface ControlSectionProps {
   mode: "status" | "work";
   tasks: ControlTask[];
   grids: GridCell[];
+  dispatchAssignments?: DispatchAssignment[];
   onAddTask: (task: ControlTask) => void;
   onUpdateTaskProgress: (id: string, progress: number) => void;
+  onUpdateDispatchStatus?: (
+    assignmentId: string,
+    status: DispatchStatus,
+  ) => void;
+}
+
+const ACTIVE_CONTROL_STATUSES: DispatchStatus[] = [
+  "배정 대기",
+  "배정 수락",
+  "출동",
+  "현장 도착",
+  "작업 중",
+  "작업 완료",
+];
+
+const DISPATCH_PROGRESS: Record<DispatchStatus, number> = {
+  "배정 대기": 0,
+  "배정 수락": 10,
+  출동: 30,
+  "현장 도착": 45,
+  "작업 중": 65,
+  "작업 완료": 100,
+  복귀: 100,
+  "복귀 완료": 100,
+};
+
+function toControlTaskStatus(
+  status: DispatchStatus,
+): ControlTask["status"] {
+  if (["작업 완료", "복귀", "복귀 완료"].includes(status)) {
+    return "완료";
+  }
+
+  if (["현장 도착", "작업 중"].includes(status)) {
+    return "진행";
+  }
+
+  return "예정";
+}
+
+function formatAssignmentArea(
+  assignment: DispatchAssignment,
+) {
+  const region = [
+    assignment.targetSidoName,
+    assignment.targetSigunguName,
+    assignment.targetEmdName,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const gridLabel = assignment.gridId.startsWith("GRID-")
+    ? assignment.gridId
+    : `GRID-${assignment.gridId}`;
+
+  return region ? `${region} ${gridLabel}` : gridLabel;
+}
+
+function isValidCoordinate(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value !== 0
+  );
 }
 
 function methodBadge(method: ControlTask["method"]) {
@@ -53,14 +122,29 @@ export default function ControlSection({
   mode,
   tasks,
   grids,
+  dispatchAssignments = [],
   onAddTask,
   onUpdateTaskProgress,
+  onUpdateDispatchStatus,
 }: ControlSectionProps) {
+  const controlAssignments = useMemo(
+    () =>
+      dispatchAssignments.filter(
+        (assignment) =>
+          assignment.taskType === "CONTROL" &&
+          assignment.status !== "복귀 완료",
+      ),
+    [dispatchAssignments],
+  );
+
   const [demoOperations, setDemoOperations] = useState<ControlOperation[]>(
     () => CONTROL_OPERATIONS.map((item) => ({ ...item })),
   );
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(
-    CONTROL_OPERATIONS[0]?.id ?? null,
+    () =>
+      controlAssignments[0]?.assignmentId ??
+      CONTROL_OPERATIONS[0]?.id ??
+      null,
   );
   const [isRegistering, setIsRegistering] = useState(false);
   const [area, setArea] = useState("");
@@ -72,12 +156,65 @@ export default function ControlSection({
   void grids;
 
   const operations = useMemo(() => {
+    const assignmentOperations: ControlOperation[] =
+      controlAssignments.map((assignment, index) => {
+        const latitude = isValidCoordinate(assignment.targetLatitude)
+          ? assignment.targetLatitude
+          : 37.979365 + index * 0.004;
+        const longitude = isValidCoordinate(assignment.targetLongitude)
+          ? assignment.targetLongitude
+          : 127.649056 - index * 0.004;
+        const startDate = assignment.assignedAt.slice(0, 10);
+        const endDate = new Date(
+          new Date(assignment.assignedAt).getTime() +
+            3 * 24 * 60 * 60 * 1000,
+        )
+          .toISOString()
+          .slice(0, 10);
+
+        return {
+          id: assignment.assignmentId,
+          area: formatAssignmentArea(assignment),
+          method: "파쇄",
+          status: toControlTaskStatus(assignment.status),
+          company: `${assignment.assignmentType} 방제팀`,
+          workers: 1,
+          progress: DISPATCH_PROGRESS[assignment.status],
+          startDate,
+          endDate,
+          latitude,
+          longitude,
+          workerId: assignment.workerId,
+          workerName: assignment.workerName,
+          workerRole: `방제 ${assignment.assignedSkillLevel}단계 담당`,
+          vehicle: "차량 배정 대기",
+          currentStage: assignment.status,
+        };
+      });
+
     const externalOperations = tasks
       .filter((task) => !demoOperations.some((demo) => demo.id === task.id))
       .map((task, index) => attachFallbackOperationLocation(task, index));
 
-    return [...demoOperations, ...externalOperations];
-  }, [demoOperations, tasks]);
+    return [
+      ...assignmentOperations,
+      ...demoOperations,
+      ...externalOperations,
+    ];
+  }, [controlAssignments, demoOperations, tasks]);
+
+  useEffect(() => {
+    if (
+      selectedOperationId !== null &&
+      operations.some(
+        (operation) => operation.id === selectedOperationId,
+      )
+    ) {
+      return;
+    }
+
+    setSelectedOperationId(operations[0]?.id ?? null);
+  }, [operations, selectedOperationId]);
 
   const selectedOperation =
     operations.find((operation) => operation.id === selectedOperationId) ??
@@ -109,6 +246,27 @@ export default function ControlSection({
   };
 
   const updateProgress = (operation: ControlOperation, delta: number) => {
+    const linkedAssignment = controlAssignments.find(
+      (assignment) => assignment.assignmentId === operation.id,
+    );
+
+    if (linkedAssignment && onUpdateDispatchStatus) {
+      const currentIndex = Math.max(
+        0,
+        ACTIVE_CONTROL_STATUSES.indexOf(linkedAssignment.status),
+      );
+      const nextIndex = Math.min(
+        ACTIVE_CONTROL_STATUSES.length - 1,
+        Math.max(0, currentIndex + (delta > 0 ? 1 : -1)),
+      );
+
+      onUpdateDispatchStatus(
+        linkedAssignment.assignmentId,
+        ACTIVE_CONTROL_STATUSES[nextIndex],
+      );
+      return;
+    }
+
     const progress = Math.min(100, Math.max(0, operation.progress + delta));
     const status: ControlTask["status"] =
       progress >= 100 ? "완료" : progress > 0 ? "진행" : "예정";
@@ -242,6 +400,16 @@ export default function ControlSection({
                 <tbody>
                   {operations.map((operation) => {
                     const selected = operation.id === selectedOperation?.id;
+                    const linkedAssignment = controlAssignments.find(
+                      (assignment) =>
+                        assignment.assignmentId === operation.id,
+                    );
+                    const operationLabel = linkedAssignment
+                      ? linkedAssignment.gridId.startsWith("GRID-")
+                        ? linkedAssignment.gridId
+                        : `GRID-${linkedAssignment.gridId}`
+                      : operation.id;
+
                     return (
                       <tr
                         key={operation.id}
@@ -251,7 +419,12 @@ export default function ControlSection({
                         }`}
                       >
                         <td className="whitespace-nowrap px-3 py-3 font-mono text-[10px] font-bold text-slate-700">
-                          {operation.id}
+                          <div>{operationLabel}</div>
+                          {linkedAssignment && (
+                            <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-1.5 py-0.5 font-sans text-[8px] font-black text-emerald-700">
+                              홈 지도 배정
+                            </span>
+                          )}
                         </td>
                         <td className="max-w-[170px] px-3 py-3 text-[11px] text-slate-700">
                           {operation.area}
