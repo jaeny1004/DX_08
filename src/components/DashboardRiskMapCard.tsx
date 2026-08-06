@@ -626,7 +626,6 @@ export default function DashboardRiskMapCard({
   const selectedAdminSummaryRef = useRef<AdminSummary | null>(null);
   const selectedRegionCapacityRef = useRef<RegionWorkforceCapacity | null>(null);
   const infectionHistoryIndexRef = useRef<Map<string, any>>(new Map());
-  const initialRegionAppliedRef = useRef(false);
 
   const [geojson, setGeojson] = useState<any>(null);
   const [infectionHistory, setInfectionHistory] = useState<any>(null);
@@ -658,6 +657,11 @@ export default function DashboardRiskMapCard({
   const [tileErrorMessage, setTileErrorMessage] = useState(
     HAS_VWORLD_KEY ? "" : "VWorld API 키가 없어 대체 배경지도를 표시합니다.",
   );
+
+  // 로그인 계정의 지역값은 최초 지도 위치로 자동 적용하지 않습니다.
+  // 첫 진입 화면은 '선택 초기화'와 동일한 전국 보기로 시작합니다.
+  void initialSigunguCode;
+  void initialSigunguName;
 
   useEffect(() => {
     onGridSelectRef.current = onGridSelect;
@@ -771,32 +775,6 @@ export default function DashboardRiskMapCard({
       ),
     );
   }, [features]);
-
-  useEffect(() => {
-    if (initialRegionAppliedRef.current || !sigunguOptions.length) return;
-
-    const requestedCode = normalizeCode(initialSigunguCode);
-    const requestedName = String(initialSigunguName ?? "").trim();
-
-    const matched =
-      sigunguOptions.find((option) => option.code === requestedCode) ??
-      sigunguOptions.find((option) =>
-        requestedName && option.sigunguName === requestedName,
-      );
-
-    initialRegionAppliedRef.current = true;
-
-    if (!matched) {
-      console.warn("로그인 계정 지역을 지도 데이터에서 찾지 못했습니다.", {
-        initialSigunguCode,
-        initialSigunguName,
-      });
-      return;
-    }
-
-    setSelectedSigunguCode(matched.code);
-    setSelectedEmdCode("");
-  }, [sigunguOptions, initialSigunguCode, initialSigunguName]);
 
   const emdOptions = useMemo(() => {
     if (!selectedSigunguCode) return [];
