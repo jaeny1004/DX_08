@@ -1355,6 +1355,10 @@ export default function DashboardRiskMapCard({
 
     if (!selectedAdminSummary) {
       map.fitBounds(DATA_BOUNDS, { padding: [20, 20], animate: false, maxZoom: 7 });
+      map.setZoom(
+        Math.min(map.getZoom() + 1, map.getMaxZoom()),
+        { animate: false },
+      );
       return;
     }
 
