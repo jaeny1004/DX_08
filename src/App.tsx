@@ -488,28 +488,6 @@ function mapPineRecordToCrowdReport(
   };
 }
 
-function mapCrowdStatusToPineStatus(
-  status: CrowdReport["status"]
-):
-  | "pending"
-  | "in_progress"
-  | "completed"
-  | "rejected" {
-  switch (status) {
-    case "접수 완료":
-      return "pending";
-
-    case "조사 완료":
-      return "in_progress";
-
-    case "방제 완료":
-      return "completed";
-
-    case "반려":
-      return "rejected";
-  }
-}
-
 type ModuleId =
   | "dashboard"
   | "monitoring"
@@ -1378,48 +1356,6 @@ export default function App() {
     );
   };
 
-  const handleUpdateReportStatus = async (
-    id: string,
-    status: CrowdReport["status"]
-  ) => {
-    const previousReports = reports;
-
-    // 화면부터 즉시 변경
-    setReports((previous) =>
-      previous.map((report) =>
-        report.id === id
-          ? {
-            ...report,
-            status,
-          }
-          : report
-      )
-    );
-
-    const pineStatus =
-      mapCrowdStatusToPineStatus(status);
-
-    const { error } = await supabase
-      .from("pine_records")
-      .update({
-        status: pineStatus,
-      })
-      .eq("id", id);
-
-    if (error) {
-      console.error(
-        "민원 처리 상태 저장 실패:",
-        error
-      );
-
-      setReports(previousReports);
-
-      window.alert(
-        "민원 처리 상태를 저장하지 못했습니다."
-      );
-    }
-  };
-
   const handleConfirmInfection = async (
     report: CrowdReport
   ) => {
@@ -1542,7 +1478,7 @@ export default function App() {
         "확진목은 등록됐지만 원본 제보의 전환 상태를 저장하지 못했습니다."
       );
 
-      return;
+      return false;
     }
 
     /*
@@ -1563,7 +1499,55 @@ export default function App() {
       "monitoring"
     );
 
+    return true;
+  };
 
+  const handleRejectReport = async (
+    report: CrowdReport
+  ) => {
+    const confirmed = window.confirm(
+      `제보 [${report.title}]을 반려하고 원본 데이터를 삭제하시겠습니까?\n\n` +
+      "삭제한 제보 데이터는 복구할 수 없습니다."
+    );
+
+    if (!confirmed) {
+      return false;
+    }
+
+    const { data, error } = await supabase
+      .from("pine_records")
+      .delete()
+      .eq("id", report.id)
+      .select("id");
+
+    if (error) {
+      console.error(
+        "시민 제보 반려 삭제 실패:",
+        error
+      );
+
+      window.alert(
+        `반려 처리 중 데이터를 삭제하지 못했습니다.\n${error.message}`
+      );
+
+      return false;
+    }
+
+    if (!data || data.length === 0) {
+      window.alert(
+        "삭제된 데이터가 없습니다. pine_records의 DELETE 정책을 확인해 주세요."
+      );
+
+      return false;
+    }
+
+    setReports((previous) =>
+      previous.filter(
+        (item) => String(item.id) !== String(report.id)
+      )
+    );
+
+    return true;
   };
 
   const handleAddTask = (
@@ -2464,8 +2448,9 @@ export default function App() {
                       onUpdateDispatchStatus={handleUpdateDispatchStatus}
                       onCancelDispatch={handleCancelDispatch}
                       onUpdateWorkerStatus={handleUpdateWorkerStatus}
-                      onUpdateReportStatus={handleUpdateReportStatus}
                       onConfirmInfection={handleConfirmInfection}
+                      onRejectReport={handleRejectReport}
+                      onAssignWorker={handleAssignWorker}
                     />
                   </div>
                 )}
@@ -2492,10 +2477,8 @@ export default function App() {
                       mode="status"
                       tasks={tasks}
                       grids={grids}
-                      dispatchAssignments={dispatchAssignments}
                       onAddTask={handleAddTask}
                       onUpdateTaskProgress={handleUpdateTaskProgress}
-                      onUpdateDispatchStatus={handleUpdateDispatchStatus}
                     />
                   </div>
                 )}
