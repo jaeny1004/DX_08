@@ -134,11 +134,11 @@ export default function ControlSection({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        <div className="min-w-0 space-y-6 xl:col-span-6">
-        <section className="min-w-0 xl:col-span-6">
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="h-full min-h-0">
+      <div className="grid h-full min-h-0 grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="flex h-full min-h-0 min-w-0 flex-col gap-6 xl:col-span-6">
+        <section className="flex min-h-0 flex-1">
+          <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <header className="border-b border-slate-200 px-5 py-4">
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
@@ -149,7 +149,7 @@ export default function ControlSection({
                     </h2>
                   </div>
                   <p className="mt-1 text-[10px] font-semibold text-slate-400">
-                    목록과 지도는 동일한 시연용 작업 데이터를 사용합니다.
+                    등록·배정된 작업이 목록과 지도에 함께 표시됩니다.
                   </p>
                 </div>
 
@@ -200,7 +200,7 @@ export default function ControlSection({
                       </select>
                     </label>
                     <label className="text-[11px] font-bold text-slate-600">
-                      수주 시공사
+                      담당 요원
                       <input
                         value={company}
                         onChange={(event) => setCompany(event.target.value)}
@@ -237,7 +237,22 @@ export default function ControlSection({
               )}
             </AnimatePresence>
 
-            <div className="custom-scrollbar max-h-[calc(100vh-220px)] overflow-x-auto overflow-y-scroll">
+            <div className="custom-scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+              {operations.length === 0 ? (
+                <div className="flex h-full min-h-[320px] min-w-[660px] items-center justify-center px-6 py-12 text-center">
+                  <div>
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+                      <ListCheckIcon size={22} />
+                    </div>
+                    <p className="mt-4 text-sm font-black text-slate-700">
+                      등록된 방제 작업이 없습니다.
+                    </p>
+                    <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                      홈 지도에서 방제 요원을 배정하거나 새 작업을 추가해 주세요.
+                    </p>
+                  </div>
+                </div>
+              ) : (
               <table className="w-full min-w-[660px] text-left text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50">
                   <tr className="border-b border-slate-200">
@@ -289,11 +304,14 @@ export default function ControlSection({
                   })}
                 </tbody>
               </table>
+              )}
             </div>
           </div>
         </section>
 
-        <InventoryPanel />
+        <div className="shrink-0">
+          <InventoryPanel />
+        </div>
         </div>
 
         <div className="min-w-0 space-y-6 xl:col-span-6">
