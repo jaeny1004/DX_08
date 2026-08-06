@@ -1783,59 +1783,6 @@ export default function MonitoringSection({
                 {/* 오른쪽 : 검색 + 신규 등록 */}
                 <div className="flex shrink-0 items-center gap-2">
 
-                  {/* 선택 삭제 */}
-
-                  {isDeleteMode ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={cancelDeleteMode}
-                        disabled={isDeletingTrees}
-                        className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <X size={15} />
-                        취소
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleDeleteSelectedTrees();
-                        }}
-                        disabled={
-                          selectedDeleteIds.size === 0 ||
-                          isDeletingTrees
-                        }
-                        className="flex h-10 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isDeletingTrees ? (
-                          <LoaderCircle
-                            size={15}
-                            className="animate-spin"
-                          />
-                        ) : (
-                          <Trash2 size={15} />
-                        )}
-
-                        {isDeletingTrees
-                          ? "삭제 중"
-                          : `선택 삭제 (${selectedDeleteIds.size})`}
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsDeleteMode(true);
-                        setSelectedDeleteIds(new Set());
-                      }}
-                      className="flex h-10 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-600 transition hover:bg-rose-100"
-                    >
-                      <Trash2 size={15} />
-                      삭제
-                    </button>
-                  )}
-
                   {/* 검색 */}
 
                   <div className="relative">
@@ -1893,6 +1840,60 @@ export default function MonitoringSection({
                     <Plus size={16} />
                     신규 등록
                   </button>
+
+
+                  {/* 선택 삭제 */}
+
+                  {isDeleteMode ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={cancelDeleteMode}
+                        disabled={isDeletingTrees}
+                        className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <X size={15} />
+                        취소
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleDeleteSelectedTrees();
+                        }}
+                        disabled={
+                          selectedDeleteIds.size === 0 ||
+                          isDeletingTrees
+                        }
+                        className="flex h-10 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isDeletingTrees ? (
+                          <LoaderCircle
+                            size={15}
+                            className="animate-spin"
+                          />
+                        ) : (
+                          <Trash2 size={15} />
+                        )}
+
+                        {isDeletingTrees
+                          ? "삭제 중"
+                          : `선택 삭제 (${selectedDeleteIds.size})`}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDeleteMode(true);
+                        setSelectedDeleteIds(new Set());
+                      }}
+                      className="flex h-10 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-600 transition hover:bg-rose-100"
+                    >
+                      <Trash2 size={15} />
+                      삭제
+                    </button>
+                  )}
 
                 </div>
 
