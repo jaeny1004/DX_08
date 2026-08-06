@@ -480,6 +480,9 @@ export default function ControlSection({
               operations={operations}
               selectedOperationId={selectedOperation?.id ?? null}
               onSelect={(operation) => setSelectedOperationId(operation.id)}
+              sessionOperationIds={controlAssignments.map(
+                (assignment) => assignment.assignmentId,
+              )}
             />
 
             {selectedOperation && (

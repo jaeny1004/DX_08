@@ -175,6 +175,11 @@ export function LeafletMap({
   const validAssignments = assignments.filter(
     hasValidAssignmentCoordinates,
   );
+  const assignmentLayerKey =
+    validAssignments
+      .map((assignment) => assignment.assignmentId)
+      .sort()
+      .join("|") || "empty";
   const selectedRecord = validRecords.find(
     (record) => String(record.id) === String(selectedRecordId),
   );
@@ -196,6 +201,7 @@ export function LeafletMap({
   return (
     <div className="relative z-0 h-full w-full overflow-hidden bg-slate-100">
       <MapContainer
+        key={`field-map-${assignmentLayerKey}`}
         center={center}
         zoom={selectedRecord || selectedWorker || selectedAssignment ? 16 : 13}
         scrollWheelZoom
@@ -282,9 +288,9 @@ export function LeafletMap({
               ]}
               radius={selected ? 13 : 10}
               pathOptions={{
-                color: selected ? "#065f46" : "#10b981",
+                color: selected ? "#5b21b6" : "#7c3aed",
                 weight: selected ? 5 : 4,
-                fillColor: "#d1fae5",
+                fillColor: "#ede9fe",
                 fillOpacity: 0.9,
               }}
               eventHandlers={{
@@ -292,7 +298,7 @@ export function LeafletMap({
               }}
             >
               <Tooltip direction="top" offset={[0, -10]} opacity={1}>
-                <strong>GRID-{assignment.gridId}</strong> · {assignment.workerName}
+                <strong>이번 세션 배정 · GRID-{assignment.gridId}</strong> · {assignment.workerName}
               </Tooltip>
               <Popup>
                 <div className="min-w-[210px] text-xs leading-5">
@@ -312,7 +318,7 @@ export function LeafletMap({
         <span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-blue-500" /> 시민 제보</span>
         <span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-emerald-700" /> 출동 요원</span>
         <span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-amber-600" /> 복귀 중</span>
-        <span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full border-2 border-emerald-600 bg-emerald-100" /> 예찰 배정 격자</span>
+        <span className="flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full border-2 border-violet-700 bg-violet-100" /> 이번 세션 예찰 배정</span>
       </div>
     </div>
   );
