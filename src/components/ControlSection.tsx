@@ -314,8 +314,8 @@ export default function ControlSection({
         </div>
         </div>
 
-        <div className="min-w-0 space-y-6 xl:col-span-6">
-        <section className="min-w-0 xl:col-span-6">
+        <div className="flex h-full min-h-0 min-w-0 flex-col gap-6 xl:col-span-6">
+        <section className="min-w-0 shrink-0">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <header className="border-b border-slate-200 px-5 py-4">
               <div className="flex items-center justify-between gap-4">
@@ -372,7 +372,7 @@ export default function ControlSection({
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <header className="border-b border-slate-200 px-5 py-4">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -393,9 +393,9 @@ export default function ControlSection({
             </div>
           </header>
 
-          <div className="custom-scrollbar max-h-[300px] space-y-2 overflow-y-auto p-4 pr-3">
+          <div className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-4 pr-3">
             {activeOperations.length === 0 && (
-              <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400">
+              <div className="flex h-full min-h-24 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400">
                 현재 출동 중인 방제 요원이 없습니다.
               </div>
             )}

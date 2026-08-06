@@ -592,12 +592,12 @@ export default function FieldSection({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="h-full w-full min-w-0 space-y-6"
+      className="h-full min-h-0 w-full min-w-0"
     >
-      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12">
+      <div className="grid h-full min-h-0 grid-cols-1 items-stretch gap-5 xl:grid-cols-12">
       {/* 왼쪽: 목록과 선택 항목 상세를 하나의 패널에 통합 */}
-      <section className="min-w-0 xl:col-span-6">
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="min-h-0 min-w-0 xl:col-span-6">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <header className="border-b border-slate-200 px-5 py-4">
             <div className="flex items-center gap-2">
               <ListCheckIcon
@@ -615,9 +615,9 @@ export default function FieldSection({
             </p>
           </header>
 
-          <div className="custom-scrollbar max-h-[calc(100vh-220px)] min-h-0 space-y-2 overflow-y-scroll p-4 pr-3">
+          <div className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-4 pr-3">
             {reports.length === 0 && surveyAssignments.length === 0 && (
-              <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-xs font-bold text-slate-400">
+              <div className="flex h-full min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-xs font-bold text-slate-400">
                 등록된 시민 제보 또는 예찰 배정이 없습니다.
               </div>
             )}
@@ -1018,8 +1018,8 @@ export default function FieldSection({
       </section>
 
       {/* 오른쪽: 위치 지도 */}
-      <section className="min-w-0 xl:col-span-6">
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="min-h-0 min-w-0 xl:col-span-6">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <header className="border-b border-slate-200 px-5 py-4">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -1123,7 +1123,7 @@ export default function FieldSection({
             </div>
           </div>
 
-          <div className="border-t border-slate-200 p-4">
+          <div className="flex min-h-0 flex-1 flex-col border-t border-slate-200 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -1142,9 +1142,9 @@ export default function FieldSection({
               </span>
             </div>
 
-            <div className="custom-scrollbar mt-3 max-h-[220px] space-y-2 overflow-y-auto pr-1">
+            <div className="custom-scrollbar mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
               {surveyAssignments.length === 0 && (
-                <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400">
+                <div className="flex h-full min-h-24 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400">
                   현재 출동 중인 예찰 요원이 없습니다.
                 </div>
               )}
