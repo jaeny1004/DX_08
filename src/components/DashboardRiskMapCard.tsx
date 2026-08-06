@@ -1641,28 +1641,6 @@ export default function DashboardRiskMapCard({
         .join(" ")
     : "전국";
 
-  const weeklyTrend = useMemo(() => {
-    const base = Math.max(
-      selectedAdminSummary?.totalGridCount ?? 100,
-      40,
-    );
-
-    return [
-      { label: "1주", report: Math.round(base * 0.08), field: Math.round(base * 0.04) },
-      { label: "2주", report: Math.round(base * 0.11), field: Math.round(base * 0.06) },
-      { label: "3주", report: Math.round(base * 0.15), field: Math.round(base * 0.08) },
-      { label: "4주", report: Math.round(base * 0.19), field: Math.round(base * 0.11) },
-      { label: "5주", report: Math.round(base * 0.14), field: Math.round(base * 0.09) },
-      { label: "6주", report: Math.round(base * 0.18), field: Math.round(base * 0.12) },
-      { label: "7주", report: Math.round(base * 0.23), field: Math.round(base * 0.15) },
-    ];
-  }, [selectedAdminSummary]);
-
-  const maxTrendValue = Math.max(
-    ...weeklyTrend.flatMap((item) => [item.report, item.field]),
-    1,
-  );
-
   const controlRows = useMemo(() => {
     const sourceFeatures = selectedAdminFeatures.length
       ? selectedAdminFeatures
@@ -2082,7 +2060,7 @@ export default function DashboardRiskMapCard({
             )}
           </section>
 
-          <div className="grid min-h-0 min-w-0 grid-cols-2 gap-3">
+          <div className="grid min-h-0 min-w-0 grid-cols-1">
             <section className="flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="shrink-0 flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="text-base font-black text-slate-950">
@@ -2114,54 +2092,6 @@ export default function DashboardRiskMapCard({
               </div>
             </section>
 
-            <section className="min-h-0 overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="text-base font-black text-slate-950">
-                  📈 주간 예찰 제보 및 현장 확인 추이
-                </h3>
-                <span className="text-2xs font-bold text-slate-400">
-                  최근 4주
-                </span>
-              </div>
-
-              <div className="mt-3 flex h-[118px] items-end justify-between gap-2 px-1">
-                {weeklyTrend.slice(-4).map((item) => (
-                  <div
-                    key={item.label}
-                    className="flex flex-1 flex-col items-center gap-2"
-                  >
-                    <div className="flex h-[92px] items-end gap-1">
-                      <div
-                        className="w-3 rounded-t bg-sky-400"
-                        style={{
-                          height: `${Math.max(
-                            12,
-                            (item.report / maxTrendValue) * 88,
-                          )}px`,
-                        }}
-                      />
-                      <div
-                        className="w-3 rounded-t bg-rose-500"
-                        style={{
-                          height: `${Math.max(
-                            8,
-                            (item.field / maxTrendValue) * 88,
-                          )}px`,
-                        }}
-                      />
-                    </div>
-                    <span className="text-3xs font-bold text-slate-500">
-                      {item.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-1 flex justify-center gap-4 text-3xs font-bold text-slate-500">
-                <Legend color="#38bdf8" label="예찰 제보" />
-                <Legend color="#f43f5e" label="현장 확인" />
-              </div>
-            </section>
           </div>
         </aside>
       </div>
