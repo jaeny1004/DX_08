@@ -29,7 +29,7 @@ export type InventoryItem = {
   totalUnits?: number;
 };
 
-
+export const FIELD_WORKERS: FieldWorkerMarker[] = [];
 
 export const CONTROL_OPERATIONS: ControlOperation[] = [
   {
