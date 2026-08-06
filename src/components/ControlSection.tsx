@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Activity,
   Battery,
@@ -12,10 +12,6 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 import type { ControlTask, GridCell } from "../types";
-import type {
-  DispatchAssignment,
-  DispatchStatus,
-} from "../types/dispatch";
 import {
   CONTROL_OPERATIONS,
   attachFallbackOperationLocation,
@@ -28,73 +24,8 @@ interface ControlSectionProps {
   mode: "status" | "work";
   tasks: ControlTask[];
   grids: GridCell[];
-  dispatchAssignments?: DispatchAssignment[];
   onAddTask: (task: ControlTask) => void;
   onUpdateTaskProgress: (id: string, progress: number) => void;
-  onUpdateDispatchStatus?: (
-    assignmentId: string,
-    status: DispatchStatus,
-  ) => void;
-}
-
-const ACTIVE_CONTROL_STATUSES: DispatchStatus[] = [
-  "배정 대기",
-  "배정 수락",
-  "출동",
-  "현장 도착",
-  "작업 중",
-  "작업 완료",
-];
-
-const DISPATCH_PROGRESS: Record<DispatchStatus, number> = {
-  "배정 대기": 0,
-  "배정 수락": 10,
-  출동: 30,
-  "현장 도착": 45,
-  "작업 중": 65,
-  "작업 완료": 100,
-  복귀: 100,
-  "복귀 완료": 100,
-};
-
-function toControlTaskStatus(
-  status: DispatchStatus,
-): ControlTask["status"] {
-  if (["작업 완료", "복귀", "복귀 완료"].includes(status)) {
-    return "완료";
-  }
-
-  if (["현장 도착", "작업 중"].includes(status)) {
-    return "진행";
-  }
-
-  return "예정";
-}
-
-function formatAssignmentArea(
-  assignment: DispatchAssignment,
-) {
-  const region = [
-    assignment.targetSidoName,
-    assignment.targetSigunguName,
-    assignment.targetEmdName,
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const gridLabel = assignment.gridId.startsWith("GRID-")
-    ? assignment.gridId
-    : `GRID-${assignment.gridId}`;
-
-  return region ? `${region} ${gridLabel}` : gridLabel;
-}
-
-function isValidCoordinate(value: unknown): value is number {
-  return (
-    typeof value === "number" &&
-    Number.isFinite(value) &&
-    value !== 0
-  );
 }
 
 function methodBadge(method: ControlTask["method"]) {
@@ -122,29 +53,14 @@ export default function ControlSection({
   mode,
   tasks,
   grids,
-  dispatchAssignments = [],
   onAddTask,
   onUpdateTaskProgress,
-  onUpdateDispatchStatus,
 }: ControlSectionProps) {
-  const controlAssignments = useMemo(
-    () =>
-      dispatchAssignments.filter(
-        (assignment) =>
-          assignment.taskType === "CONTROL" &&
-          assignment.status !== "복귀 완료",
-      ),
-    [dispatchAssignments],
-  );
-
   const [demoOperations, setDemoOperations] = useState<ControlOperation[]>(
     () => CONTROL_OPERATIONS.map((item) => ({ ...item })),
   );
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(
-    () =>
-      controlAssignments[0]?.assignmentId ??
-      CONTROL_OPERATIONS[0]?.id ??
-      null,
+    CONTROL_OPERATIONS[0]?.id ?? null,
   );
   const [isRegistering, setIsRegistering] = useState(false);
   const [area, setArea] = useState("");
@@ -156,70 +72,25 @@ export default function ControlSection({
   void grids;
 
   const operations = useMemo(() => {
-    const assignmentOperations: ControlOperation[] =
-      controlAssignments.map((assignment, index) => {
-        const latitude = isValidCoordinate(assignment.targetLatitude)
-          ? assignment.targetLatitude
-          : 37.979365 + index * 0.004;
-        const longitude = isValidCoordinate(assignment.targetLongitude)
-          ? assignment.targetLongitude
-          : 127.649056 - index * 0.004;
-        const startDate = assignment.assignedAt.slice(0, 10);
-        const endDate = new Date(
-          new Date(assignment.assignedAt).getTime() +
-            3 * 24 * 60 * 60 * 1000,
-        )
-          .toISOString()
-          .slice(0, 10);
-
-        return {
-          id: assignment.assignmentId,
-          area: formatAssignmentArea(assignment),
-          method: "파쇄",
-          status: toControlTaskStatus(assignment.status),
-          company: `${assignment.assignmentType} 방제팀`,
-          workers: 1,
-          progress: DISPATCH_PROGRESS[assignment.status],
-          startDate,
-          endDate,
-          latitude,
-          longitude,
-          workerId: assignment.workerId,
-          workerName: assignment.workerName,
-          workerRole: `방제 ${assignment.assignedSkillLevel}단계 담당`,
-          vehicle: "차량 배정 대기",
-          currentStage: assignment.status,
-        };
-      });
-
     const externalOperations = tasks
       .filter((task) => !demoOperations.some((demo) => demo.id === task.id))
       .map((task, index) => attachFallbackOperationLocation(task, index));
 
-    return [
-      ...assignmentOperations,
-      ...demoOperations,
-      ...externalOperations,
-    ];
-  }, [controlAssignments, demoOperations, tasks]);
-
-  useEffect(() => {
-    if (
-      selectedOperationId !== null &&
-      operations.some(
-        (operation) => operation.id === selectedOperationId,
-      )
-    ) {
-      return;
-    }
-
-    setSelectedOperationId(operations[0]?.id ?? null);
-  }, [operations, selectedOperationId]);
+    return [...demoOperations, ...externalOperations];
+  }, [demoOperations, tasks]);
 
   const selectedOperation =
     operations.find((operation) => operation.id === selectedOperationId) ??
     operations[0] ??
     null;
+
+  const activeOperations = useMemo(
+    () =>
+      operations.filter(
+        (operation) => operation.status !== "완료",
+      ),
+    [operations],
+  );
 
   const handleRegisterTask = (event: React.FormEvent) => {
     event.preventDefault();
@@ -246,27 +117,6 @@ export default function ControlSection({
   };
 
   const updateProgress = (operation: ControlOperation, delta: number) => {
-    const linkedAssignment = controlAssignments.find(
-      (assignment) => assignment.assignmentId === operation.id,
-    );
-
-    if (linkedAssignment && onUpdateDispatchStatus) {
-      const currentIndex = Math.max(
-        0,
-        ACTIVE_CONTROL_STATUSES.indexOf(linkedAssignment.status),
-      );
-      const nextIndex = Math.min(
-        ACTIVE_CONTROL_STATUSES.length - 1,
-        Math.max(0, currentIndex + (delta > 0 ? 1 : -1)),
-      );
-
-      onUpdateDispatchStatus(
-        linkedAssignment.assignmentId,
-        ACTIVE_CONTROL_STATUSES[nextIndex],
-      );
-      return;
-    }
-
     const progress = Math.min(100, Math.max(0, operation.progress + delta));
     const status: ControlTask["status"] =
       progress >= 100 ? "완료" : progress > 0 ? "진행" : "예정";
@@ -286,6 +136,7 @@ export default function ControlSection({
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="min-w-0 space-y-6 xl:col-span-6">
         <section className="min-w-0 xl:col-span-6">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <header className="border-b border-slate-200 px-5 py-4">
@@ -390,7 +241,7 @@ export default function ControlSection({
               <table className="w-full min-w-[660px] text-left text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50">
                   <tr className="border-b border-slate-200">
-                    {['공정 ID', '방제 구역', '방제 방식', '시공 업체', '진척률', '상태'].map((label) => (
+                    {['공정 ID', '방제 구역', '방제 방식', '담당 요원', '진척률', '상태'].map((label) => (
                       <th key={label} className="whitespace-nowrap px-3 py-2.5 text-[10px] font-bold text-slate-500">
                         {label}
                       </th>
@@ -400,16 +251,6 @@ export default function ControlSection({
                 <tbody>
                   {operations.map((operation) => {
                     const selected = operation.id === selectedOperation?.id;
-                    const linkedAssignment = controlAssignments.find(
-                      (assignment) =>
-                        assignment.assignmentId === operation.id,
-                    );
-                    const operationLabel = linkedAssignment
-                      ? linkedAssignment.gridId.startsWith("GRID-")
-                        ? linkedAssignment.gridId
-                        : `GRID-${linkedAssignment.gridId}`
-                      : operation.id;
-
                     return (
                       <tr
                         key={operation.id}
@@ -419,12 +260,7 @@ export default function ControlSection({
                         }`}
                       >
                         <td className="whitespace-nowrap px-3 py-3 font-mono text-[10px] font-bold text-slate-700">
-                          <div>{operationLabel}</div>
-                          {linkedAssignment && (
-                            <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-1.5 py-0.5 font-sans text-[8px] font-black text-emerald-700">
-                              홈 지도 배정
-                            </span>
-                          )}
+                          {operation.id}
                         </td>
                         <td className="max-w-[170px] px-3 py-3 text-[11px] text-slate-700">
                           {operation.area}
@@ -434,7 +270,7 @@ export default function ControlSection({
                             {operation.method}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-[11px] text-slate-700">{operation.company}</td>
+                        <td className="px-3 py-3 text-[11px] font-bold text-slate-700">{operation.workerName}</td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-1.5">
                             <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
@@ -457,6 +293,10 @@ export default function ControlSection({
           </div>
         </section>
 
+        <InventoryPanel />
+        </div>
+
+        <div className="min-w-0 space-y-6 xl:col-span-6">
         <section className="min-w-0 xl:col-span-6">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <header className="border-b border-slate-200 px-5 py-4">
@@ -480,9 +320,6 @@ export default function ControlSection({
               operations={operations}
               selectedOperationId={selectedOperation?.id ?? null}
               onSelect={(operation) => setSelectedOperationId(operation.id)}
-              sessionOperationIds={controlAssignments.map(
-                (assignment) => assignment.assignmentId,
-              )}
             />
 
             {selectedOperation && (
@@ -516,9 +353,90 @@ export default function ControlSection({
             )}
           </div>
         </section>
-      </div>
 
-      <InventoryPanel />
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <header className="border-b border-slate-200 px-5 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Navigation size={17} className="text-emerald-700" />
+                  <h2 className="text-base font-black text-slate-950">
+                    출동 중인 방제 요원
+                  </h2>
+                </div>
+                <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                  작업 목록과 지도에 표시된 방제 요원의 현재 정보를 확인합니다.
+                </p>
+              </div>
+
+              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">
+                {activeOperations.length}명
+              </span>
+            </div>
+          </header>
+
+          <div className="custom-scrollbar max-h-[300px] space-y-2 overflow-y-auto p-4 pr-3">
+            {activeOperations.length === 0 && (
+              <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400">
+                현재 출동 중인 방제 요원이 없습니다.
+              </div>
+            )}
+
+            {activeOperations.map((operation) => {
+              const isSelected =
+                operation.id === selectedOperation?.id;
+
+              return (
+                <button
+                  key={operation.id}
+                  type="button"
+                  onClick={() =>
+                    setSelectedOperationId(operation.id)
+                  }
+                  className={`grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border p-3 text-left transition ${
+                    isSelected
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-slate-100 bg-slate-50/70 hover:border-emerald-200 hover:bg-emerald-50/40"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-xs font-black text-slate-800">
+                        {operation.workerName}
+                      </span>
+                      <span className="font-mono text-[9px] font-bold text-slate-400">
+                        {operation.workerId}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[9px] font-black ${statusBadge(
+                          operation.status,
+                        )}`}
+                      >
+                        {operation.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-1.5 grid gap-1 text-[10px] font-semibold text-slate-500 sm:grid-cols-2">
+                      <span>작업 ID: {operation.id}</span>
+                      <span>
+                        위치: {operation.latitude.toFixed(6)}, {operation.longitude.toFixed(6)}
+                      </span>
+                      <span>방제 방법: {operation.method}</span>
+                      <span className="truncate">작업 구역: {operation.area}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 rounded-lg bg-white px-2 py-1.5 text-[10px] font-black text-slate-600 shadow-sm">
+                    <Battery size={12} className="text-emerald-600" />
+                    {operation.batteryPercent}%
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+        </div>
+      </div>
     </div>
   );
 }

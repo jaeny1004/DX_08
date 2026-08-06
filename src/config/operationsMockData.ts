@@ -14,6 +14,7 @@ export type ControlOperation = ControlTask & {
   workerId: string;
   workerName: string;
   workerRole: string;
+  batteryPercent: number;
   vehicle: string;
   currentStage: string;
 };
@@ -47,6 +48,7 @@ export const CONTROL_OPERATIONS: ControlOperation[] = [
     workerId: "CTR-W-201",
     workerName: "김방제",
     workerRole: "현장 반장",
+    batteryPercent: 86,
     vehicle: "강원 83가 1024",
     currentStage: "훈증 천막 밀폐 점검",
   },
@@ -65,6 +67,7 @@ export const CONTROL_OPERATIONS: ControlOperation[] = [
     workerId: "CTR-W-202",
     workerName: "박방제",
     workerRole: "파쇄기 책임자",
+    batteryPercent: 72,
     vehicle: "강원 91나 4812",
     currentStage: "피해목 운반 및 파쇄",
   },
@@ -83,6 +86,7 @@ export const CONTROL_OPERATIONS: ControlOperation[] = [
     workerId: "CTR-W-203",
     workerName: "최예방",
     workerRole: "예방주사 팀장",
+    batteryPercent: 64,
     vehicle: "강원 80다 3361",
     currentStage: "약제 및 천공 장비 준비",
   },
@@ -138,6 +142,7 @@ export function attachFallbackOperationLocation(
     workerId: `CTR-W-${300 + index}`,
     workerName: "신규 배정 요원",
     workerRole: "현장 담당자",
+    batteryPercent: 78 - (index % 4) * 7,
     vehicle: "차량 배정 대기",
     currentStage: task.status === "예정" ? "출동 준비" : "현장 작업",
   };

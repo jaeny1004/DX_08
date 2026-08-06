@@ -74,7 +74,7 @@ export function ControlOperationsMap({
     : DEFAULT_CENTER;
 
   return (
-    <div className="relative h-[600px] w-full overflow-hidden bg-slate-100">
+    <div className="relative h-[360px] w-full overflow-hidden bg-slate-100">
       <MapContainer
         key={`control-map-${sessionLayerKey}`}
         center={center}
