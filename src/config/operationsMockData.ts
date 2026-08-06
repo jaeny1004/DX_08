@@ -29,53 +29,7 @@ export type InventoryItem = {
   totalUnits?: number;
 };
 
-export const FIELD_WORKERS: FieldWorkerMarker[] = [
-  {
-    id: "FLD-W-101",
-    name: "김예찰",
-    region: "강원 춘천시 북산면",
-    status: "출동",
-    battery: 86,
-    progress: 65,
-    distance: "1.8km",
-    lastActive: "방금 전",
-    latitude: 37.98582,
-    longitude: 127.65391,
-    assignment: "시민 제보 현장 1차 확인",
-    team: "춘천 예찰 1팀",
-    updatedAt: "10초 전",
-  },
-  {
-    id: "FLD-W-102",
-    name: "박현장",
-    region: "강원 춘천시 북산면",
-    status: "출동",
-    battery: 72,
-    progress: 40,
-    distance: "3.2km",
-    lastActive: "1분 전",
-    latitude: 37.97444,
-    longitude: 127.64226,
-    assignment: "감염 의심목 시료 채취",
-    team: "춘천 예찰 2팀",
-    updatedAt: "35초 전",
-  },
-  {
-    id: "FLD-W-103",
-    name: "이산림",
-    region: "강원 춘천시 북산면",
-    status: "복귀",
-    battery: 58,
-    progress: 100,
-    distance: "5.1km",
-    lastActive: "2분 전",
-    latitude: 37.9667,
-    longitude: 127.66138,
-    assignment: "예찰 완료 후 거점 복귀",
-    team: "춘천 예찰 3팀",
-    updatedAt: "1분 전",
-  },
-];
+
 
 export const CONTROL_OPERATIONS: ControlOperation[] = [
   {
