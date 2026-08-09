@@ -10,6 +10,7 @@ import {
 import "leaflet/dist/leaflet.css";
 
 import type { ControlOperation } from "../config/operationsMockData";
+import { MAP_TILE_CONFIG } from "../utils/mapTileConfig";
 
 interface ControlOperationsMapProps {
   operations: ControlOperation[];
@@ -83,9 +84,11 @@ export function ControlOperationsMap({
         className="h-full w-full"
         style={{ height: "100%", width: "100%" }}
       >
+        {/* 배경지도는 대시보드와 동일하게 VWorld를 쓴다(키가 없을 때만 OSM 폴백). */}
         <TileLayer
-          attribution="&copy; OpenStreetMap contributors"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution={MAP_TILE_CONFIG.base.attribution}
+          url={MAP_TILE_CONFIG.base.url}
+          maxZoom={19}
         />
         <MapController
           operations={operations}

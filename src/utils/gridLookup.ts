@@ -142,6 +142,25 @@ export function resolveGridLocation(
 }
 
 /**
+ * 예전 코드가 주소칸에 저장해 둔 "위도 35.123456, 경도 128.123456" 형식을 잡아낸다.
+ * 이미 DB에 이런 문자열로 들어간 데이터가 있어, fallback으로 그대로 노출하면
+ * 좌표를 감추려는 목적이 무너진다.
+ */
+const LEGACY_COORDINATE_TEXT =
+  /위도\s*(-?\d+(?:\.\d+)?)\s*,?\s*경도\s*(-?\d+(?:\.\d+)?)/;
+
+function parseLegacyCoordinateText(
+  text: string,
+): { latitude: number; longitude: number } | null {
+  const matched = LEGACY_COORDINATE_TEXT.exec(text);
+  if (!matched) return null;
+  return {
+    latitude: Number(matched[1]),
+    longitude: Number(matched[2]),
+  };
+}
+
+/**
  * 화면에 표시할 위치 문자열을 만든다.
  * 좌표를 그대로 노출하지 않는다는 것이 이 함수의 목적이다.
  *
@@ -158,7 +177,22 @@ export function formatGridLocation(
       ? `${location.emdName} · 격자 ${location.gridId}`
       : `격자 ${location.gridId}`;
   }
+
   const trimmed = (fallbackRegion ?? "").trim();
-  if (trimmed) return trimmed;
-  return "위치 정보 없음";
+  if (!trimmed) return "위치 정보 없음";
+
+  // 주소칸 자체가 좌표 문자열이면, 거기서 좌표를 뽑아 한 번 더 시도한다.
+  const legacy = parseLegacyCoordinateText(trimmed);
+  if (legacy) {
+    const fromLegacy = resolveGridLocation(legacy.latitude, legacy.longitude);
+    if (fromLegacy) {
+      return fromLegacy.emdName
+        ? `${fromLegacy.emdName} · 격자 ${fromLegacy.gridId}`
+        : `격자 ${fromLegacy.gridId}`;
+    }
+    // 격자를 못 찾아도 좌표를 그대로 보여주지는 않는다.
+    return "위치 정보 없음";
+  }
+
+  return trimmed;
 }

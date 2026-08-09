@@ -18,6 +18,7 @@ import {
   formatGridLocation,
   loadGridLookup,
 } from "../utils/gridLookup";
+import { MAP_TILE_CONFIG } from "../utils/mapTileConfig";
 
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -224,9 +225,11 @@ export function LeafletMap({
         className="z-0 h-full w-full"
         style={{ width: "100%", height: "100%", minHeight: "360px" }}
       >
+        {/* 배경지도는 대시보드와 동일하게 VWorld를 쓴다(키가 없을 때만 OSM 폴백). */}
         <TileLayer
-          attribution="&copy; OpenStreetMap contributors"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution={MAP_TILE_CONFIG.base.attribution}
+          url={MAP_TILE_CONFIG.base.url}
+          maxZoom={19}
         />
 
         <MapResizeHandler />

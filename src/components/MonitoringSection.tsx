@@ -41,6 +41,7 @@ import type {
 import {
   formatGridLocation,
   loadGridLookup,
+  resolveGridLocation,
 } from "../utils/gridLookup";
 import { createTreeId } from "../utils/treeId";
 
@@ -2262,6 +2263,10 @@ export default function MonitoringSection({
       .split(/\s+/)
       .filter(Boolean);
 
+    // 주소 문자열을 공백으로 쪼개 행정동을 추측하던 방식은 "죽장면 산42"처럼
+    // 지번까지 딸려와 부정확했다. 좌표로 실제 격자를 찾아 행정동·격자ID를 쓴다.
+    const resolvedGrid = resolveGridLocation(latitude, longitude);
+
     const assignment: DispatchAssignment = {
       assignmentId:
         `DISPATCH-${Date.now()}-${worker.workerId}`,
@@ -2283,8 +2288,10 @@ export default function MonitoringSection({
       targetSigunguCode: "",
       targetSigunguName: regionParts.slice(0, 2).join(" "),
       targetEmdCode: "",
-      targetEmdName: regionParts.slice(2).join(" "),
-      gridId: controlAssignmentTree.id,
+      targetEmdName:
+        resolvedGrid?.emdName || regionParts.slice(2).join(" "),
+      // 격자를 못 찾은 경우에만 확진목 관리 ID로 대체한다.
+      gridId: resolvedGrid?.gridId ?? controlAssignmentTree.id,
       targetLatitude: latitude,
       targetLongitude: longitude,
       priorityGrade,
@@ -2659,7 +2666,13 @@ export default function MonitoringSection({
 
 
                           <td className="px-5 py-4 text-xs font-semibold text-slate-700">
-                            {tree.region}
+                            <span>
+                              {formatGridLocation(
+                                tree.latitude,
+                                tree.longitude,
+                                tree.region,
+                              )}
+                            </span>
                           </td>
 
 
