@@ -20,5 +20,8 @@ bcrypt>=4.1
 openpyxl>=3.1
 python-docx>=1.1
 reportlab>=4.2
-pyproj>=3.6
-shapely>=2.0
+# pyproj(24MB) + shapely 와 딸려오던 numpy(51MB)를 뺐다 — Vercel 225MB 한도.
+# 유일한 사용처였던 field_survey_report_generator.py 가 쓰던 기능은
+# EPSG:5186->4326 변환과 좌표 그릇(.x/.y/.centroid)뿐이라
+# app/core/coords.py 의 순수 파이썬 구현으로 대체했다.
+# 기하 연산(intersects/buffer/contains 등)이 필요해지면 shapely를 다시 넣을 것.

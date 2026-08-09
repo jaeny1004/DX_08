@@ -18,8 +18,13 @@ from docx.shared import Mm
 from docx.text.paragraph import Paragraph
 from dotenv import load_dotenv
 from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageStat
-from pyproj import Transformer
-from shapely.geometry import Point
+
+# pyproj / shapely 대신 순수 파이썬 구현을 쓴다.
+# 이 파일이 두 패키지의 유일한 사용처였고, 쓰던 기능은 EPSG:5186->4326 변환과
+# 좌표 그릇(.x/.y/.centroid)뿐이었다. numpy까지 딸려와 배포 번들이
+# Vercel 225MB 한도를 넘겼기 때문에 app/core/coords.py 로 대체했다.
+# (한국 전역 2,556개 지점 대조에서 pyproj 대비 최대 오차 0.059mm)
+from app.core.coords import Point, Transformer
 
 from app.services.prediction_report_generator import (
     BACKEND_ROOT,
