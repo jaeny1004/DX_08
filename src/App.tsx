@@ -2477,6 +2477,8 @@ export default function App() {
                       onConfirmInfection={handleConfirmInfection}
                       onRejectReport={handleRejectReport}
                       onAssignWorker={handleAssignWorker}
+                      onAddTree={handleAddTree}
+                      existingTreeIds={treeIds}
                     />
                   </div>
                 )}

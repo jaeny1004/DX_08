@@ -13,8 +13,10 @@ import {
 
 import {
   CrowdReport,
+  TreeRecord,
   WorkerStatus,
 } from "../types";
+import { createTreeId } from "../utils/treeId";
 
 import {
   DispatchAssignment,
@@ -45,6 +47,26 @@ type SurveyWorkerCandidate = {
   batteryPercent: number | null;
   remainingMinutes: number;
 };
+
+/** 두 지점 사이 거리(km). 요원을 가까운 순으로 정렬할 때 쓴다. */
+function calculateDistanceKm(
+  latitude1: number,
+  longitude1: number,
+  latitude2: number,
+  longitude2: number,
+): number {
+  const toRadians = (degree: number) => (degree * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const latitudeDelta = toRadians(latitude2 - latitude1);
+  const longitudeDelta = toRadians(longitude2 - longitude1);
+  const a =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(toRadians(latitude1)) *
+      Math.cos(toRadians(latitude2)) *
+      Math.sin(longitudeDelta / 2) ** 2;
+
+  return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 /** 배정 진행 순서. 화면의 상태 선택 목록도 이 순서를 따른다. */
 const DISPATCH_STATUS_FLOW: DispatchStatus[] = [
@@ -110,6 +132,12 @@ interface FieldSectionProps {
   onAssignWorker?: (
     assignment: DispatchAssignment
   ) => void;
+
+  /** 작업 완료 시 감염이 확인되면 확진목으로 넘긴다. */
+  onAddTree?: (tree: TreeRecord) => void;
+
+  /** 확진목 관리 ID 채번용 기존 ID 목록. */
+  existingTreeIds?: string[];
 }
 
 type FlexibleCrowdReport = CrowdReport & {
@@ -250,6 +278,9 @@ export default function FieldSection({
   onRejectReport,
   onAssignWorker,
   onUpdateDispatchStatus,
+  onCancelDispatch,
+  onAddTree,
+  existingTreeIds = [],
   dispatchAssignments = [],
 }: FieldSectionProps) {
   // 좌표를 행정동·격자ID로 바꿔 표시하려면 룩업이 먼저 있어야 한다.
@@ -301,6 +332,13 @@ export default function FieldSection({
   const [surveyLongitude, setSurveyLongitude] = useState("");
   const [surveyMessage, setSurveyMessage] = useState("");
 
+  // 작업 완료 시 뜨는 현장 판정 팝업.
+  // step: 감염 여부 -> (미감염일 때) 방제 이관 / 반려 선택
+  const [completionTarget, setCompletionTarget] =
+    useState<DispatchAssignment | null>(null);
+  const [completionStep, setCompletionStep] =
+    useState<"infection" | "clean">("infection");
+
   // 지역명 또는 좌표 중 하나만 넣어도 행정동·격자를 찾는다.
   const surveyGridLocation = useMemo(
     () =>
@@ -329,20 +367,82 @@ export default function FieldSection({
     [dispatchAssignments]
   );
 
-  const availableSurveyWorkers = useMemo(() => {
+  const unassignedSurveyWorkers = useMemo(() => {
     const assignedWorkerIds = new Set(
       surveyAssignments.map(
         (assignment) => assignment.workerId
       )
     );
 
-    return surveyWorkerCandidates
-      .filter(
-        (worker) =>
-          !assignedWorkerIds.has(worker.workerId)
-      )
-      .slice(0, 8);
+    return surveyWorkerCandidates.filter(
+      (worker) => !assignedWorkerIds.has(worker.workerId)
+    );
   }, [surveyAssignments, surveyWorkerCandidates]);
+
+  /**
+   * 대상 위치 기준으로 요원을 정렬한다.
+   * 같은 시군구 소속을 먼저 올리고, 그 안에서는 가까운 순으로 둔다.
+   * 위치를 모르면 기존처럼 숙련도 순(로드 시 정렬된 순서)을 그대로 쓴다.
+   */
+  const rankWorkersForLocation = (
+    latitude: number | undefined,
+    longitude: number | undefined,
+    sigunguName?: string,
+  ) => {
+    const hasPoint =
+      typeof latitude === "number" &&
+      Number.isFinite(latitude) &&
+      typeof longitude === "number" &&
+      Number.isFinite(longitude);
+
+    if (!hasPoint && !sigunguName) {
+      return unassignedSurveyWorkers.map((worker) => ({
+        worker,
+        distanceKm: null as number | null,
+        localRegion: false,
+      }));
+    }
+
+    return unassignedSurveyWorkers
+      .map((worker) => ({
+        worker,
+        distanceKm: hasPoint
+          ? calculateDistanceKm(
+              worker.baseLatitude,
+              worker.baseLongitude,
+              latitude!,
+              longitude!,
+            )
+          : null,
+        localRegion: Boolean(
+          sigunguName &&
+            worker.homeSigunguName &&
+            sigunguName.includes(worker.homeSigunguName),
+        ),
+      }))
+      .sort((left, right) => {
+        if (left.localRegion !== right.localRegion) {
+          return left.localRegion ? -1 : 1;
+        }
+        if (left.distanceKm !== null && right.distanceKm !== null) {
+          return left.distanceKm - right.distanceKm;
+        }
+        return right.worker.skillLevel - left.worker.skillLevel;
+      });
+  };
+
+  // 신규 등록 폼에서 쓸 목록 — 입력한 위치 기준.
+  const surveyWorkerOptions = useMemo(
+    () =>
+      rankWorkersForLocation(
+        surveyGridLocation?.latitude,
+        surveyGridLocation?.longitude,
+        surveyRegion,
+      ).slice(0, 30),
+    // rankWorkersForLocation은 아래 값들만 참조한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [unassignedSurveyWorkers, surveyGridLocation, surveyRegion],
+  );
 
   const selectedAssignment =
     surveyAssignments.find(
@@ -711,6 +811,119 @@ export default function FieldSection({
     setIsCreatingSurvey(false);
   };
 
+  /**
+   * 상태 변경 진입점.
+   * '작업 완료'를 고르면 바로 반영하지 않고, 현장 판정 팝업을 먼저 띄운다.
+   * 감염 여부에 따라 이후 흐름(확진목 / 방제 / 반려)이 갈리기 때문이다.
+   */
+  const handleDispatchStatusChange = (
+    assignment: DispatchAssignment,
+    nextStatus: DispatchStatus,
+  ) => {
+    if (nextStatus === "작업 완료") {
+      setCompletionTarget(assignment);
+      setCompletionStep("infection");
+      return;
+    }
+    onUpdateDispatchStatus?.(assignment.assignmentId, nextStatus);
+  };
+
+  /** 감염이 확인된 경우: 확진목으로 넘기고 배정을 종료한다. */
+  const handleCompletionInfected = () => {
+    const assignment = completionTarget;
+    if (!assignment) return;
+
+    const location =
+      [assignment.targetSigunguName, assignment.targetEmdName]
+        .filter(Boolean)
+        .join(" ") || `격자 ${assignment.gridId}`;
+
+    onAddTree?.({
+      id: createTreeId(existingTreeIds),
+      region: location,
+      species: "소나무",
+      confirmedDate: new Date().toISOString().split("T")[0],
+      status: "방제대기",
+      severity: "중",
+      x: 0,
+      y: 0,
+      ...(typeof assignment.targetLatitude === "number" &&
+      typeof assignment.targetLongitude === "number"
+        ? {
+            latitude: assignment.targetLatitude,
+            longitude: assignment.targetLongitude,
+          }
+        : {}),
+      emdName: assignment.targetEmdName || undefined,
+      gridId: assignment.gridId,
+      inspector: assignment.workerName,
+      timeline: [
+        {
+          stage: "현장 예찰 완료",
+          date: new Date().toLocaleString(),
+          note:
+            `${assignment.workerName} 요원이 현장 확인 결과 감염 의심목을 확인. ` +
+            `위치: ${location} · 격자 ${assignment.gridId}`,
+          actor: assignment.workerName,
+        },
+      ],
+    });
+
+    onUpdateDispatchStatus?.(assignment.assignmentId, "복귀 완료");
+    setCompletionTarget(null);
+    setSurveyMessage(
+      `${location} 현장 확인 결과를 확진목 리스트로 넘겼습니다.`,
+    );
+  };
+
+  /** 미감염 + 방제 이관: 같은 격자에 방제 작업을 만든다. */
+  const handleCompletionToControl = () => {
+    const assignment = completionTarget;
+    if (!assignment) return;
+
+    onAssignWorker?.({
+      ...assignment,
+      assignmentId: `CONTROL-${assignment.gridId}-${Date.now()}`,
+      workerType: "방제요원",
+      taskType: "CONTROL",
+      workerCapabilities: [
+        {
+          taskType: "CONTROL",
+          skillLevel: assignment.assignedSkillLevel,
+        },
+      ],
+      recommendationReason:
+        `현장 예찰 결과 감염은 미확인이나 담당자 판단으로 방제 검토 이관 ` +
+        `(예찰 배정 ${assignment.assignmentId})`,
+      status: "배정 대기",
+      assignedAt: new Date().toISOString(),
+    });
+
+    onUpdateDispatchStatus?.(assignment.assignmentId, "복귀 완료");
+    setCompletionTarget(null);
+    setSurveyMessage(
+      `격자 ${assignment.gridId} 건을 방제 검토로 이관했습니다.`,
+    );
+  };
+
+  /** 미감염 + 반려: 배정을 삭제해 목록에서 내린다. */
+  const handleCompletionReject = () => {
+    const assignment = completionTarget;
+    if (!assignment) return;
+
+    if (onCancelDispatch) {
+      onCancelDispatch(assignment.assignmentId);
+    } else {
+      onUpdateDispatchStatus?.(assignment.assignmentId, "복귀 완료");
+    }
+
+    setCompletionTarget(null);
+    setSelectedAssignmentId(null);
+    setSurveyMessage(
+      `격자 ${assignment.gridId} 예찰 건을 반려 처리했습니다.`,
+    );
+  };
+
   const handleRejectReport = async (
     report: CrowdReport
   ) => {
@@ -853,32 +1066,49 @@ export default function FieldSection({
                 </label>
 
                 <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white">
-                  {availableSurveyWorkers.length === 0 && (
+                  {surveyWorkerOptions.length === 0 && (
                     <div className="px-3 py-4 text-center text-[11px] font-bold text-slate-400">
                       배정 가능한 예찰 요원이 없습니다.
                     </div>
                   )}
 
-                  {availableSurveyWorkers.map((worker) => (
+                  {surveyWorkerOptions.map((option) => (
                     <button
-                      key={worker.workerId}
+                      key={option.worker.workerId}
                       type="button"
                       disabled={!surveyGridLocation}
-                      onClick={() => handleCreateSurveyAssignment(worker)}
+                      onClick={() =>
+                        handleCreateSurveyAssignment(option.worker)
+                      }
                       className="flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <span className="min-w-0">
-                        <span className="block truncate text-xs font-black text-slate-800">
-                          {worker.workerName}
+                        <span className="flex items-center gap-1.5">
+                          <span className="truncate text-xs font-black text-slate-800">
+                            {option.worker.workerName}
+                          </span>
+                          {option.localRegion && (
+                            <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-700">
+                              관내
+                            </span>
+                          )}
                         </span>
                         <span className="block truncate text-[10px] font-semibold text-slate-500">
-                          {worker.homeSigunguName} · 숙련도 {worker.skillLevel}
+                          {option.worker.homeSigunguName} · 숙련도{" "}
+                          {option.worker.skillLevel}
                           {" · 잔여 "}
-                          {worker.remainingMinutes}분
+                          {option.worker.remainingMinutes}분
                         </span>
                       </span>
-                      <span className="shrink-0 text-[10px] font-black text-emerald-700">
-                        배정
+                      <span className="shrink-0 text-right">
+                        {option.distanceKm !== null && (
+                          <span className="block text-[10px] font-black text-slate-400">
+                            {option.distanceKm.toFixed(1)}km
+                          </span>
+                        )}
+                        <span className="block text-[10px] font-black text-emerald-700">
+                          배정
+                        </span>
                       </span>
                     </button>
                   ))}
@@ -982,8 +1212,8 @@ export default function FieldSection({
                     <select
                       value={assignment.status}
                       onChange={(event) =>
-                        onUpdateDispatchStatus?.(
-                          assignment.assignmentId,
+                        handleDispatchStatusChange(
+                          assignment,
                           event.target.value as DispatchStatus,
                         )
                       }
@@ -1012,6 +1242,13 @@ export default function FieldSection({
                 getReportLatitude(report);
               const longitude =
                 getReportLongitude(report);
+
+              // 제보 위치 기준으로 관내 요원을 먼저, 가까운 순으로 보여준다.
+              const reportWorkerOptions = rankWorkersForLocation(
+                Number(latitude),
+                Number(longitude),
+                report.region,
+              ).slice(0, 8);
 
               return (
                 <article
@@ -1212,13 +1449,13 @@ export default function FieldSection({
                                   )}
 
                                   {!workerLoadError &&
-                                    availableSurveyWorkers.length === 0 && (
+                                    reportWorkerOptions.length === 0 && (
                                       <div className="rounded-lg border border-dashed border-emerald-200 bg-white p-4 text-center text-[11px] font-bold text-slate-400">
                                         현재 배정 가능한 예찰 요원이 없습니다.
                                       </div>
                                     )}
 
-                                  {availableSurveyWorkers.map((worker) => (
+                                  {reportWorkerOptions.map(({ worker, distanceKm, localRegion }) => (
                                     <div
                                       key={worker.workerId}
                                       className="flex items-center justify-between gap-3 rounded-lg border border-emerald-100 bg-white p-3"
@@ -1228,6 +1465,11 @@ export default function FieldSection({
                                           <span className="truncate text-xs font-black text-slate-800">
                                             {worker.workerName}
                                           </span>
+                                          {localRegion && (
+                                            <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-700">
+                                              관내
+                                            </span>
+                                          )}
                                           <span className="font-mono text-[9px] font-bold text-slate-400">
                                             {worker.workerId}
                                           </span>
@@ -1235,6 +1477,9 @@ export default function FieldSection({
                                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-500">
                                           <span>예찰 {worker.skillLevel}단계</span>
                                           <span>{worker.homeSigunguName}</span>
+                                          {distanceKm !== null && (
+                                            <span>{distanceKm.toFixed(1)}km</span>
+                                          )}
                                           <span className="flex items-center gap-1">
                                             <Battery size={11} />
                                             {worker.batteryPercent ?? "-"}%
@@ -1500,6 +1745,120 @@ export default function FieldSection({
         </div>
       </section>
       </div>
+
+      {/* =========================================================
+          작업 완료 시 현장 판정 팝업
+          지도 컨트롤(z-index 최대 1000) 위로 올라오도록 2100대를 쓴다.
+      ========================================================= */}
+      <AnimatePresence>
+        {completionTarget && (
+          <>
+            <motion.button
+              type="button"
+              aria-label="현장 판정 닫기"
+              onClick={() => setCompletionTarget(null)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[2100] bg-slate-950/40"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 8 }}
+              transition={{ duration: 0.16 }}
+              className="fixed left-1/2 top-1/2 z-[2110] w-[420px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            >
+              <div className="bg-emerald-900 px-5 py-4 text-white">
+                <div className="text-[10px] font-black tracking-widest">
+                  FIELD SURVEY RESULT
+                </div>
+                <h3 className="mt-1 text-sm font-black">
+                  현장 예찰 결과 입력
+                </h3>
+                <p className="mt-1 text-[11px] font-semibold text-white/70">
+                  {[
+                    completionTarget.targetSigunguName,
+                    completionTarget.targetEmdName,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  {" · 격자 "}
+                  {completionTarget.gridId}
+                  {" · "}
+                  {completionTarget.workerName}
+                </p>
+              </div>
+
+              <div className="space-y-3 p-5">
+                {completionStep === "infection" ? (
+                  <>
+                    <p className="text-xs font-bold text-slate-700">
+                      해당 지역에서 감염 의심목이 확인되었습니까?
+                    </p>
+                    <p className="text-[11px] font-semibold text-slate-400">
+                      확인 시 확진목 리스트로 넘어가 방제대기 상태로 등록됩니다.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleCompletionInfected}
+                        className="rounded-xl bg-rose-600 px-3 py-3 text-xs font-black text-white transition hover:bg-rose-700"
+                      >
+                        감염 확인
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCompletionStep("clean")}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-50"
+                      >
+                        미감염
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-bold text-slate-700">
+                      감염은 확인되지 않았습니다. 이후 처리를 선택하세요.
+                    </p>
+                    <p className="text-[11px] font-semibold text-slate-400">
+                      현장 요원 판단에 따라 예방 차원의 방제를 검토하거나,
+                      추가 조치 없이 반려할 수 있습니다.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleCompletionToControl}
+                        className="rounded-xl bg-emerald-800 px-3 py-3 text-xs font-black text-white transition hover:bg-emerald-900"
+                      >
+                        방제 검토로 이관
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCompletionReject}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-50"
+                      >
+                        반려
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setCompletionStep("infection")}
+                      className="w-full pt-1 text-[11px] font-bold text-slate-400 transition hover:text-slate-600"
+                    >
+                      이전으로
+                    </button>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
