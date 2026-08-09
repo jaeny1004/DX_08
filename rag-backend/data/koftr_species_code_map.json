@@ -1,0 +1,418 @@
+[
+  {
+    "code": "10",
+    "species_name": "기타침엽수",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 1765
+  },
+  {
+    "code": "11",
+    "species_name": "소나무",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 505937
+  },
+  {
+    "code": "12",
+    "species_name": "잣나무",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 116795
+  },
+  {
+    "code": "13",
+    "species_name": "낙엽송",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 238312
+  },
+  {
+    "code": "14",
+    "species_name": "리기다소나무",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 136613
+  },
+  {
+    "code": "15",
+    "species_name": "곰솔",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 111252
+  },
+  {
+    "code": "16",
+    "species_name": "전나무",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 2407
+  },
+  {
+    "code": "17",
+    "species_name": "편백나무",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 41102
+  },
+  {
+    "code": "18",
+    "species_name": "삼나무",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 10259
+  },
+  {
+    "code": "19",
+    "species_name": "가문비나무",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 75
+  },
+  {
+    "code": "20",
+    "species_name": "비자나무",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 46
+  },
+  {
+    "code": "21",
+    "species_name": "은행나무",
+    "forest_type": "침엽수림",
+    "group": "침엽수",
+    "is_forest": true,
+    "count_nationwide": 381
+  },
+  {
+    "code": "30",
+    "species_name": "기타활엽수",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 583880
+  },
+  {
+    "code": "31",
+    "species_name": "상수리나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 63191
+  },
+  {
+    "code": "32",
+    "species_name": "신갈나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 58211
+  },
+  {
+    "code": "33",
+    "species_name": "굴참나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 45689
+  },
+  {
+    "code": "34",
+    "species_name": "기타 참나무류",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 309453
+  },
+  {
+    "code": "35",
+    "species_name": "오리나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 1497
+  },
+  {
+    "code": "36",
+    "species_name": "고로쇠나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 954
+  },
+  {
+    "code": "37",
+    "species_name": "자작나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 13700
+  },
+  {
+    "code": "38",
+    "species_name": "박달나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 13
+  },
+  {
+    "code": "39",
+    "species_name": "밤나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 42632
+  },
+  {
+    "code": "40",
+    "species_name": "물푸레나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 569
+  },
+  {
+    "code": "41",
+    "species_name": "서어나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 63
+  },
+  {
+    "code": "42",
+    "species_name": "때죽나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 45
+  },
+  {
+    "code": "43",
+    "species_name": "호두나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 2075
+  },
+  {
+    "code": "44",
+    "species_name": "백합나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 8352
+  },
+  {
+    "code": "45",
+    "species_name": "포플러",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 28245
+  },
+  {
+    "code": "46",
+    "species_name": "벚나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 1066
+  },
+  {
+    "code": "47",
+    "species_name": "느티나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 1366
+  },
+  {
+    "code": "48",
+    "species_name": "층층나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 35
+  },
+  {
+    "code": "49",
+    "species_name": "아까시나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 30942
+  },
+  {
+    "code": "60",
+    "species_name": "기타상록활엽수",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 3350
+  },
+  {
+    "code": "61",
+    "species_name": "가시나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 231
+  },
+  {
+    "code": "62",
+    "species_name": "구실잣밤나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 159
+  },
+  {
+    "code": "63",
+    "species_name": "녹나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 14
+  },
+  {
+    "code": "64",
+    "species_name": "굴거리나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 5
+  },
+  {
+    "code": "65",
+    "species_name": "황칠나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 731
+  },
+  {
+    "code": "66",
+    "species_name": "사스레피나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 7
+  },
+  {
+    "code": "67",
+    "species_name": "후박나무",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 187
+  },
+  {
+    "code": "68",
+    "species_name": "새덕이",
+    "forest_type": "활엽수림",
+    "group": "활엽수",
+    "is_forest": true,
+    "count_nationwide": 4
+  },
+  {
+    "code": "77",
+    "species_name": "침활혼효림",
+    "forest_type": "혼효림",
+    "group": "혼효림",
+    "is_forest": true,
+    "count_nationwide": 481334
+  },
+  {
+    "code": "78",
+    "species_name": "죽림",
+    "forest_type": "죽림",
+    "group": "비산림",
+    "is_forest": false,
+    "count_nationwide": 69439
+  },
+  {
+    "code": "81",
+    "species_name": "미립목지",
+    "forest_type": "무립목지/비산림",
+    "group": "비산림",
+    "is_forest": false,
+    "count_nationwide": 68495
+  },
+  {
+    "code": "82",
+    "species_name": "제지",
+    "forest_type": "무립목지/비산림",
+    "group": "비산림",
+    "is_forest": false,
+    "count_nationwide": 373644
+  },
+  {
+    "code": "83",
+    "species_name": "관목덤불",
+    "forest_type": "무립목지/비산림",
+    "group": "비산림",
+    "is_forest": false,
+    "count_nationwide": 8770
+  },
+  {
+    "code": "91",
+    "species_name": "주거지",
+    "forest_type": "무립목지/비산림",
+    "group": "비산림",
+    "is_forest": false,
+    "count_nationwide": 5323
+  },
+  {
+    "code": "92",
+    "species_name": "초지",
+    "forest_type": "무립목지/비산림",
+    "group": "비산림",
+    "is_forest": false,
+    "count_nationwide": 474
+  },
+  {
+    "code": "93",
+    "species_name": "경작지",
+    "forest_type": "무립목지/비산림",
+    "group": "비산림",
+    "is_forest": false,
+    "count_nationwide": 37915
+  },
+  {
+    "code": "94",
+    "species_name": "수체",
+    "forest_type": "무립목지/비산림",
+    "group": "비산림",
+    "is_forest": false,
+    "count_nationwide": 1851
+  },
+  {
+    "code": "95",
+    "species_name": "과수원",
+    "forest_type": "무립목지/비산림",
+    "group": "비산림",
+    "is_forest": false,
+    "count_nationwide": 2069
+  },
+  {
+    "code": "99",
+    "species_name": "기타",
+    "forest_type": "무립목지/비산림",
+    "group": "비산림",
+    "is_forest": false,
+    "count_nationwide": 1
+  }
+]
