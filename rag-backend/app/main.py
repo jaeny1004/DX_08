@@ -123,6 +123,7 @@ def create_app() -> FastAPI:
     from app.api.auth import router as auth_router
     from app.api.chat import router as chat_router
     from app.api.docs import router as docs_router
+    from app.api.field_audio import router as field_audio_router
     from app.api.geocode import router as geocode_router
     from app.api.reports import router as reports_router
     from app.api.report_drafts import router as report_drafts_router
@@ -132,6 +133,7 @@ def create_app() -> FastAPI:
         "auth": auth_router,
         "chat": chat_router,
         "docs": docs_router,
+        "field_audio": field_audio_router,
         "geocode": geocode_router,
         "reports": reports_router,
         "report_drafts": report_drafts_router,

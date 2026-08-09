@@ -117,16 +117,63 @@ npm run dev            # 3000
 | `src/screens/MyTasks.tsx` | 내 작업 화면 (신규) |
 | `src/screens/Login.tsx` | 패스코드 통과 후 요원 선택 단계 추가 |
 | `src/screens/Chatbot.tsx` | Edge Function `chat-rag` -> 웹 백엔드 `/chat` |
+| `src/hooks/useSupabase.ts` | Edge Function `field-audio-stt` -> 웹 백엔드 `/api/field-audio-stt` |
 | `src/App.tsx` | `WorkerProvider`, `mytasks` 화면·탭 추가 |
 | `tsconfig.json` | Deno 함수 제외 (lint 가 항상 실패하던 문제) |
+
+**백엔드**
+
+| 파일 | 내용 |
+|---|---|
+| `rag-backend/app/api/field_audio.py` | 음성 STT (신규). Storage 에서 녹음을 받아 Whisper 로 전사 |
+| `rag-backend/app/main.py` | `field_audio` 라우터 등록 |
+
+## Edge Function 을 왜 걷어냈나
+
+앱은 원래 Supabase Edge Function 세 개에 의존했다.
+
+| 함수 | 처리 |
+|---|---|
+| `chat-rag` | 웹 백엔드 `/chat` 으로 통합 |
+| `ingest-rag` | 불필요. 문서 적재는 `scripts/preprocess_docs.py` + 백엔드가 한다 |
+| `field-audio-stt` | 웹 백엔드 `/api/field-audio-stt` 로 통합 |
+
+Edge Function 은 프로젝트마다 따로 배포해야 해서, Supabase 프로젝트를 옮기는
+순간 챗봇과 음성 변환만 조용히 망가졌다. `OPENAI_API_KEY` 도 두 곳에서 관리해야 했다.
+백엔드로 모으면 프로젝트를 옮겨도 `VITE_RAG_API_BASE` 하나만 맞추면 된다.
 
 ## 남은 것
 
 - **앱이 Git 저장소가 아니다.** `pine-app-main` 에 `.git` 이 없어 변경 이력이 남지
   않는다. 별도 저장소로 만들거나 이 저장소 안으로 옮기는 편이 안전하다.
-- 앱의 `field-audio-stt` Edge Function 은 조원 프로젝트에만 배포돼 있다.
-  다른 프로젝트로 옮기면 음성 STT 가 동작하지 않으므로 함께 배포해야 한다.
 - 앱 `Tickets` 화면은 아직 `localStorage` 의 `myReportTokens` 로 본인 신고를
   거른다. 요원 신원이 생겼으니 이쪽도 정리할 수 있다.
 - 조원 프로젝트 `pine_records` 에는 `trg_auto_roboflow_analysis`(AFTER INSERT)
   트리거가 있는데 011 에서는 만들지 않았다. 자동 AI 판독이 필요하면 따로 옮겨야 한다.
+- 배포 백엔드(`rag-backend-rho.vercel.app`)는 아직 옛 빌드다. Vercel 함수 225MB
+  한도 때문에 재배포가 막혀 있어서 `/api/geocode` 와 `/api/field-audio-stt` 가
+  배포본에는 없다. 로컬 백엔드로는 전부 동작한다.
+
+## 검증 기록 (2026-08-09)
+
+마이그레이션 적용 후 실제로 확인한 것.
+
+```
+테이블 9개          전부 생성, RLS 켜짐, 정책 부여됨
+요원 데이터          914 / 1,825 / 914 / 914 건 적재
+Storage 버킷        pine-images / field-photos / field-audio  전부 public, 정책 3/3
+Realtime            5개 테이블 등록됨
+anon 키 경로         11개 테이블 조회 성공, 버킷 3개 접근 가능
+```
+
+전체 흐름을 실제 INSERT 로 통과시킨 뒤 ROLLBACK 했다(DB 에 잔여물 없음).
+
+```
+1) 앱 신고 등록        pine_records.id = 2
+2) 웹 확진 처리        confirmed_trees.source_report_id = '2'
+3) 웹 요원 배정        정하윤(W00002) <- 확진목 PT-2026-9999
+4) 앱 사진·음성        related_record_id 로 연결
+5) 웹 타임라인 조회    사진 1건 / 음성 1건 / 배정 1건
+6) 앱 작업 완료        -> 웹이 확진목을 방제완료로 전환
+7) 앱 내 작업 조회     worker_id=W00002 -> 1건
+```
