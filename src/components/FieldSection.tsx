@@ -29,6 +29,8 @@ import {
 import {
   formatGridLocation,
   loadGridLookup,
+  resolveGridByRegionText,
+  resolveGridLocation,
 } from "../utils/gridLookup";
 
 type SurveyWorkerCandidate = {
@@ -43,6 +45,35 @@ type SurveyWorkerCandidate = {
   batteryPercent: number | null;
   remainingMinutes: number;
 };
+
+/** 배정 진행 순서. 화면의 상태 선택 목록도 이 순서를 따른다. */
+const DISPATCH_STATUS_FLOW: DispatchStatus[] = [
+  "배정 대기",
+  "배정 수락",
+  "출동",
+  "현장 도착",
+  "작업 중",
+  "작업 완료",
+  "복귀",
+  "복귀 완료",
+];
+
+/** 진행 단계별 색상. 대기 -> 이동 -> 작업 -> 완료 순으로 톤을 바꾼다. */
+function dispatchStatusClass(status: DispatchStatus): string {
+  if (status === "배정 대기") {
+    return "border-slate-200 bg-slate-100 text-slate-600";
+  }
+  if (status === "배정 수락" || status === "출동") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+  if (status === "현장 도착" || status === "작업 중") {
+    return "border-blue-200 bg-blue-50 text-blue-700";
+  }
+  if (status === "작업 완료") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  return "border-slate-300 bg-white text-slate-500";
+}
 
 interface FieldSectionProps {
   reports: CrowdReport[];
@@ -218,6 +249,7 @@ export default function FieldSection({
   onConfirmInfection,
   onRejectReport,
   onAssignWorker,
+  onUpdateDispatchStatus,
   dispatchAssignments = [],
 }: FieldSectionProps) {
   // 좌표를 행정동·격자ID로 바꿔 표시하려면 룩업이 먼저 있어야 한다.
@@ -258,6 +290,24 @@ export default function FieldSection({
 
   const [workerLoadError, setWorkerLoadError] =
     useState("");
+
+  // ---------------------------------------------------------
+  // 신규 예찰 배정 등록
+  // 시민 제보 없이도 지역을 직접 지정해 예찰 요원을 배정할 수 있게 한다.
+  // ---------------------------------------------------------
+  const [isCreatingSurvey, setIsCreatingSurvey] = useState(false);
+  const [surveyRegion, setSurveyRegion] = useState("");
+  const [surveyLatitude, setSurveyLatitude] = useState("");
+  const [surveyLongitude, setSurveyLongitude] = useState("");
+  const [surveyMessage, setSurveyMessage] = useState("");
+
+  // 지역명 또는 좌표 중 하나만 넣어도 행정동·격자를 찾는다.
+  const surveyGridLocation = useMemo(
+    () =>
+      resolveGridLocation(surveyLatitude, surveyLongitude) ??
+      resolveGridByRegionText(surveyRegion),
+    [surveyLatitude, surveyLongitude, surveyRegion],
+  );
 
   const selectedReport =
     reports.find(
@@ -580,6 +630,87 @@ export default function FieldSection({
     }
   };
 
+  /**
+   * 시민 제보를 거치지 않고 지역을 직접 지정해 예찰 요원을 배정한다.
+   * 위치는 지역명 또는 좌표 중 하나만 있어도 되고, 격자·행정동은 역조회로 채운다.
+   */
+  const handleCreateSurveyAssignment = (
+    worker: SurveyWorkerCandidate,
+  ) => {
+    if (!surveyGridLocation) {
+      setSurveyMessage(
+        "발견 위치를 먼저 입력하세요. 행정동이 확인되어야 배정할 수 있습니다.",
+      );
+      return;
+    }
+
+    const regionParts = surveyRegion
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    const typedLatitude = Number(surveyLatitude);
+    const typedLongitude = Number(surveyLongitude);
+    const hasTypedCoords =
+      surveyLatitude.trim() !== "" &&
+      surveyLongitude.trim() !== "" &&
+      Number.isFinite(typedLatitude) &&
+      Number.isFinite(typedLongitude);
+
+    onAssignWorker?.({
+      assignmentId: `SURVEY-${surveyGridLocation.gridId}-${Date.now()}`,
+      workerId: worker.workerId,
+      workerName: worker.workerName,
+      workerType: "현장요원",
+      taskType: "SURVEY",
+      workerCapabilities: [
+        {
+          taskType: "SURVEY",
+          skillLevel: worker.skillLevel,
+        },
+      ],
+      assignedSkillLevel: worker.skillLevel,
+      homeSidoName: worker.homeSidoName,
+      homeSigunguCode: worker.homeSigunguCode,
+      homeSigunguName: worker.homeSigunguName,
+      targetSidoName: regionParts[0] ?? "",
+      targetSigunguCode: "",
+      targetSigunguName: regionParts[1] ?? "",
+      targetEmdCode: "",
+      targetEmdName: surveyGridLocation.emdName,
+      gridId: surveyGridLocation.gridId,
+      targetLatitude: hasTypedCoords
+        ? typedLatitude
+        : surveyGridLocation.latitude,
+      targetLongitude: hasTypedCoords
+        ? typedLongitude
+        : surveyGridLocation.longitude,
+      priorityGrade: "현장 확인",
+      riskGrade: "주의",
+      riskScore: 0,
+      accessScore: 0,
+      distanceKm: null,
+      travelTimeHour: null,
+      batteryPercent: worker.batteryPercent,
+      remainingMinutesAtAssignment: worker.remainingMinutes,
+      recommendationReason:
+        `${surveyGridLocation.emdName} 격자 ${surveyGridLocation.gridId} 신규 예찰 배정`,
+      assignmentType: "지역 내 배정",
+      // 새 배정은 배정 대기에서 시작해 단계별로 전환한다.
+      status: "배정 대기",
+      assignedAt: new Date().toISOString(),
+    });
+
+    setSurveyMessage(
+      `${worker.workerName} 요원을 ${surveyGridLocation.emdName} 격자 ` +
+        `${surveyGridLocation.gridId}에 배정했습니다.`,
+    );
+    setSurveyRegion("");
+    setSurveyLatitude("");
+    setSurveyLongitude("");
+    setIsCreatingSurvey(false);
+  };
+
   const handleRejectReport = async (
     report: CrowdReport
   ) => {
@@ -615,21 +746,152 @@ export default function FieldSection({
       <section className="min-h-0 min-w-0 xl:col-span-6">
         <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <header className="border-b border-slate-200 px-5 py-4">
-            <div className="flex items-center gap-2">
-              <ListCheckIcon
-                size={18}
-                className="shrink-0 text-emerald-700"
-              />
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <ListCheckIcon
+                  size={18}
+                  className="shrink-0 text-emerald-700"
+                />
 
-              <h2 className="text-base font-black text-slate-950">
-                감염 의심목 예찰 리스트
-              </h2>
+                <h2 className="text-base font-black text-slate-950">
+                  감염 의심목 예찰 리스트
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreatingSurvey((previous) => !previous);
+                  setSurveyMessage("");
+                }}
+                className={
+                  isCreatingSurvey
+                    ? "shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
+                    : "shrink-0 rounded-xl bg-emerald-800 px-3 py-1.5 text-[11px] font-black text-white shadow-sm transition hover:bg-emerald-900"
+                }
+              >
+                {isCreatingSurvey ? "등록 취소" : "신규 등록"}
+              </button>
             </div>
 
             <p className="mt-1 text-[10px] font-semibold text-slate-400">
               항목을 선택하면 현장 이미지와 처리 정보를 확인할 수 있습니다.
             </p>
           </header>
+
+          {/* 신규 예찰 배정 등록 */}
+          {isCreatingSurvey && (
+            <div className="shrink-0 space-y-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
+              <div>
+                <label className="mb-1 block text-[11px] font-black text-slate-600">
+                  예찰 대상 위치
+                  <span className="ml-1 font-semibold text-slate-400">
+                    (지역 또는 좌표 중 하나만 입력해도 됩니다)
+                  </span>
+                </label>
+
+                <input
+                  type="text"
+                  value={surveyRegion}
+                  onChange={(event) => setSurveyRegion(event.target.value)}
+                  placeholder="예: 강원특별자치도 춘천시 동면"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-emerald-500"
+                />
+
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={surveyLatitude}
+                    onChange={(event) => setSurveyLatitude(event.target.value)}
+                    placeholder="위도 37.910052"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-emerald-500"
+                  />
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={surveyLongitude}
+                    onChange={(event) => setSurveyLongitude(event.target.value)}
+                    placeholder="경도 127.787793"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div
+                  className={
+                    surveyGridLocation
+                      ? "mt-2 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2"
+                      : "mt-2 flex items-center gap-2 rounded-xl bg-white px-3 py-2"
+                  }
+                >
+                  <MapPin
+                    size={13}
+                    className={
+                      surveyGridLocation
+                        ? "shrink-0 text-emerald-600"
+                        : "shrink-0 text-slate-400"
+                    }
+                  />
+                  <span
+                    className={
+                      surveyGridLocation
+                        ? "text-[11px] font-black text-emerald-800"
+                        : "text-[11px] font-bold text-slate-500"
+                    }
+                  >
+                    {surveyGridLocation
+                      ? `${surveyGridLocation.emdName} · 격자 ${surveyGridLocation.gridId}`
+                      : "지역명 또는 좌표를 입력하면 행정동과 격자를 찾습니다."}
+                  </span>
+                </div>
+              </div>
+
+              {/* 요원 선택 */}
+              <div>
+                <label className="mb-1 block text-[11px] font-black text-slate-600">
+                  예찰 요원
+                </label>
+
+                <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                  {availableSurveyWorkers.length === 0 && (
+                    <div className="px-3 py-4 text-center text-[11px] font-bold text-slate-400">
+                      배정 가능한 예찰 요원이 없습니다.
+                    </div>
+                  )}
+
+                  {availableSurveyWorkers.map((worker) => (
+                    <button
+                      key={worker.workerId}
+                      type="button"
+                      disabled={!surveyGridLocation}
+                      onClick={() => handleCreateSurveyAssignment(worker)}
+                      className="flex w-full items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-black text-slate-800">
+                          {worker.workerName}
+                        </span>
+                        <span className="block truncate text-[10px] font-semibold text-slate-500">
+                          {worker.homeSigunguName} · 숙련도 {worker.skillLevel}
+                          {" · 잔여 "}
+                          {worker.remainingMinutes}분
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[10px] font-black text-emerald-700">
+                        배정
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {surveyMessage && (
+                <p className="rounded-xl bg-white px-3 py-2 text-[11px] font-bold text-emerald-700">
+                  {surveyMessage}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-4 pr-3">
             {reports.length === 0 && surveyAssignments.length === 0 && (
@@ -704,12 +966,38 @@ export default function FieldSection({
                         <div className="mt-0.5 text-sm font-black text-emerald-700">
                           {assignment.workerName}
                         </div>
-                        <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black text-emerald-700">
-                          {assignment.status}
-                        </span>
                       </div>
                     </div>
                   </button>
+
+                  {/*
+                    상태 전환. 카드 선택 버튼 안에 두면 버튼이 중첩되므로
+                    바깥에 별도 줄로 배치한다.
+                  */}
+                  <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-white px-4 py-2">
+                    <span className="text-[10px] font-bold text-slate-400">
+                      진행 상태
+                    </span>
+
+                    <select
+                      value={assignment.status}
+                      onChange={(event) =>
+                        onUpdateDispatchStatus?.(
+                          assignment.assignmentId,
+                          event.target.value as DispatchStatus,
+                        )
+                      }
+                      className={`rounded-lg border px-2 py-1 text-[10px] font-black outline-none ${dispatchStatusClass(
+                        assignment.status,
+                      )}`}
+                    >
+                      {DISPATCH_STATUS_FLOW.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </article>
               );
             })}
@@ -1012,11 +1300,15 @@ export default function FieldSection({
                             <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
                               <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
                                 <MapPin size={13} />
-                                제보 위치 좌표
+                                제보 위치
                               </div>
 
-                              <p className="mt-1 break-all font-mono text-[11px] font-bold text-slate-700">
-                                latitude: {formatCoordinate(latitude)} / longitude: {formatCoordinate(longitude)}
+                              <p className="mt-1 break-all text-[11px] font-bold text-slate-700">
+                                {formatGridLocation(
+                                  latitude,
+                                  longitude,
+                                  report.region,
+                                )}
                               </p>
                             </div>
                           </div>
@@ -1175,7 +1467,11 @@ export default function FieldSection({
                       <span className="font-mono text-[9px] font-bold text-slate-400">
                         {assignment.workerId}
                       </span>
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black text-emerald-700">
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${dispatchStatusClass(
+                          assignment.status,
+                        )}`}
+                      >
                         {assignment.status}
                       </span>
                     </div>
@@ -1183,7 +1479,12 @@ export default function FieldSection({
                     <div className="mt-1.5 grid gap-1 text-[10px] font-semibold text-slate-500 sm:grid-cols-2">
                       <span>작업 ID: {assignment.assignmentId}</span>
                       <span>
-                        위치: {formatCoordinate(assignment.targetLatitude)}, {formatCoordinate(assignment.targetLongitude)}
+                        위치:{" "}
+                        {formatGridLocation(
+                          assignment.targetLatitude,
+                          assignment.targetLongitude,
+                          assignment.targetEmdName,
+                        )}
                       </span>
                     </div>
                   </div>
