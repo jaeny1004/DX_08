@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "devkill": "npx kill-port 3000 4173 5173 8788 9222"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
