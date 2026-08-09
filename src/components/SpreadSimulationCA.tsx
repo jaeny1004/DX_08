@@ -23,24 +23,21 @@ const WEIGHTS_PATH = "/data/ca_sim/ca_weights.json";
 const GRID_PATH = "/data/ca_sim/ca_grid.json";
 const CELLS_PATH = "/data/ca_sim/pilot_cells.geojson";
 
-/** 방제 영향권. 직접 구역은 감염원을 제거하고, 주변은 저감만 적용한다. */
-const DIRECT_RADIUS_M = 1000;
-const INDIRECT_RADIUS_M = 2000;
+/** 방제 반경 선택지(km). 간접 영향권은 직접 구역의 두 배로 잡는다. */
+const RADIUS_OPTIONS_KM = [0.5, 1, 2, 3, 5];
 
-/** 감염 확률을 색으로. 보라는 시작 시점 감염, 나머지는 확산 위험도. */
-function riskColor(probability: number, seeded: boolean): string {
-  if (seeded) return "#7c3aed";
-  if (probability >= 0.75) return "#b91c1c";
-  if (probability >= 0.55) return "#ef4444";
-  if (probability >= 0.35) return "#f97316";
-  if (probability >= 0.18) return "#facc15";
-  return "#bbf7d0";
+/** 감염 확률을 붉은 계열 한 축으로 표현한다. */
+function riskColor(probability: number): string {
+  if (probability >= 0.75) return "#7f1d1d";
+  if (probability >= 0.55) return "#b91c1c";
+  if (probability >= 0.35) return "#ef4444";
+  if (probability >= 0.18) return "#fb923c";
+  return "#fed7aa";
 }
 
-function riskOpacity(probability: number, seeded: boolean): number {
-  if (seeded) return 0.85;
-  if (probability < 0.18) return 0.28;
-  return 0.42 + Math.min(probability, 1) * 0.45;
+function riskOpacity(probability: number): number {
+  if (probability < 0.18) return 0.25;
+  return 0.4 + Math.min(probability, 1) * 0.45;
 }
 
 interface CellFeature {
@@ -75,6 +72,16 @@ export default function SpreadSimulationCA() {
   const [controlCenter, setControlCenter] =
     useState<{ lat: number; lng: number } | null>(null);
   const [controlApplied, setControlApplied] = useState(false);
+  const [radiusKm, setRadiusKm] = useState(2);
+
+  /**
+   * 방제 전후를 나란히 보기 위해 기본 시나리오 결과를 따로 들고 있는다.
+   * 같은 시점끼리 비교해야 방제 효과가 얼마인지 말할 수 있다.
+   */
+  const [baselineFrames, setBaselineFrames] = useState<Float32Array[]>([]);
+
+  const directRadiusM = radiusKm * 1000;
+  const indirectRadiusM = directRadiusM * 2;
 
   // ---------------------------------------------------------------
   // 데이터 로드
@@ -180,12 +187,13 @@ export default function SpreadSimulationCA() {
     paintInitial(built);
   }
 
-  /** 시작 시점(2022 감염) 표시. */
+  /** 시작 시점 표시. 감염 격자는 가장 짙은 붉은색으로 둔다. */
   function paintInitial(cells: CellFeature[]) {
     for (const cell of cells) {
+      const probability = cell.seeded ? 1 : 0;
       cell.layer.setStyle({
-        fillColor: riskColor(0, cell.seeded),
-        fillOpacity: riskOpacity(0, cell.seeded),
+        fillColor: riskColor(probability),
+        fillOpacity: riskOpacity(probability),
         weight: 0,
       });
     }
@@ -207,8 +215,8 @@ export default function SpreadSimulationCA() {
     for (const cell of cells) {
       const probability = frame[cell.index] ?? 0;
       cell.layer.setStyle({
-        fillColor: riskColor(probability, false),
-        fillOpacity: riskOpacity(probability, false),
+        fillColor: riskColor(probability),
+        fillOpacity: riskOpacity(probability),
         weight: 0,
       });
     }
@@ -229,7 +237,7 @@ export default function SpreadSimulationCA() {
     if (!controlCenter) return;
 
     indirectCircleRef.current = L.circle(controlCenter, {
-      radius: INDIRECT_RADIUS_M,
+      radius: indirectRadiusM,
       color: "#0284c7",
       weight: 1,
       dashArray: "4 4",
@@ -238,14 +246,14 @@ export default function SpreadSimulationCA() {
     }).addTo(map);
 
     controlCircleRef.current = L.circle(controlCenter, {
-      radius: DIRECT_RADIUS_M,
+      radius: directRadiusM,
       color: "#0369a1",
       weight: 2,
       fillColor: "#0ea5e9",
       fillOpacity: 0.12,
       interactive: false,
     }).addTo(map);
-  }, [controlCenter]);
+  }, [controlCenter, directRadiusM, indirectRadiusM]);
 
   // ---------------------------------------------------------------
   // 재생
@@ -283,7 +291,7 @@ export default function SpreadSimulationCA() {
     for (const cell of cellsRef.current) {
       const dy = (cell.latitude - controlCenter.lat) * metersPerDegreeLatitude;
       const dx = (cell.longitude - controlCenter.lng) * lngScale;
-      if (Math.sqrt(dx * dx + dy * dy) <= DIRECT_RADIUS_M) {
+      if (Math.sqrt(dx * dx + dy * dy) <= directRadiusM) {
         seed[cell.index] = 0;
       }
     }
@@ -306,7 +314,10 @@ export default function SpreadSimulationCA() {
             setProgressText(`${step + 1} / ${CA_STEPS} 단계`);
           },
         });
-        setFrames(toMonthlyFrames(stepFrames));
+        const monthly = toMonthlyFrames(stepFrames);
+        setFrames(monthly);
+        // 방제를 적용하지 않은 실행은 비교 기준으로 따로 보관한다.
+        if (!withControl) setBaselineFrames(monthly);
         setMonth(0);
         setControlApplied(withControl);
         setProgressText("");
@@ -321,6 +332,7 @@ export default function SpreadSimulationCA() {
 
   function reset() {
     setFrames([]);
+    setBaselineFrames([]);
     setMonth(0);
     setIsPlaying(false);
     setControlApplied(false);
@@ -332,7 +344,9 @@ export default function SpreadSimulationCA() {
   // ---------------------------------------------------------------
   const summary = useMemo(() => {
     if (!frames.length) return null;
-    const frame = frames[Math.min(month, frames.length - 1)];
+    const index = Math.min(month, frames.length - 1);
+    const frame = frames[index];
+
     let high = 0;
     let medium = 0;
     for (const cell of cellsRef.current) {
@@ -340,8 +354,25 @@ export default function SpreadSimulationCA() {
       if (probability >= 0.55) high += 1;
       else if (probability >= 0.35) medium += 1;
     }
-    return { high, medium, total: cellsRef.current.length };
-  }, [frames, month]);
+
+    // 방제 결과를 보고 있고 기준 시나리오도 있으면 같은 시점끼리 비교한다.
+    let baselineHigh: number | null = null;
+    if (controlApplied && baselineFrames.length) {
+      const baseFrame = baselineFrames[Math.min(index, baselineFrames.length - 1)];
+      baselineHigh = 0;
+      for (const cell of cellsRef.current) {
+        if ((baseFrame[cell.index] ?? 0) >= 0.55) baselineHigh += 1;
+      }
+    }
+
+    return {
+      high,
+      medium,
+      total: cellsRef.current.length,
+      baselineHigh,
+      reduced: baselineHigh === null ? null : baselineHigh - high,
+    };
+  }, [frames, month, controlApplied, baselineFrames]);
 
   const isReady = Boolean(weights && grid);
 
@@ -363,21 +394,6 @@ export default function SpreadSimulationCA() {
             </p>
           </div>
 
-          <div className="flex shrink-0 items-center gap-3 rounded-xl bg-slate-50 px-3 py-2">
-            <div className="text-center">
-              <div className="text-[9px] font-black text-slate-400">
-                백테스트 AUC
-              </div>
-              <div className="text-sm font-black text-emerald-700">0.859</div>
-            </div>
-            <div className="h-8 w-px bg-slate-200" />
-            <div className="text-center">
-              <div className="text-[9px] font-black text-slate-400">검증</div>
-              <div className="text-[11px] font-bold text-slate-600">
-                2021→2022
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -399,12 +415,11 @@ export default function SpreadSimulationCA() {
             </div>
             <div className="flex items-center gap-2">
               {[
-                { color: "#7c3aed", label: "시작 감염" },
-                { color: "#b91c1c", label: "75%+" },
-                { color: "#ef4444", label: "55%+" },
-                { color: "#f97316", label: "35%+" },
-                { color: "#facc15", label: "18%+" },
-                { color: "#bbf7d0", label: "낮음" },
+                { color: "#7f1d1d", label: "75%+" },
+                { color: "#b91c1c", label: "55%+" },
+                { color: "#ef4444", label: "35%+" },
+                { color: "#fb923c", label: "18%+" },
+                { color: "#fed7aa", label: "낮음" },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-1">
                   <span
@@ -502,9 +517,32 @@ export default function SpreadSimulationCA() {
               제거했을 때의 확산을 비교할 수 있습니다.
             </p>
 
-            <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-600">
+            {/* 방제 반경 선택 */}
+            <div className="mt-3">
+              <div className="mb-1 text-[10px] font-black text-slate-500">
+                방제 반경
+              </div>
+              <div className="flex gap-1">
+                {RADIUS_OPTIONS_KM.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setRadiusKm(option)}
+                    className={
+                      radiusKm === option
+                        ? "flex-1 rounded-lg bg-sky-700 py-1.5 text-[10px] font-black text-white"
+                        : "flex-1 rounded-lg border border-slate-200 bg-white py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50"
+                    }
+                  >
+                    {option}km
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-600">
               {controlCenter
-                ? `방제 구역 지정됨 (반경 ${DIRECT_RADIUS_M / 1000}km)`
+                ? `방제 구역 지정됨 · 직접 ${radiusKm}km / 간접 ${radiusKm * 2}km`
                 : "지도를 클릭해 방제 구역을 지정하세요."}
             </div>
 
@@ -551,6 +589,27 @@ export default function SpreadSimulationCA() {
               <p className="mt-2 text-[10px] font-semibold text-slate-400">
                 전체 {summary.total.toLocaleString("ko-KR")}개 격자 기준
               </p>
+
+              {summary.reduced !== null && summary.baselineHigh !== null && (
+                <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3">
+                  <div className="text-[9px] font-black text-sky-600">
+                    방제 적용 효과 (같은 시점 비교)
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-lg font-black text-sky-800">
+                      {summary.reduced > 0 ? "-" : ""}
+                      {Math.abs(summary.reduced).toLocaleString("ko-KR")}
+                    </span>
+                    <span className="text-[10px] font-bold text-sky-700">
+                      고위험 격자
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[10px] font-semibold text-sky-700/80">
+                    미방제 {summary.baselineHigh.toLocaleString("ko-KR")}개 →
+                    방제 후 {summary.high.toLocaleString("ko-KR")}개
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -563,11 +622,6 @@ export default function SpreadSimulationCA() {
                 · 시간 전이 표본이 7개, 단일 지역 파일럿이라 정밀 역학모델이
                 아닙니다.
               </li>
-              <li>
-                · 원형 국소 방제는 하류 확산 억제 효과가 크지 않게 나옵니다.
-                조기·광역 대응의 필요성을 검토하는 용도로 보시면 됩니다.
-              </li>
-              <li>· 2023년은 조사가 불완전해 학습·검증에서 제외했습니다.</li>
             </ul>
           </div>
         </div>
