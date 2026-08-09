@@ -68,6 +68,10 @@ def apply_prediction_template(
             report_no=1,
             candidate_metrics=candidate_metrics,
             neighbor_metrics=neighbor_metrics,
+            # 사용자가 입력한 기간·제목을 문서에 그대로 반영한다.
+            start_date=str(draft.get("start_date") or "").strip() or None,
+            end_date=str(draft.get("end_date") or "").strip() or None,
+            title=str(draft.get("title") or "").strip() or None,
         )
 
         docx_path = Path(result["docx_path"]).resolve()

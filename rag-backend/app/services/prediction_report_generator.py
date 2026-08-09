@@ -8,6 +8,7 @@ import re
 import time
 import zipfile
 from dataclasses import dataclass
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -1543,9 +1544,18 @@ def create_docx(
     appendix_directory: Path,
     record: ReportRecord,
     metrics: dict[str, Any],
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> None:
     document = Document(template_path)
     region = f"{record.sido_name} {record.sigungu_name}"
+    # 사용자가 입력한 기간을 쓴다. 예전에는 연도만 표시하고 시작일·종료일을
+    # 버렸으며, 작성일마저 12월 임의 날짜로 지어내고 있었다.
+    period = (
+        f"{start_date} ~ {end_date}"
+        if start_date and end_date
+        else f"{record.year}년"
+    )
     grid_ids = metrics["block_grid_ids"]
     adjacent_ids = [
         grid_id
@@ -1555,10 +1565,12 @@ def create_docx(
     while len(adjacent_ids) < 4:
         adjacent_ids.append(record.center_grid_id)
     replacements = {
-        "[작성일]": f"{record.year}. 12. {10 + (record.report_no % 18):02d}.",
-        "-지역, 기간-": f"-{region}, {record.year}년-",
+        "[작성일]": datetime.now().strftime("%Y. %m. %d."),
+        "-지역, 기간-": f"-{region}, {period}-",
         "[지역]": region,
-        "[기간]": f"{record.year}년",
+        "[기간]": period,
+        "[시작일]": start_date or f"{record.year}-01-01",
+        "[종료일]": end_date or f"{record.year}-12-31",
         "[격자 ID]": str(record.center_grid_id),
         "[단계 수]": "5",
         "[단계]": str(metrics["risk_stage"]),
@@ -1575,7 +1587,8 @@ def create_docx(
         "[인접 격자 3]": str(adjacent_ids[2]),
         "[인접 격자 4]": str(adjacent_ids[3]),
         "[대응 단계명]": "우선 예찰 검토",
-        "[일자]": f"{record.year}. 12. {11 + (record.report_no % 18):02d}.",
+        # 실행 일자도 임의 12월 날짜가 아니라 사용자가 지정한 종료일을 쓴다.
+        "[일자]": end_date or f"{record.year}-12-31",
         "[대상 격자]": ", ".join(map(str, grid_ids)),
     }
     replace_everywhere(document, replacements)
@@ -1594,7 +1607,7 @@ def create_docx(
             "후속 방제 검토 및 행정 보고에 활용"
         ),
         "❍ (분석 대상)": (
-            f"❍ (분석 대상) {region} / {record.year}년 / 중심 격자 포함 "
+            f"❍ (분석 대상) {region} / {period} / 중심 격자 포함 "
             f"3x3 권역 {metrics['block_count']}개 격자"
         ),
         "❍ (위험 점수)": (
@@ -1704,6 +1717,9 @@ def build_prediction_render_payload(
     source: ReportSourceData,
     map_path: Path,
     neighbor_metrics: list[dict[str, Any]] | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    title: str | None = None,
 ) -> dict[str, Any]:
     center_point = source.static.get("center_point_4326") or {}
     coordinates = center_point.get("coordinates") or [None, None]
@@ -1757,12 +1773,15 @@ def build_prediction_render_payload(
         "document_no": record.report_no,
         "report_no": record.report_no,
         "year": record.year,
-        "title": (
+        "title": title
+        or (
             f"{record.year}년 {record.sigungu_name} "
             "신규 확산위험 분석 보고서"
         ),
-        "start_date": f"{record.year}-01-01",
-        "end_date": f"{record.year}-12-{end_day:02d}",
+        # 사용자가 입력한 기간을 그대로 쓴다.
+        # 값이 없을 때만 예전처럼 연도 기준으로 만들어 채운다.
+        "start_date": start_date or f"{record.year}-01-01",
+        "end_date": end_date or f"{record.year}-12-{end_day:02d}",
         "sido_name": record.sido_name,
         "sigungu_name": record.sigungu_name,
         "center_grid_id": record.center_grid_id,
@@ -1790,6 +1809,9 @@ def generate_single_prediction_report(
     zoom: int | None = None,
     candidate_metrics: dict[str, Any] | None = None,
     neighbor_metrics: list[dict[str, Any]] | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    title: str | None = None,
     client: Any | None = None,
 ) -> dict[str, Any]:
     if year < 2016 or year > 2100:
@@ -1870,6 +1892,8 @@ def generate_single_prediction_report(
         appendix_directory=appendix_directory,
         record=record,
         metrics=metrics,
+        start_date=start_date,
+        end_date=end_date,
     )
     render_payload = build_prediction_render_payload(
         record=record,
@@ -1877,6 +1901,9 @@ def generate_single_prediction_report(
         source=source,
         map_path=map_path,
         neighbor_metrics=neighbor_metrics,
+        start_date=start_date,
+        end_date=end_date,
+        title=title,
     )
     from app.services.report_render.renderer import render_report_pdf
 
