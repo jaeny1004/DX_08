@@ -179,7 +179,9 @@ export default function ControlSection({
   onUpdateDispatchStatus,
 }: ControlSectionProps) {
   // 좌표를 행정동·격자ID로 바꿔 표시하려면 룩업이 먼저 있어야 한다.
-  const [, setGridLookupReady] = useState(false);
+  // 판정 결과 useMemo가 이 값을 의존성으로 잡아야, 로드가 끝난 뒤에 다시 계산된다.
+  // (없으면 로드 전에 입력한 주소가 계속 미판정으로 남는다.)
+  const [gridLookupReady, setGridLookupReady] = useState(false);
   useEffect(() => {
     let cancelled = false;
     loadGridLookup().then((data) => {
@@ -211,7 +213,7 @@ export default function ControlSection({
     () =>
       resolveGridLocation(newLatitude, newLongitude) ??
       resolveGridByRegionText(area),
-    [newLatitude, newLongitude, area],
+    [newLatitude, newLongitude, area, gridLookupReady],
   );
 
   // 방제 담당 요원 선택

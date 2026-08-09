@@ -286,7 +286,8 @@ export default function FieldSection({
   dispatchAssignments = [],
 }: FieldSectionProps) {
   // 좌표를 행정동·격자ID로 바꿔 표시하려면 룩업이 먼저 있어야 한다.
-  const [, setGridLookupReady] = useState(false);
+  // 판정 결과 useMemo가 이 값을 의존성으로 잡아야, 로드가 끝난 뒤에 다시 계산된다.
+  const [gridLookupReady, setGridLookupReady] = useState(false);
   useEffect(() => {
     let cancelled = false;
     loadGridLookup().then((data) => {
@@ -346,7 +347,7 @@ export default function FieldSection({
     () =>
       resolveGridLocation(surveyLatitude, surveyLongitude) ??
       resolveGridByRegionText(surveyRegion),
-    [surveyLatitude, surveyLongitude, surveyRegion],
+    [surveyLatitude, surveyLongitude, surveyRegion, gridLookupReady],
   );
 
   const selectedReport =

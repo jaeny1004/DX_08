@@ -529,6 +529,20 @@ export default function MonitoringSection({
     [trees],
   );
 
+  // 좌표를 행정동·격자ID로 바꿔 보여주려면 룩업이 먼저 있어야 한다.
+  // 아래 판정 useMemo가 이 값을 의존성으로 잡아야, 로드가 끝난 뒤 다시 계산된다.
+  // (없으면 로드 전에 입력한 주소가 계속 미판정으로 남는다.)
+  const [gridLookupReady, setGridLookupReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadGridLookup().then((data) => {
+      if (!cancelled && data) setGridLookupReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // 주소를 지번까지 입력하면 지오코딩으로 실제 지점 좌표를 받아 온다.
   // 행정동 이름만 있을 때 쓰는 대표 격자보다 정확하다.
   const [geocoded, setGeocoded] =
@@ -591,7 +605,9 @@ export default function MonitoringSection({
       return { grid: representative, kind: "representative" as const };
     }
     return null;
-  }, [newLatitude, newLongitude, region, geocoded]);
+    // gridLookupReady: 룩업 로드가 끝나면 다시 계산해야 한다.
+    // 없으면 로드 전에 입력한 주소가 계속 미판정으로 남는다.
+  }, [newLatitude, newLongitude, region, geocoded, gridLookupReady]);
 
   const newGridLocation = newLocationResult?.grid ?? null;
 
@@ -628,20 +644,6 @@ export default function MonitoringSection({
 
   const [controlAssignmentMessage, setControlAssignmentMessage] =
     useState("");
-
-  // 좌표를 행정동·격자ID로 바꿔 보여주려면 룩업이 먼저 있어야 한다.
-  // 도착 전에는 fallback 문자열이 잠깐 보이므로, 로드되면 한 번 다시 그린다.
-  const [gridLookupReady, setGridLookupReady] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    loadGridLookup().then((data) => {
-      if (!cancelled && data) setGridLookupReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  void gridLookupReady;
 
   useEffect(() => {
     const controller = new AbortController();
