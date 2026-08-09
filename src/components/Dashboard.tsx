@@ -10,7 +10,6 @@ import {
 import {
   CrowdReport,
   TreeRecord,
-  WorkerStatus,
 } from "../types";
 
 import {
@@ -36,7 +35,6 @@ interface DashboardLiveAlert {
 interface DashboardProps {
   title: string;
   trees: TreeRecord[];
-  workers: WorkerStatus[];
   reports: CrowdReport[];
   dispatchAssignments: DispatchAssignment[];
   onAssignWorker: (assignment: DispatchAssignment) => void;
@@ -50,7 +48,6 @@ interface DashboardProps {
 export default function Dashboard({
   title,
   trees,
-  workers,
   reports,
   dispatchAssignments,
   onAssignWorker,
@@ -66,6 +63,29 @@ export default function Dashboard({
     regionLabel: "전국",
     highRiskCount: 0,
   });
+
+  // 출동 가능한 전체 요원 수(현장요원 데이터셋 기준).
+  const [availableWorkerCount, setAvailableWorkerCount] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/data/workforce_v2/worker_current_status.json", {
+      cache: "force-cache",
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((rows: Array<{ status?: string }> | null) => {
+        if (!rows) return;
+        // OFF_DUTY(비번)를 뺀 인원이 실제 배정 가능한 모수다.
+        setAvailableWorkerCount(
+          rows.filter((row) => row.status === "AVAILABLE").length,
+        );
+      })
+      .catch(() => {
+        /* 요원 수는 부가 지표라 실패해도 화면을 막지 않는다 */
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -84,13 +104,22 @@ export default function Dashboard({
       : tone === "warning"
         ? "text-amber-600"
         : "text-sky-600";
-  const activeWorkers = workers.filter(
-    (worker) => worker.status !== "대기",
-  ).length;
+  // 출동 인원은 실제로 배정된 요원 수로 센다.
+  // workers state는 아직 비어 있어 예전에는 항상 0명으로 보였다.
+  // 같은 요원이 여러 건에 배정될 수 있으므로 요원 기준으로 중복을 제거한다.
+  const dispatchedWorkerIds = new Set(
+    dispatchAssignments
+      .filter((assignment) => assignment.status !== "복귀 완료")
+      .map((assignment) => assignment.workerId),
+  );
+  const activeWorkers = dispatchedWorkerIds.size;
 
-  const fieldReadyWorkers = workers.filter(
-    (worker) => worker.status === "대기",
-  ).length;
+  // 대기 인원은 요원 명단에서 출동 중인 인원을 뺀 값.
+  // 명단을 못 받았으면(0명) 대기 인원도 표시하지 않는다.
+  const fieldReadyWorkers = Math.max(
+    availableWorkerCount - activeWorkers,
+    0,
+  );
 
   const reportCount = reports.length;
 
@@ -127,7 +156,7 @@ export default function Dashboard({
     },
     {
       id: "drone",
-      label: "예찰 제보 접수",
+      label: "시민 제보 접수",
       value: `${reportCount.toLocaleString("ko-KR")}건`,
       caption: "현장 확인 연계 대상",
       icon: Drone,

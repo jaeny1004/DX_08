@@ -64,6 +64,7 @@ import {
 
 import Dashboard from "./components/Dashboard";
 import type { DashboardMapViewState } from "./components/DashboardRiskMapCard";
+import { createTreeId } from "./utils/treeId";
 import MonitoringSection from "./components/MonitoringSection";
 import FieldSection from "./components/FieldSection";
 import ThermalAnalysisSection from "./components/ThermalAnalysisSection";
@@ -625,6 +626,9 @@ export default function App() {
 
   const [isAlertPanelOpen, setIsAlertPanelOpen] =
     useState(false);
+
+  // 관리 ID 채번은 기존 ID를 봐야 번호가 이어진다. 자식에게 목록을 넘긴다.
+  const treeIds = trees.map((tree) => tree.id);
 
   // 대시보드 지도의 선택 지역·확대 위치. 탭을 옮기면 Dashboard가 언마운트되어
   // 내부 state가 사라지므로, 여기서 보관했다가 돌아올 때 복원한다.
@@ -1371,11 +1375,7 @@ export default function App() {
     report: CrowdReport
   ) => {
     const newTree: TreeRecord = {
-      id:
-        `PT-${new Date().getFullYear()}-` +
-        `${Math.floor(
-          1000 + Math.random() * 9000
-        )}`,
+      id: createTreeId(trees.map((item) => item.id)),
       region: report.region,
       species: "소나무",
       confirmedDate:
@@ -2421,7 +2421,6 @@ export default function App() {
                     <Dashboard
                       title={activeModuleLabel}
                       trees={trees}
-                      workers={workers}
                       reports={reports}
                       dispatchAssignments={dispatchAssignments}
                       onAssignWorker={handleAssignWorker}
@@ -2476,6 +2475,7 @@ export default function App() {
                   <div className="h-full min-h-0 overflow-y-auto pr-1">
                     <ThermalAnalysisSection
                       onAddTree={handleAddTree}
+                      existingTreeIds={treeIds}
                     />
                   </div>
                 )}
@@ -2484,6 +2484,7 @@ export default function App() {
                   <div className="h-full min-h-0 overflow-y-auto pr-1">
                     <DroneVisionAnalysisSection
                       onAddTree={handleAddTree}
+                      existingTreeIds={treeIds}
                     />
                   </div>
                 )}
