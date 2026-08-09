@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Battery,
@@ -290,6 +290,47 @@ export default function ControlSection({
         .map(dispatchToControlOperation),
     [dispatchAssignments],
   );
+
+  /*
+   * 현장 앱이 배정 상태를 바꾸면 그 변화가 화면에 보여야 한다.
+   * 그런데 진척률 슬라이더를 한 번이라도 움직이면 progressOverrides 에 값이
+   * 남아 배정에서 역산한 진척률을 계속 덮어쓴다. 그 결과 앱에서 '작업 완료'로
+   * 바꿔도 작업 현황은 예전 값에 멈춰 있었다.
+   *
+   * 그래서 배정 상태가 실제로 바뀐 작업만 골라 덮어쓰기를 지운다.
+   * 화면에서 조정한 값은 "그 상태에서의 조정"이므로 상태가 바뀌면 무효로 본다.
+   */
+  const lastDispatchStatusRef = useRef<Record<string, DispatchStatus>>({});
+
+  useEffect(() => {
+    const changedIds: string[] = [];
+
+    for (const assignment of dispatchAssignments) {
+      if (assignment.taskType !== "CONTROL") continue;
+
+      const operationId = `CTR-${assignment.gridId}-${assignment.workerId}`;
+      const previous = lastDispatchStatusRef.current[operationId];
+
+      if (previous !== undefined && previous !== assignment.status) {
+        changedIds.push(operationId);
+      }
+      lastDispatchStatusRef.current[operationId] = assignment.status;
+    }
+
+    if (changedIds.length === 0) return;
+
+    setProgressOverrides((previous) => {
+      const next = { ...previous };
+      let touched = false;
+      for (const id of changedIds) {
+        if (id in next) {
+          delete next[id];
+          touched = true;
+        }
+      }
+      return touched ? next : previous;
+    });
+  }, [dispatchAssignments]);
 
   const operations = useMemo(() => {
     const knownOperationIds = new Set([
