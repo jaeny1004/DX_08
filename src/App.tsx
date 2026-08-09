@@ -74,7 +74,9 @@ import FieldSection from "./components/FieldSection";
 import ThermalAnalysisSection from "./components/ThermalAnalysisSection";
 import DroneVisionAnalysisSection from "./components/DroneVisionAnalysisSection";
 import ControlSection from "./components/ControlSection";
-import SimulationSection from "./components/SimulationSection";
+// 방제 > 시뮬레이션 탭은 Neural CA 확산 시뮬레이션을 쓴다.
+// 기존 SimulationSection(확산 차단 시뮬레이션)은 화면에서 내렸다.
+import SpreadSimulationCA from "./components/SpreadSimulationCA";
 import AdminSection from "./components/AdminSection";
 import Chatbot from "./components/Chatbot";
 import AuthScreen from "./components/auth/AuthScreen";
@@ -2535,8 +2537,8 @@ export default function App() {
                 )}
 
                 {activeModule === "control-work" && (
-                  <div className="h-full min-h-0 overflow-y-auto pr-1">
-                    <SimulationSection />
+                  <div className="h-full min-h-0 pr-1">
+                    <SpreadSimulationCA />
                   </div>
                 )}
 
