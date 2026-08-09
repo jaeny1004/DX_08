@@ -1362,29 +1362,30 @@ export default function App() {
     assignmentId: string,
     status: DispatchStatus
   ) => {
-    let finishedControlTreeId: string | null = null;
-
-    setDispatchAssignments((previous) =>
-      previous.map((assignment) => {
-        if (assignment.assignmentId !== assignmentId) return assignment;
-
-        // 방제 작업이 끝나면 원래 확진목도 방제완료로 넘긴다.
-        if (
-          assignment.taskType === "CONTROL" &&
-          assignment.sourceTreeId &&
-          (status === "작업 완료" ||
-            status === "복귀" ||
-            status === "복귀 완료")
-        ) {
-          finishedControlTreeId = assignment.sourceTreeId;
-        }
-
-        return { ...assignment, status };
-      })
+    // 대상 배정을 현재 목록에서 먼저 찾는다.
+    // setState 업데이터 안에서 값을 꺼내려 하면, React가 업데이터를 즉시
+    // 실행하지 않으므로 바깥에서는 계속 비어 있는 값을 보게 된다.
+    const target = dispatchAssignments.find(
+      (assignment) => assignment.assignmentId === assignmentId
     );
 
-    if (finishedControlTreeId) {
-      void handleUpdateTreeStatus(finishedControlTreeId, "방제완료");
+    setDispatchAssignments((previous) =>
+      previous.map((assignment) =>
+        assignment.assignmentId === assignmentId
+          ? { ...assignment, status }
+          : assignment
+      )
+    );
+
+    // 방제 작업이 끝나면 원래 확진목도 방제완료로 넘긴다.
+    if (
+      target?.taskType === "CONTROL" &&
+      target.sourceTreeId &&
+      (status === "작업 완료" ||
+        status === "복귀" ||
+        status === "복귀 완료")
+    ) {
+      void handleUpdateTreeStatus(target.sourceTreeId, "방제완료");
     }
   };
 
