@@ -29,6 +29,31 @@ import {
   resolveGridByRegionText,
   resolveGridLocation,
 } from "../utils/gridLookup";
+import {
+  filterAssignable,
+  loadWorkforce,
+  type WorkforceMember,
+} from "../utils/workforce";
+
+/** 두 지점 사이 거리(km). 요원을 가까운 순으로 정렬할 때 쓴다. */
+function distanceKmBetween(
+  latitude1: number,
+  longitude1: number,
+  latitude2: number,
+  longitude2: number,
+): number {
+  const toRadians = (degree: number) => (degree * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const latitudeDelta = toRadians(latitude2 - latitude1);
+  const longitudeDelta = toRadians(longitude2 - longitude1);
+  const a =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(toRadians(latitude1)) *
+      Math.cos(toRadians(latitude2)) *
+      Math.sin(longitudeDelta / 2) ** 2;
+
+  return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 interface ControlSectionProps {
   mode: "status" | "work";
@@ -189,6 +214,61 @@ export default function ControlSection({
     [newLatitude, newLongitude, area],
   );
 
+  // 방제 담당 요원 선택
+  const [workforce, setWorkforce] = useState<WorkforceMember[]>([]);
+  const [selectedWorkerId, setSelectedWorkerId] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    loadWorkforce().then((members) => {
+      if (!cancelled) setWorkforce(filterAssignable(members, "CONTROL"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 대상 격자 기준으로 관내 요원을 먼저, 가까운 순으로 보여준다.
+  const controlWorkerOptions = useMemo(() => {
+    const point = newGridLocation;
+    return workforce
+      .map((worker) => ({
+        worker,
+        localRegion: Boolean(
+          worker.homeSigunguName && area.includes(worker.homeSigunguName),
+        ),
+        distanceKm: point
+          ? distanceKmBetween(
+              worker.baseLatitude,
+              worker.baseLongitude,
+              point.latitude,
+              point.longitude,
+            )
+          : null,
+      }))
+      .sort((left, right) => {
+        if (left.localRegion !== right.localRegion) {
+          return left.localRegion ? -1 : 1;
+        }
+        if (left.distanceKm !== null && right.distanceKm !== null) {
+          return left.distanceKm - right.distanceKm;
+        }
+        return 0;
+      })
+      .slice(0, 30);
+  }, [workforce, newGridLocation, area]);
+
+  const selectedWorker =
+    workforce.find((worker) => worker.workerId === selectedWorkerId) ?? null;
+
+  /**
+   * 방제 방식은 ControlTask에만 있는 값이라, 배정에서 파생된 작업에는
+   * 저장할 자리가 없다. 화면에서 바꾼 값을 여기에 담아 표시에 반영한다.
+   */
+  const [methodOverrides, setMethodOverrides] = useState<
+    Record<string, ControlTask["method"]>
+  >({});
+
   void mode;
   void grids;
 
@@ -249,7 +329,8 @@ export default function ControlSection({
       area: label,
       method,
       status: "예정",
-      company,
+      // 담당 요원을 고르면 그 요원의 소속을 시공 주체로 남긴다.
+      company: selectedWorker?.organization || company,
       workers,
       progress: 0,
       startDate: new Date().toISOString().split("T")[0],
@@ -269,9 +350,9 @@ export default function ControlSection({
           ...newTask,
           latitude: newGridLocation.latitude,
           longitude: newGridLocation.longitude,
-          workerId: `CTR-W-${taskId}`,
-          workerName: company,
-          workerRole: "방제 시공",
+          workerId: selectedWorker?.workerId ?? `CTR-W-${taskId}`,
+          workerName: selectedWorker?.workerName ?? "미배정",
+          workerRole: "방제 담당",
           vehicle: "차량 배정 대기",
           currentStage: "출동 준비",
         },
@@ -282,8 +363,44 @@ export default function ControlSection({
     setArea("");
     setNewLatitude("");
     setNewLongitude("");
+    setSelectedWorkerId("");
     setIsRegistering(false);
     setSelectedOperationId(taskId);
+  };
+
+  /** 목록에서 방제 방식을 바꾼다. */
+  const updateMethod = (
+    operation: ControlOperation,
+    nextMethod: ControlTask["method"],
+  ) => {
+    const isDemo = demoOperations.some((item) => item.id === operation.id);
+    if (isDemo) {
+      setDemoOperations((previous) =>
+        previous.map((item) =>
+          item.id === operation.id ? { ...item, method: nextMethod } : item,
+        ),
+      );
+      return;
+    }
+    // 배정에서 파생된 작업은 저장할 자리가 없어 화면 표시만 바꾼다.
+    setMethodOverrides((previous) => ({
+      ...previous,
+      [operation.id]: nextMethod,
+    }));
+  };
+
+  /**
+   * 목록에서 진행 상태를 바꾼다.
+   * 작업의 출처(데모/배정/외부 등록)에 따라 반영 경로가 달라서
+   * 진척률로 환산해 기존 updateProgress와 같은 경로를 탄다.
+   */
+  const updateStatus = (
+    operation: ControlOperation,
+    nextStatus: ControlTask["status"],
+  ) => {
+    const targetProgress =
+      nextStatus === "완료" ? 100 : nextStatus === "진행" ? 60 : 0;
+    updateProgress(operation, targetProgress - operation.progress);
   };
 
   const updateProgress = (operation: ControlOperation, delta: number) => {
@@ -369,7 +486,7 @@ export default function ControlSection({
                       <input
                         value={area}
                         onChange={(event) => setArea(event.target.value)}
-                        placeholder="예: 강원특별자치도 춘천시 동면"
+                        placeholder="예: 경상북도 포항시 북구 죽장면 상옥리 산42"
                         className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-emerald-500"
                       />
 
@@ -437,13 +554,31 @@ export default function ControlSection({
                     </label>
 
                     <label className="text-[11px] font-bold text-slate-600">
-                      시공 업체
-                      <input
-                        value={company}
-                        onChange={(event) => setCompany(event.target.value)}
-                        placeholder="예: 동해산림방제(주)"
+                      담당 요원
+                      <select
+                        value={selectedWorkerId}
+                        onChange={(event) => setSelectedWorkerId(event.target.value)}
                         className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-emerald-500"
-                      />
+                      >
+                        <option value="">미배정</option>
+                        {controlWorkerOptions.map(
+                          ({ worker, localRegion, distanceKm }) => (
+                            <option key={worker.workerId} value={worker.workerId}>
+                              {worker.workerName}
+                              {localRegion ? " (관내)" : ""}
+                              {` · ${worker.homeSigunguName}`}
+                              {distanceKm !== null
+                                ? ` · ${distanceKm.toFixed(1)}km`
+                                : ""}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                      {selectedWorker && (
+                        <span className="mt-1 block text-[10px] font-semibold text-slate-400">
+                          소속 {selectedWorker.organization || "-"}
+                        </span>
+                      )}
                     </label>
 
                     <label className="text-[11px] font-bold text-slate-600">
@@ -522,9 +657,26 @@ export default function ControlSection({
                           {operation.area}
                         </td>
                         <td className="px-3 py-3">
-                          <span className={`rounded-md border px-1.5 py-1 text-[10px] font-bold ${methodBadge(operation.method)}`}>
-                            {operation.method}
-                          </span>
+                          <select
+                            value={methodOverrides[operation.id] ?? operation.method}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={(event) => {
+                              event.stopPropagation();
+                              updateMethod(
+                                operation,
+                                event.target.value as ControlTask["method"],
+                              );
+                            }}
+                            className={`rounded-md border px-1.5 py-1 text-[10px] font-bold outline-none ${methodBadge(
+                              methodOverrides[operation.id] ?? operation.method,
+                            )}`}
+                          >
+                            <option>파쇄</option>
+                            <option>훈증</option>
+                            <option>소각</option>
+                            <option>나무주사</option>
+                            <option>항공방제</option>
+                          </select>
                         </td>
                         <td className="px-3 py-3 text-[11px] font-bold text-slate-700">{operation.workerName}</td>
                         <td className="px-3 py-3">
@@ -536,9 +688,24 @@ export default function ControlSection({
                           </div>
                         </td>
                         <td className="px-3 py-3">
-                          <span className={`rounded-full px-2 py-1 text-[9px] font-black ${statusBadge(operation.status)}`}>
-                            {operation.status}
-                          </span>
+                          <select
+                            value={operation.status}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={(event) => {
+                              event.stopPropagation();
+                              updateStatus(
+                                operation,
+                                event.target.value as ControlTask["status"],
+                              );
+                            }}
+                            className={`rounded-full px-2 py-1 text-[9px] font-black outline-none ${statusBadge(
+                              operation.status,
+                            )}`}
+                          >
+                            <option value="예정">예정</option>
+                            <option value="진행">진행</option>
+                            <option value="완료">완료</option>
+                          </select>
                         </td>
                       </tr>
                     );

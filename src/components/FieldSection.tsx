@@ -1009,7 +1009,7 @@ export default function FieldSection({
                   type="text"
                   value={surveyRegion}
                   onChange={(event) => setSurveyRegion(event.target.value)}
-                  placeholder="예: 강원특별자치도 춘천시 동면"
+                  placeholder="예: 경상북도 포항시 북구 죽장면 상옥리 산42"
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-emerald-500"
                 />
 
