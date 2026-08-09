@@ -1484,7 +1484,13 @@ export default function DashboardRiskMapCard({
     const layer = L.geoJSON(
       { type: "FeatureCollection", features: visible } as any,
       {
-        // renderer를 지정하지 않아도 지도가 preferCanvas라 캔버스로 그려진다.
+        // 반드시 격자와 같은 GRID_RENDERER를 써야 한다.
+        // renderer를 생략하면 지도 기본 렌더러가 별도 <canvas>를 새로 만들고,
+        // 그 캔버스가 격자 캔버스 위에 얹혀 클릭을 가로채 버린다
+        // (interactive: false여도 DOM 이벤트는 위 캔버스가 먼저 삼킨다).
+        // 같은 캔버스를 공유하면 Leaflet이 비대화형 레이어를 건너뛰고
+        // 아래 격자에 정상적으로 클릭이 전달된다.
+        renderer: GRID_RENDERER,
         interactive: false,
         style: {
           color: "#475569",
@@ -1493,7 +1499,7 @@ export default function DashboardRiskMapCard({
           dashArray: "3 3",
           fill: false,
         },
-      },
+      } as L.GeoJSONOptions,
     ).addTo(map);
     emdLayerRef.current = layer;
     // 격자 위에 선만 얹되, 격자 클릭을 막지 않도록 interactive: false로 둔다.
@@ -2039,16 +2045,20 @@ export default function DashboardRiskMapCard({
                       "감염 발생 이력 레이어를 켜거나 끕니다."
                 }
               >
-                {infectionHistoryLoading
-                  ? "감염 이력 로딩 중"
-                  : showInfectionHistory
-                    ? `감염 발생 이력 ON (${formatNumber(visibleInfectionHistoryFeatures.length, 0)}개)`
-                    : "감염 발생 이력 OFF"}
+                <span>
+                  {infectionHistoryLoading
+                    ? "감염 이력 로딩 중"
+                    : showInfectionHistory
+                      ? `감염 발생 이력 ON (${formatNumber(visibleInfectionHistoryFeatures.length, 0)}개)`
+                      : "감염 발생 이력 OFF"}
+                </span>
               </button>
 
               {showInfectionHistory && selectedSigunguCode && !infectionHistoryError && (
                 <div className="rounded-lg border border-violet-200 bg-white/95 px-3 py-2 text-xs font-extrabold text-violet-800 shadow">
-                  감염 발생 이력 {formatNumber(visibleInfectionHistoryFeatures.length, 0)}개 표시
+                  <span>
+                    감염 발생 이력 {formatNumber(visibleInfectionHistoryFeatures.length, 0)}개 표시
+                  </span>
                 </div>
               )}
             </div>
@@ -2083,13 +2093,21 @@ export default function DashboardRiskMapCard({
               )}
             </div>
 
+            {/*
+              조건에 따라 바뀌는 인접 텍스트는 각각 span으로 감싼다.
+              감싸지 않으면 형제 텍스트 노드가 되는데, 번역 확장이 텍스트 노드를
+              교체한 뒤 React가 그 노드를 지우려 하면 removeChild가 실패해
+              화면이 통째로 죽는다.
+            */}
             <div className="text-2xs font-semibold text-slate-400">
-              {mapDisplayMode === "priority"
-                ? "상위 10% 우선 예찰 검토지역 표시"
-                : "상위 10% AI 신규 확산위험 후보 표시"}
-              {showInfectionHistory && !infectionHistoryError
-                ? " · 보라색 사각형은 감염 발생 이력"
-                : ""}
+              <span>
+                {mapDisplayMode === "priority"
+                  ? "상위 10% 우선 예찰 검토지역 표시"
+                  : "상위 10% AI 신규 확산위험 후보 표시"}
+              </span>
+              {showInfectionHistory && !infectionHistoryError && (
+                <span> · 보라색 사각형은 감염 발생 이력</span>
+              )}
             </div>
           </div>
         </section>
