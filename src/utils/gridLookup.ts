@@ -11,6 +11,9 @@
 export interface GridLocation {
   gridId: string;
   emdName: string;
+  /** 격자 중심 좌표. 요원까지의 거리 계산 등에 쓴다. */
+  latitude: number;
+  longitude: number;
   /** 격자 중심까지의 거리(m). 격자 한 변이 500m이므로 이보다 크게 떨어지면 격자 밖이다. */
   distanceM: number;
 }
@@ -137,8 +140,101 @@ export function resolveGridLocation(
   return {
     gridId: String(payload.ids[bestIndex]),
     emdName: payload.emdNames[payload.emds[bestIndex]] ?? "",
+    latitude: payload.lats[bestIndex],
+    longitude: payload.lngs[bestIndex],
     distanceM,
   };
+}
+
+/**
+ * 행정동 이름 -> 대표 격자.
+ * 좌표 없이 주소만 입력했을 때도 행정동·격자를 찾아 주기 위한 색인이다.
+ * 대표 격자는 해당 행정동 격자들의 평균 위치에 가장 가까운 격자로 잡는다.
+ */
+let emdRepresentative: Map<string, GridLocation> | null = null;
+
+function buildEmdIndex(data: GridLookupPayload) {
+  const sums = new Map<number, { lat: number; lng: number; count: number }>();
+  for (let i = 0; i < data.ids.length; i += 1) {
+    const slot = data.emds[i];
+    const acc = sums.get(slot);
+    if (acc) {
+      acc.lat += data.lats[i];
+      acc.lng += data.lngs[i];
+      acc.count += 1;
+    } else {
+      sums.set(slot, { lat: data.lats[i], lng: data.lngs[i], count: 1 });
+    }
+  }
+
+  const best = new Map<number, { index: number; squared: number }>();
+  for (let i = 0; i < data.ids.length; i += 1) {
+    const slot = data.emds[i];
+    const acc = sums.get(slot)!;
+    const dLat = data.lats[i] - acc.lat / acc.count;
+    const dLng = data.lngs[i] - acc.lng / acc.count;
+    const squared = dLat * dLat + dLng * dLng;
+    const current = best.get(slot);
+    if (!current || squared < current.squared) {
+      best.set(slot, { index: i, squared });
+    }
+  }
+
+  const result = new Map<string, GridLocation>();
+  for (const [slot, { index }] of best) {
+    const name = data.emdNames[slot];
+    if (!name) continue;
+    result.set(name, {
+      gridId: String(data.ids[index]),
+      emdName: name,
+      latitude: data.lats[index],
+      longitude: data.lngs[index],
+      distanceM: 0,
+    });
+  }
+  return result;
+}
+
+/**
+ * 주소 문자열에서 행정동 이름을 찾아 대표 격자를 돌려준다.
+ * "경북 포항시 북구 죽장면 산42"처럼 지번이 붙어 있어도 동작하도록
+ * 문자열에 포함된 행정동 이름 중 가장 긴 것을 고른다
+ * (예: "동면"과 "북산동면"이 함께 걸리면 긴 쪽이 맞다).
+ */
+export function resolveGridByRegionText(
+  text: string | null | undefined,
+): GridLocation | null {
+  const value = (text ?? "").trim();
+  if (!payload || !value) return null;
+
+  if (!emdRepresentative) {
+    emdRepresentative = buildEmdIndex(payload);
+  }
+
+  let matched: GridLocation | null = null;
+  for (const [name, location] of emdRepresentative) {
+    if (name.length < 2) continue;
+    if (!value.includes(name)) continue;
+    if (!matched || name.length > matched.emdName.length) {
+      matched = location;
+    }
+  }
+  return matched;
+}
+
+/**
+ * 좌표가 있으면 좌표로, 없으면 주소 문자열로 격자를 찾는다.
+ * 등록 화면에서 둘 중 하나만 입력해도 행정동·격자가 잡히게 하기 위한 창구.
+ */
+export function resolveGridLoose(
+  latitude: CoordinateInput,
+  longitude: CoordinateInput,
+  regionText?: string | null,
+): GridLocation | null {
+  return (
+    resolveGridLocation(latitude, longitude) ??
+    resolveGridByRegionText(regionText)
+  );
 }
 
 /**

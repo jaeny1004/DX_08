@@ -42,6 +42,7 @@ import {
   formatGridLocation,
   loadGridLookup,
   resolveGridLocation,
+  resolveGridLoose,
 } from "../utils/gridLookup";
 import { createTreeId } from "../utils/treeId";
 
@@ -513,11 +514,9 @@ export default function MonitoringSection({
   const [newTreeSource, setNewTreeSource] =
     useState<"thermal" | "drone-visible" | "citizen" | "ai">("ai");
 
-  const [newStatus, setNewStatus] =
-    useState<TreeRecord["status"]>("방제대기");
-
+  // 목록에서 고르기 전에는 미배정 상태로 둔다.
   const [inspector, setInspector] =
-    useState("김지원");
+    useState("해당 없음");
 
   const [isRegistering, setIsRegistering] =
     useState(false);
@@ -528,13 +527,12 @@ export default function MonitoringSection({
     [trees],
   );
 
-  // 입력한 좌표가 어느 행정동·격자인지 즉시 확인시켜 준다.
-  const newLocationPreview = useMemo(() => {
-    if (!newLatitude.trim() || !newLongitude.trim()) {
-      return "좌표를 입력하면 행정동과 격자를 자동으로 찾습니다.";
-    }
-    return formatGridLocation(newLatitude, newLongitude);
-  }, [newLatitude, newLongitude]);
+  // 발견 지역과 발견 좌표 중 하나만 넣어도 행정동·격자를 찾는다.
+  // 좌표가 있으면 좌표가 우선이고, 없으면 주소에서 행정동 이름을 뽑아 쓴다.
+  const newGridLocation = useMemo(
+    () => resolveGridLoose(newLatitude, newLongitude, region),
+    [newLatitude, newLongitude, region],
+  );
 
 
   // =========================================================
@@ -1093,6 +1091,57 @@ export default function MonitoringSection({
       controlWorkers,
       dispatchAssignments,
     ]);
+
+  // 등록 폼에서 고를 담당 요원 목록.
+  // 판정된 격자 위치를 기준으로 예찰(SURVEY)·드론(DRONE) 역량 보유자를
+  // 가까운 순으로 정렬한다. 좌표가 안 잡히면 빈 목록이 되어 '해당 없음'만 남는다.
+  const registrationWorkerOptions = useMemo(() => {
+    if (!newGridLocation) return [];
+
+    const assignedWorkerIds = new Set(
+      dispatchAssignments
+        .filter((assignment) => assignment.status !== "복귀 완료")
+        .map((assignment) => assignment.workerId),
+    );
+
+    return controlWorkers
+      .filter((worker) => {
+        const capability = worker.capabilities.find(
+          (item) =>
+            item.taskType === "SURVEY" || item.taskType === "DRONE",
+        );
+        const availabilityOk = [
+          "AVAILABLE",
+          "PARTIAL",
+          "대기",
+          "가능",
+        ].includes(worker.availabilityStatus);
+        return (
+          Boolean(capability) &&
+          availabilityOk &&
+          !assignedWorkerIds.has(worker.workerId)
+        );
+      })
+      .map((worker) => {
+        const capability = worker.capabilities.find(
+          (item) =>
+            item.taskType === "SURVEY" || item.taskType === "DRONE",
+        )!;
+        return {
+          worker,
+          taskType: capability.taskType,
+          skillLevel: capability.skillLevel,
+          distanceKm: calculateDistanceKm(
+            worker.baseLatitude,
+            worker.baseLongitude,
+            newGridLocation.latitude,
+            newGridLocation.longitude,
+          ),
+        };
+      })
+      .sort((left, right) => left.distanceKm - right.distanceKm)
+      .slice(0, 30);
+  }, [newGridLocation, controlWorkers, dispatchAssignments]);
 
   const selectedTreeFieldPhotos =
     selectedTree?.sourceReportId
@@ -1825,17 +1874,25 @@ export default function MonitoringSection({
       return;
     }
 
-    const latitude = Number(newLatitude);
-    const longitude = Number(newLongitude);
-    const hasCoords =
-      Number.isFinite(latitude) &&
-      Number.isFinite(longitude) &&
+    // 좌표를 직접 넣었으면 그 값을, 지역명만 넣었으면 판정된 격자 중심을 쓴다.
+    // 어느 쪽이든 위경도를 남겨야 요원 배정과 방제 현황 연계가 가능하다.
+    const typedLatitude = Number(newLatitude);
+    const typedLongitude = Number(newLongitude);
+    const hasTypedCoords =
       newLatitude.trim() !== "" &&
-      newLongitude.trim() !== "";
+      newLongitude.trim() !== "" &&
+      Number.isFinite(typedLatitude) &&
+      Number.isFinite(typedLongitude);
 
-    const resolved = hasCoords
-      ? resolveGridLocation(latitude, longitude)
-      : null;
+    const resolved = newGridLocation;
+    const latitude = hasTypedCoords
+      ? typedLatitude
+      : resolved?.latitude;
+    const longitude = hasTypedCoords
+      ? typedLongitude
+      : resolved?.longitude;
+    const hasCoords =
+      typeof latitude === "number" && typeof longitude === "number";
 
     const newRecord: TreeRecord = {
 
@@ -1850,7 +1907,8 @@ export default function MonitoringSection({
           .toISOString()
           .split("T")[0],
 
-      status: newStatus,
+      // 신규 등록은 항상 방제대기로 시작한다.
+      status: "방제대기",
 
       severity,
 
@@ -1880,8 +1938,8 @@ export default function MonitoringSection({
           note:
             `${TREE_SOURCE_LABELS[newTreeSource]} 경로로 등록. ` +
             `위치: ${
-              hasCoords
-                ? formatGridLocation(latitude, longitude, region)
+              resolved
+                ? `${resolved.emdName} · 격자 ${resolved.gridId}`
                 : region
             } / 피해정도: ${severity}`,
 
@@ -1906,7 +1964,7 @@ export default function MonitoringSection({
     setNewLatitude("");
     setNewLongitude("");
     setNewTreeSource("ai");
-    setNewStatus("방제대기");
+    setInspector("해당 없음");
     setSeverity("중");
     setSpecies("소나무");
 
@@ -3346,13 +3404,16 @@ export default function MonitoringSection({
 
 
                   {/* =====================================
-                      발견 지역
+                      발견 위치 (지역 또는 좌표 — 하나만 넣어도 됨)
                   ====================================== */}
 
-                  <div>
+                  <div className="rounded-xl border border-slate-200 p-3">
 
-                    <label className="mb-1 block text-xs font-bold text-slate-600">
-                      발견 지역
+                    <label className="mb-2 block text-xs font-bold text-slate-600">
+                      발견 위치
+                      <span className="ml-1 font-semibold text-slate-400">
+                        (지역 또는 좌표 중 하나만 입력해도 됩니다)
+                      </span>
                     </label>
 
                     <input
@@ -3364,9 +3425,61 @@ export default function MonitoringSection({
                           event.target.value
                         )
                       }
-                      placeholder="예: 경북 포항시 북구 죽장면 산42"
+                      placeholder="발견 지역 · 예: 경북 포항시 북구 죽장면 산42"
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                     />
+
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={newLatitude}
+                        onChange={(event) =>
+                          setNewLatitude(event.target.value)
+                        }
+                        placeholder="위도 37.801634"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs outline-none focus:border-emerald-500"
+                      />
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={newLongitude}
+                        onChange={(event) =>
+                          setNewLongitude(event.target.value)
+                        }
+                        placeholder="경도 127.729268"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    {/* 판정 결과 */}
+                    <div
+                      className={
+                        newGridLocation
+                          ? "mt-2 flex items-start gap-2 rounded-xl bg-emerald-50 px-3 py-2"
+                          : "mt-2 flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2"
+                      }
+                    >
+                      <MapPin
+                        size={13}
+                        className={
+                          newGridLocation
+                            ? "mt-0.5 shrink-0 text-emerald-600"
+                            : "mt-0.5 shrink-0 text-slate-400"
+                        }
+                      />
+                      <span
+                        className={
+                          newGridLocation
+                            ? "text-[11px] font-black text-emerald-800"
+                            : "text-[11px] font-bold text-slate-500"
+                        }
+                      >
+                        {newGridLocation
+                          ? `${newGridLocation.emdName} · 격자 ${newGridLocation.gridId}`
+                          : "지역명 또는 좌표를 입력하면 행정동과 격자를 자동으로 찾습니다."}
+                      </span>
+                    </div>
 
                   </div>
 
@@ -3459,116 +3572,87 @@ export default function MonitoringSection({
 
 
                   {/* =====================================
-                      담당 요원
+                      담당 요원 (판정된 격자 기준 추천)
                   ====================================== */}
 
                   <div>
 
                     <label className="mb-1 block text-xs font-bold text-slate-600">
                       담당 요원
+                      {newGridLocation && (
+                        <span className="ml-1 font-semibold text-slate-400">
+                          ({newGridLocation.emdName} 인근 · 가까운 순)
+                        </span>
+                      )}
                     </label>
 
-                    <input
-                      type="text"
-                      value={inspector}
-                      onChange={(event) =>
-                        setInspector(
-                          event.target.value
-                        )
-                      }
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium outline-none focus:border-emerald-500"
-                    />
+                    <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200">
 
-                  </div>
+                      {registrationWorkerOptions.map((option) => {
+                        const selected =
+                          inspector === option.worker.workerName;
+                        return (
+                          <button
+                            key={option.worker.workerId}
+                            type="button"
+                            onClick={() =>
+                              setInspector(option.worker.workerName)
+                            }
+                            className={
+                              selected
+                                ? "flex w-full items-center justify-between gap-2 border-b border-slate-100 bg-emerald-50 px-3 py-2 text-left last:border-b-0"
+                                : "flex w-full items-center justify-between gap-2 border-b border-slate-100 bg-white px-3 py-2 text-left transition last:border-b-0 hover:bg-slate-50"
+                            }
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-xs font-black text-slate-800">
+                                {option.worker.workerName}
+                              </span>
+                              <span className="block truncate text-[10px] font-semibold text-slate-500">
+                                {option.taskType === "DRONE"
+                                  ? "드론 요원"
+                                  : "예찰 요원"}
+                                {" · "}
+                                {option.worker.homeSigunguName}
+                                {" · 숙련도 "}
+                                {option.skillLevel}
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-[10px] font-black text-slate-400">
+                              {option.distanceKm.toFixed(1)}km
+                            </span>
+                          </button>
+                        );
+                      })}
 
-
-                  {/* =====================================
-                      처리 상태
-                  ====================================== */}
-
-                  <div>
-
-                    <label className="mb-1 block text-xs font-bold text-slate-600">
-                      처리 상태
-                    </label>
-
-                    <select
-                      value={newStatus}
-                      onChange={(event) =>
-                        setNewStatus(
-                          event.target.value as TreeRecord["status"]
-                        )
-                      }
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium outline-none focus:border-emerald-500"
-                    >
-                      {TREE_STATUS_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-
-                  </div>
-
-
-                  {/* =====================================
-                      좌표 (행정동·격자 자동 판정)
-                  ====================================== */}
-
-                  <div>
-
-                    <label className="mb-1 block text-xs font-bold text-slate-600">
-                      발견 좌표 (위경도)
-                    </label>
-
-                    <div className="grid grid-cols-2 gap-3">
-
-                      <div>
-                        <div className="mb-1 text-[10px] font-bold text-slate-400">
-                          위도
-                        </div>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={newLatitude}
-                          onChange={(event) =>
-                            setNewLatitude(event.target.value)
-                          }
-                          placeholder="37.801634"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs outline-none focus:border-emerald-500"
-                        />
-                      </div>
-
-                      <div>
-                        <div className="mb-1 text-[10px] font-bold text-slate-400">
-                          경도
-                        </div>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={newLongitude}
-                          onChange={(event) =>
-                            setNewLongitude(event.target.value)
-                          }
-                          placeholder="127.729268"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs outline-none focus:border-emerald-500"
-                        />
-                      </div>
+                      {/* 맨 아래 해당 없음 */}
+                      <button
+                        type="button"
+                        onClick={() => setInspector("해당 없음")}
+                        className={
+                          inspector === "해당 없음"
+                            ? "flex w-full items-center justify-between border-t border-slate-200 bg-slate-100 px-3 py-2 text-left"
+                            : "flex w-full items-center justify-between border-t border-slate-200 bg-white px-3 py-2 text-left transition hover:bg-slate-50"
+                        }
+                      >
+                        <span className="text-xs font-bold text-slate-600">
+                          해당 없음
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-400">
+                          배정하지 않고 등록
+                        </span>
+                      </button>
 
                     </div>
 
-                    <div className="mt-2 flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2">
-                      <MapPin size={13} className="mt-0.5 shrink-0 text-emerald-600" />
-                      <span className="text-[11px] font-bold text-slate-600">
-                        {newLocationPreview}
-                      </span>
-                    </div>
-
-                    <p className="mt-1 text-[10px] font-semibold text-slate-400">
-                      좌표를 넣어야 요원 배정과 방제 현황 연계가 가능합니다.
-                    </p>
+                    {!newGridLocation && (
+                      <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                        발견 위치가 판정되면 인근 요원 목록이 표시됩니다.
+                      </p>
+                    )}
 
                   </div>
+
 
                 </div>
 
