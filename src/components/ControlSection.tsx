@@ -26,6 +26,8 @@ import { InventoryPanel } from "./InventoryPanel";
 import {
   formatGridLocation,
   loadGridLookup,
+  resolveGridByRegionText,
+  resolveGridLocation,
 } from "../utils/gridLookup";
 
 interface ControlSectionProps {
@@ -175,6 +177,18 @@ export default function ControlSection({
   const [company, setCompany] = useState("동해산림방제(주)");
   const [workers, setWorkers] = useState(10);
 
+  // 다른 등록 화면과 같은 방식으로, 지역명 또는 좌표 중 하나만 넣어도
+  // 행정동·격자를 찾아 준다.
+  const [newLatitude, setNewLatitude] = useState("");
+  const [newLongitude, setNewLongitude] = useState("");
+
+  const newGridLocation = useMemo(
+    () =>
+      resolveGridLocation(newLatitude, newLongitude) ??
+      resolveGridByRegionText(area),
+    [newLatitude, newLongitude, area],
+  );
+
   void mode;
   void grids;
 
@@ -222,11 +236,17 @@ export default function ControlSection({
 
   const handleRegisterTask = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!area.trim()) return;
+    if (!area.trim() && !newGridLocation) return;
+
+    const taskId = `CTR-${Math.floor(100 + Math.random() * 900)}`;
+    // 목록에 격자를 함께 남긴다. 나중에 지도·보고서에서 위치를 찾을 근거가 된다.
+    const label = newGridLocation
+      ? `${newGridLocation.emdName} · 격자 ${newGridLocation.gridId}`
+      : area.trim();
 
     const newTask: ControlTask = {
-      id: `CTR-${Math.floor(100 + Math.random() * 900)}`,
-      area: area.trim(),
+      id: taskId,
+      area: label,
       method,
       status: "예정",
       company,
@@ -239,9 +259,31 @@ export default function ControlSection({
     };
 
     onAddTask(newTask);
+
+    // ControlTask에는 좌표 칸이 없어서, 그대로 두면 지도에 임의 위치로 찍힌다.
+    // 판정된 격자 좌표를 가진 운영 항목을 직접 만들어 같은 id로 넣는다
+    // (operations가 id 기준으로 중복을 걸러 하나만 남는다).
+    if (newGridLocation) {
+      setDemoOperations((previous) => [
+        {
+          ...newTask,
+          latitude: newGridLocation.latitude,
+          longitude: newGridLocation.longitude,
+          workerId: `CTR-W-${taskId}`,
+          workerName: company,
+          workerRole: "방제 시공",
+          vehicle: "차량 배정 대기",
+          currentStage: "출동 준비",
+        },
+        ...previous,
+      ]);
+    }
+
     setArea("");
+    setNewLatitude("");
+    setNewLongitude("");
     setIsRegistering(false);
-    setSelectedOperationId(newTask.id);
+    setSelectedOperationId(taskId);
   };
 
   const updateProgress = (operation: ControlOperation, delta: number) => {
@@ -299,7 +341,7 @@ export default function ControlSection({
                   className="flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-800 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-900"
                 >
                   {isRegistering ? <X size={14} /> : <Plus size={14} />}
-                  {isRegistering ? "취소" : "작업 추가 배정"}
+                  {isRegistering ? "취소" : "신규 배정"}
                 </button>
               </div>
             </header>
@@ -314,17 +356,71 @@ export default function ControlSection({
                   className="overflow-hidden border-b border-slate-200 bg-slate-50"
                 >
                   <div className="grid grid-cols-1 gap-3 p-5 md:grid-cols-2">
-                    <label className="text-[11px] font-bold text-slate-600">
-                      대상 방제 구역/주소
+
+                    {/* 방제 대상 위치 — 지역 또는 좌표 하나만 넣어도 됨 */}
+                    <div className="md:col-span-2">
+                      <label className="text-[11px] font-bold text-slate-600">
+                        방제 대상 위치
+                        <span className="ml-1 font-semibold text-slate-400">
+                          (지역 또는 좌표 중 하나만 입력해도 됩니다)
+                        </span>
+                      </label>
+
                       <input
                         value={area}
                         onChange={(event) => setArea(event.target.value)}
-                        placeholder="예: 강원 춘천시 북산면 산 42"
+                        placeholder="예: 강원특별자치도 춘천시 동면"
                         className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-emerald-500"
                       />
-                    </label>
+
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <input
+                          inputMode="decimal"
+                          value={newLatitude}
+                          onChange={(event) => setNewLatitude(event.target.value)}
+                          placeholder="위도 37.910052"
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-emerald-500"
+                        />
+                        <input
+                          inputMode="decimal"
+                          value={newLongitude}
+                          onChange={(event) => setNewLongitude(event.target.value)}
+                          placeholder="경도 127.787793"
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div
+                        className={
+                          newGridLocation
+                            ? "mt-2 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2"
+                            : "mt-2 flex items-center gap-2 rounded-lg bg-white px-3 py-2"
+                        }
+                      >
+                        <MapPin
+                          size={13}
+                          className={
+                            newGridLocation
+                              ? "shrink-0 text-emerald-600"
+                              : "shrink-0 text-slate-400"
+                          }
+                        />
+                        <span
+                          className={
+                            newGridLocation
+                              ? "text-[11px] font-black text-emerald-800"
+                              : "text-[11px] font-bold text-slate-500"
+                          }
+                        >
+                          {newGridLocation
+                            ? `${newGridLocation.emdName} · 격자 ${newGridLocation.gridId}`
+                            : "지역명 또는 좌표를 입력하면 행정동과 격자를 찾습니다."}
+                        </span>
+                      </div>
+                    </div>
+
                     <label className="text-[11px] font-bold text-slate-600">
-                      표준 방제 기법
+                      방제 방법
                       <select
                         value={method}
                         onChange={(event) =>
@@ -339,16 +435,19 @@ export default function ControlSection({
                         <option>항공방제</option>
                       </select>
                     </label>
+
                     <label className="text-[11px] font-bold text-slate-600">
-                      담당 요원
+                      시공 업체
                       <input
                         value={company}
                         onChange={(event) => setCompany(event.target.value)}
+                        placeholder="예: 동해산림방제(주)"
                         className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-emerald-500"
                       />
                     </label>
+
                     <label className="text-[11px] font-bold text-slate-600">
-                      투입 인력
+                      투입 인력 (명)
                       <input
                         type="number"
                         min={1}
@@ -357,7 +456,8 @@ export default function ControlSection({
                         className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-emerald-500"
                       />
                     </label>
-                    <div className="flex justify-end gap-2 md:col-span-2">
+
+                    <div className="flex items-end justify-end gap-2">
                       <button
                         type="button"
                         onClick={() => setIsRegistering(false)}
@@ -367,9 +467,10 @@ export default function ControlSection({
                       </button>
                       <button
                         type="submit"
-                        className="rounded-lg bg-emerald-800 px-3 py-2 text-xs font-bold text-white"
+                        disabled={!area.trim() && !newGridLocation}
+                        className="rounded-lg bg-emerald-800 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        시공 배정 완료
+                        배정 등록
                       </button>
                     </div>
                   </div>

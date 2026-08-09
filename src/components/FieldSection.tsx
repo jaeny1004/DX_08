@@ -68,7 +68,11 @@ function calculateDistanceKm(
   return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** 배정 진행 순서. 화면의 상태 선택 목록도 이 순서를 따른다. */
+/**
+ * 예찰 배정 진행 순서. 화면의 상태 선택 목록도 이 순서를 따른다.
+ * 복귀·복귀 완료는 고르지 않는다 — 작업 완료 시 뜨는 현장 판정에서
+ * 확진목 이관 / 방제 이관 / 반려 중 하나로 정리되면 시스템이 종료 처리한다.
+ */
 const DISPATCH_STATUS_FLOW: DispatchStatus[] = [
   "배정 대기",
   "배정 수락",
@@ -76,8 +80,6 @@ const DISPATCH_STATUS_FLOW: DispatchStatus[] = [
   "현장 도착",
   "작업 중",
   "작업 완료",
-  "복귀",
-  "복귀 완료",
 ];
 
 /** 진행 단계별 색상. 대기 -> 이동 -> 작업 -> 완료 순으로 톤을 바꾼다. */

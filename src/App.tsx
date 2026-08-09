@@ -1340,10 +1340,14 @@ export default function App() {
     assignment: DispatchAssignment
   ) => {
     setDispatchAssignments((previous) => {
+      // 같은 요원이 같은 격자에서 예찰과 방제를 각각 맡을 수 있으므로
+      // 업무 종류까지 봐야 한다. taskType을 빼면 예찰 완료 후 방제로 이관할 때
+      // 중복으로 판정되어 조용히 버려진다.
       const duplicated = previous.some(
         (item) =>
           item.workerId === assignment.workerId &&
-          item.gridId === assignment.gridId
+          item.gridId === assignment.gridId &&
+          item.taskType === assignment.taskType
       );
 
       if (duplicated) {
