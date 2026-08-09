@@ -98,6 +98,10 @@ type Recommendation = {
 
 const GEOJSON_PATH = "/data/final_ui_candidate_v4.geojson";
 const SIGUNGU_BOUNDARY_PATH = "/data/sigungu_boundary.geojson";
+const EMD_BOUNDARY_PATH = "/data/emd_boundary.geojson";
+// 전국 뷰에서 읍면동 1,090개를 모두 그리면 선이 뒤덮여 알아볼 수 없다.
+// 시군구를 선택했거나 이 줌 이상으로 확대했을 때만 표시한다.
+const EMD_BOUNDARY_MIN_ZOOM = 11;
 const INFECTION_HISTORY_PATH = "/data/infection_history_2016_2021.geojson";
 const WORKERS_PATH = "/data/workforce_v2/workers.json";
 const WORKER_CAPABILITIES_PATH = "/data/workforce_v2/worker_capabilities.json";
@@ -597,12 +601,33 @@ function createGridPopupHtml(
     </div>`;
 }
 
+/** 탭을 옮겨도 유지해야 하는 지도 상태. App이 소유하고 ref로 넘겨준다. */
+export interface DashboardMapViewState {
+  sigunguCode: string;
+  emdCode: string;
+  center: [number, number] | null;
+  zoom: number | null;
+}
+
+/** KPI 카드가 쓰는 현재 선택 지역 요약. */
+export interface DashboardRegionStats {
+  regionLabel: string;
+  highRiskCount: number;
+}
+
 interface DashboardRiskMapCardProps {
   dispatchAssignments: DispatchAssignment[];
   onAssignWorker: (assignment: DispatchAssignment) => void;
   onGridSelect?: (grid: any) => void;
   initialSigunguCode?: string;
   initialSigunguName?: string;
+  /**
+   * 탭 이동으로 이 컴포넌트가 언마운트돼도 선택 지역·지도 위치를 잃지 않도록,
+   * App이 들고 있는 가변 객체를 그대로 받아 읽고 쓴다.
+   * state가 아니라 ref라서 지도를 움직여도 상위가 리렌더되지 않는다.
+   */
+  viewStateRef?: React.MutableRefObject<DashboardMapViewState>;
+  onRegionStatsChange?: (stats: DashboardRegionStats) => void;
 }
 
 export default function DashboardRiskMapCard({
@@ -611,12 +636,15 @@ export default function DashboardRiskMapCard({
   onGridSelect,
   initialSigunguCode,
   initialSigunguName,
+  viewStateRef,
+  onRegionStatsChange,
 }: DashboardRiskMapCardProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const leafletMapRef = useRef<L.Map | null>(null);
   const gridLayerRef = useRef<L.GeoJSON | null>(null);
   const infectionHistoryLayerRef = useRef<L.GeoJSON | null>(null);
   const sigunguLayerRef = useRef<L.GeoJSON | null>(null);
+  const emdLayerRef = useRef<L.GeoJSON | null>(null);
   const popupRef = useRef<L.Popup | null>(null);
   const vworldBaseLayerRef = useRef<L.TileLayer | null>(null);
   const vworldSatelliteLayerRef = useRef<L.TileLayer | null>(null);
@@ -630,6 +658,7 @@ export default function DashboardRiskMapCard({
   const [geojson, setGeojson] = useState<any>(null);
   const [infectionHistory, setInfectionHistory] = useState<any>(null);
   const [sigunguBoundary, setSigunguBoundary] = useState<any>(null);
+  const [emdBoundary, setEmdBoundary] = useState<any>(null);
   const [regionCapacities, setRegionCapacities] = useState<RegionWorkforceCapacity[]>([]);
   const [workerMaster, setWorkerMaster] = useState<WorkerMasterRow[]>([]);
   const [geojsonError, setGeojsonError] = useState("");
@@ -645,8 +674,13 @@ export default function DashboardRiskMapCard({
     useState<MapDisplayMode>("priority");
   const [showInfectionHistory, setShowInfectionHistory] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(7);
-  const [selectedSigunguCode, setSelectedSigunguCode] = useState("");
-  const [selectedEmdCode, setSelectedEmdCode] = useState("");
+  // 탭에서 돌아왔을 때 이전 선택을 그대로 복원한다(App이 보관).
+  const [selectedSigunguCode, setSelectedSigunguCode] = useState(
+    viewStateRef?.current.sigunguCode ?? "",
+  );
+  const [selectedEmdCode, setSelectedEmdCode] = useState(
+    viewStateRef?.current.emdCode ?? "",
+  );
   const [selected, setSelected] = useState<any>(null);
   const [selectedTaskType, setSelectedTaskType] =
     useState<DispatchTaskType>("SURVEY");
@@ -662,6 +696,19 @@ export default function DashboardRiskMapCard({
   // 첫 진입 화면은 '선택 초기화'와 동일한 전국 보기로 시작합니다.
   void initialSigunguCode;
   void initialSigunguName;
+
+  // 선택이 바뀌면 App이 보관하는 객체에 즉시 반영한다(리렌더 없음).
+  useEffect(() => {
+    if (!viewStateRef) return;
+    viewStateRef.current.sigunguCode = selectedSigunguCode;
+    viewStateRef.current.emdCode = selectedEmdCode;
+  }, [viewStateRef, selectedSigunguCode, selectedEmdCode]);
+
+  // 저장된 지도 위치를 한 번만 복원하기 위한 플래그.
+  // 복원 직후에는 선택 지역 기준 fitBounds가 덮어쓰지 않도록 건너뛴다.
+  const pendingViewRestoreRef = useRef(
+    viewStateRef?.current.center != null && viewStateRef?.current.zoom != null,
+  );
 
   useEffect(() => {
     onGridSelectRef.current = onGridSelect;
@@ -880,6 +927,41 @@ export default function DashboardRiskMapCard({
     if (selectedSigunguCode) return buildSummary(selectedAdminFeatures, "sigungu");
     return null;
   }, [selectedAdminFeatures, selectedSigunguCode, selectedEmdCode]);
+
+  // 지역 미선택(전국) 상태에서 쓸 전체 고위험 격자 수.
+  // 기준은 지도 팝업과 동일하게 risk 등급 "매우 높음" + "높음"이다.
+  const nationwideHighRiskCount = useMemo(() => {
+    let count = 0;
+    for (const feature of features) {
+      const grade = normalizeRiskGrade(feature?.properties ?? {});
+      if (grade === "매우 높음" || grade === "높음") count += 1;
+    }
+    return count;
+  }, [features]);
+
+  // KPI 카드가 쓸 값을 상위로 올린다. 콜백은 ref로 잡아 렌더 루프를 만들지 않는다.
+  const onRegionStatsChangeRef = useRef(onRegionStatsChange);
+  useEffect(() => {
+    onRegionStatsChangeRef.current = onRegionStatsChange;
+  }, [onRegionStatsChange]);
+
+  useEffect(() => {
+    if (selectedAdminSummary) {
+      const label =
+        [selectedAdminSummary.sigunguName, selectedAdminSummary.emdName]
+          .filter(Boolean)
+          .join(" ") || "전국";
+      onRegionStatsChangeRef.current?.({
+        regionLabel: label,
+        highRiskCount: getHighRiskCount(selectedAdminSummary),
+      });
+      return;
+    }
+    onRegionStatsChangeRef.current?.({
+      regionLabel: "전국",
+      highRiskCount: nationwideHighRiskCount,
+    });
+  }, [selectedAdminSummary, nationwideHighRiskCount]);
 
   const regionCapacityMap = useMemo(() => {
     const map = new Map<string, RegionWorkforceCapacity>();
@@ -1167,11 +1249,30 @@ export default function DashboardRiskMapCard({
     return () => controller.abort();
   }, []);
 
+  // 행정동 경계는 확대했을 때만 쓰는 보조 레이어라 별도로 지연 없이 한 번만 받는다.
+  // 실패해도 지도 나머지 기능에는 영향이 없어 에러를 조용히 무시한다.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(EMD_BOUNDARY_PATH, {
+      cache: "force-cache",
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data) setEmdBoundary(data);
+      })
+      .catch(() => {
+        /* 경계 표시는 부가 기능이라 실패해도 무시 */
+      });
+    return () => controller.abort();
+  }, []);
+
   useEffect(() => {
     if (!mapRef.current || leafletMapRef.current) return;
+    const savedView = viewStateRef?.current;
     const map = L.map(mapRef.current, {
-      center: [36.35, 127.7],
-      zoom: 7,
+      center: savedView?.center ?? [36.35, 127.7],
+      zoom: savedView?.zoom ?? 7,
       minZoom: 6,
       maxZoom: 19,
       maxBounds: KOREA_BOUNDS,
@@ -1259,14 +1360,27 @@ export default function DashboardRiskMapCard({
     const handleZoomEnd = () => setZoomLevel(map.getZoom());
     map.on("zoomend", handleZoomEnd);
 
+    // 확대·이동한 위치를 계속 기록해 두었다가 탭에서 돌아올 때 복원한다.
+    const handleViewChange = () => {
+      if (!viewStateRef) return;
+      const center = map.getCenter();
+      viewStateRef.current.center = [center.lat, center.lng];
+      viewStateRef.current.zoom = map.getZoom();
+    };
+    map.on("moveend", handleViewChange);
+    map.on("zoomend", handleViewChange);
+
     return () => {
       map.off("zoomend", handleZoomEnd);
+      map.off("moveend", handleViewChange);
+      map.off("zoomend", handleViewChange);
       resizeObserver.disconnect();
       map.remove();
       leafletMapRef.current = null;
       gridLayerRef.current = null;
       infectionHistoryLayerRef.current = null;
       sigunguLayerRef.current = null;
+      emdLayerRef.current = null;
       popupRef.current = null;
     };
   }, []);
@@ -1342,6 +1456,55 @@ export default function DashboardRiskMapCard({
     };
   }, [sigunguBoundary, selectedSigunguCode]);
 
+  // 행정동 경계: 시군구를 선택했거나 충분히 확대했을 때만 표시한다.
+  // 시군구를 선택한 경우 해당 시군구에 속한 읍면동만 남겨 선을 줄인다.
+  useEffect(() => {
+    const map = leafletMapRef.current;
+    if (!map || !emdBoundary) return;
+
+    const shouldShow =
+      Boolean(selectedSigunguCode) || zoomLevel >= EMD_BOUNDARY_MIN_ZOOM;
+    if (!shouldShow) return;
+
+    const allowedCodes = selectedSigunguCode
+      ? new Set(
+          (featureIndex.sigungu.get(selectedSigunguCode) ?? []).map((feature) =>
+            normalizeCode(feature?.properties?.emd_code),
+          ),
+        )
+      : null;
+
+    const visible = allowedCodes
+      ? (emdBoundary.features ?? []).filter((feature: any) =>
+          allowedCodes.has(normalizeCode(feature?.properties?.emd_code)),
+        )
+      : (emdBoundary.features ?? []);
+    if (!visible.length) return;
+
+    const layer = L.geoJSON(
+      { type: "FeatureCollection", features: visible } as any,
+      {
+        // renderer를 지정하지 않아도 지도가 preferCanvas라 캔버스로 그려진다.
+        interactive: false,
+        style: {
+          color: "#475569",
+          weight: 1,
+          opacity: 0.55,
+          dashArray: "3 3",
+          fill: false,
+        },
+      },
+    ).addTo(map);
+    emdLayerRef.current = layer;
+    // 격자 위에 선만 얹되, 격자 클릭을 막지 않도록 interactive: false로 둔다.
+    layer.bringToFront();
+
+    return () => {
+      layer.removeFrom(map);
+      if (emdLayerRef.current === layer) emdLayerRef.current = null;
+    };
+  }, [emdBoundary, selectedSigunguCode, zoomLevel, featureIndex]);
+
   useEffect(() => {
     const map = leafletMapRef.current;
     if (!map) return;
@@ -1353,12 +1516,18 @@ export default function DashboardRiskMapCard({
     setAssignmentMessage("");
     onGridSelectRef.current?.(null);
 
+    // 탭에서 돌아온 직후에는 복원한 위치를 유지한다. 이후 선택 변경부터는 평소대로 이동.
+    const skipAutoFit = pendingViewRestoreRef.current;
+    pendingViewRestoreRef.current = false;
+
     if (!selectedAdminSummary) {
-      map.fitBounds(DATA_BOUNDS, { padding: [20, 20], animate: false, maxZoom: 7 });
-      map.setZoom(
-        Math.min(map.getZoom() + 1, map.getMaxZoom()),
-        { animate: false },
-      );
+      if (!skipAutoFit) {
+        map.fitBounds(DATA_BOUNDS, { padding: [20, 20], animate: false, maxZoom: 7 });
+        map.setZoom(
+          Math.min(map.getZoom() + 1, map.getMaxZoom()),
+          { animate: false },
+        );
+      }
       return;
     }
 
@@ -1369,7 +1538,7 @@ export default function DashboardRiskMapCard({
       } as any;
       const adminLayer = L.geoJSON(adminCollection);
       const adminBounds = adminLayer.getBounds();
-      if (adminBounds.isValid()) {
+      if (adminBounds.isValid() && !skipAutoFit) {
         map.fitBounds(adminBounds, {
           padding: [28, 28],
           animate: false,
@@ -1433,11 +1602,13 @@ export default function DashboardRiskMapCard({
 
     const bounds = layer.getBounds();
     if (bounds.isValid()) {
-      map.fitBounds(bounds, {
-        padding: [28, 28],
-        animate: false,
-        maxZoom: selectedEmdCode ? 13 : 11,
-      });
+      if (!skipAutoFit) {
+        map.fitBounds(bounds, {
+          padding: [28, 28],
+          animate: false,
+          maxZoom: selectedEmdCode ? 13 : 11,
+        });
+      }
       window.setTimeout(() => {
         const currentSummary = selectedAdminSummaryRef.current;
         if (!currentSummary) return;
