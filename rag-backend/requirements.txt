@@ -5,7 +5,11 @@ psycopg2-binary>=2.9
 python-jose[cryptography]>=3.3
 pwdlib[argon2]>=0.2
 email-validator>=2.2
-pymupdf>=1.24
+# pymupdf(설치 시 53MB)는 배포 의존성에서 뺐다 — Vercel 함수 225MB 한도 초과 때문.
+# fitz 는 app/core/parsers.py 에서만 쓰이고 그 파일은 ingest.py 만 import 한다.
+# ingest.py 는 .vercelignore 대상이라 배포본에 없고 data/docs/ 도 제외되므로
+# 프로덕션에는 파싱할 PDF 자체가 없다. 로컬 문서 재수집 시에만 필요하다:
+#   pip install -r requirements-ingest.txt
 Pillow>=10.0
 supabase>=2.4
 openai>=1.40

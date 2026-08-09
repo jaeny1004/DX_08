@@ -1,0 +1,12 @@
+# 로컬 문서 재수집(ingest) 전용 의존성.
+#
+# Vercel 함수 크기 한도(225MB) 때문에 pymupdf를 requirements.txt에서 분리했다.
+# 배포본에는 ingest.py도 data/docs/도 들어가지 않으므로 프로덕션에는 불필요하다.
+#
+# 사용법 (Windows PowerShell):
+#   .\venv\Scripts\pip.exe install -r requirements-ingest.txt
+#   .\venv\Scripts\python.exe ingest.py
+
+-r requirements.txt
+
+pymupdf>=1.24
