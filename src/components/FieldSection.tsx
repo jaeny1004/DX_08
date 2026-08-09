@@ -26,6 +26,10 @@ import {
   FIELD_WORKERS,
   type FieldWorkerMarker,
 } from "../config/operationsMockData";
+import {
+  formatGridLocation,
+  loadGridLookup,
+} from "../utils/gridLookup";
 
 type SurveyWorkerCandidate = {
   workerId: string;
@@ -216,6 +220,18 @@ export default function FieldSection({
   onAssignWorker,
   dispatchAssignments = [],
 }: FieldSectionProps) {
+  // 좌표를 행정동·격자ID로 바꿔 표시하려면 룩업이 먼저 있어야 한다.
+  const [, setGridLookupReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadGridLookup().then((data) => {
+      if (!cancelled && data) setGridLookupReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [selectedReportId, setSelectedReportId] =
     useState<string | null>(null);
 
@@ -676,7 +692,7 @@ export default function FieldSection({
                           </h3>
 
                           <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                            위도 {formatCoordinate(latitude)}, 경도 {formatCoordinate(longitude)}
+                            {formatGridLocation(latitude, longitude)}
                           </p>
                         </div>
                       </div>
@@ -754,7 +770,7 @@ export default function FieldSection({
                           </h3>
 
                           <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                            위도 {formatCoordinate(latitude)}, 경도 {formatCoordinate(longitude)}
+                            {formatGridLocation(latitude, longitude)}
                           </p>
                         </div>
                       </div>
@@ -825,10 +841,8 @@ export default function FieldSection({
                                   위치
                                 </div>
 
-                                <div className="mt-1 break-all font-mono text-[11px] font-black leading-5 text-slate-800">
-                                  위도 {formatCoordinate(latitude)}
-                                  <br />
-                                  경도 {formatCoordinate(longitude)}
+                                <div className="mt-1 break-all text-[11px] font-black leading-5 text-slate-800">
+                                  {formatGridLocation(latitude, longitude)}
                                 </div>
                               </div>
 
@@ -1079,46 +1093,33 @@ export default function FieldSection({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 border-t border-slate-100 p-4">
+          <div className="border-t border-slate-100 p-4">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] font-black uppercase text-slate-400">
-                위도
+              <div className="text-[10px] font-black text-slate-400">
+                선택 위치
               </div>
 
-              <div className="mt-1 break-all font-mono text-xs font-bold text-slate-800">
-                {selectedReport
-                  ? formatCoordinate(
-                      getReportLatitude(
-                        selectedReport
+              <div className="mt-1 break-all text-xs font-bold text-slate-800">
+                <span>
+                  {selectedReport
+                    ? formatGridLocation(
+                        getReportLatitude(selectedReport),
+                        getReportLongitude(selectedReport),
+                        selectedReport.region,
                       )
-                    )
-                  : selectedAssignment &&
-                      typeof selectedAssignment.targetLatitude === "number"
-                    ? selectedAssignment.targetLatitude.toFixed(7)
-                  : selectedWorker
-                    ? selectedWorker.latitude.toFixed(7)
-                    : "마커를 선택하세요"}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] font-black uppercase text-slate-400">
-                경도
-              </div>
-
-              <div className="mt-1 break-all font-mono text-xs font-bold text-slate-800">
-                {selectedReport
-                  ? formatCoordinate(
-                      getReportLongitude(
-                        selectedReport
-                      )
-                    )
-                  : selectedAssignment &&
-                      typeof selectedAssignment.targetLongitude === "number"
-                    ? selectedAssignment.targetLongitude.toFixed(7)
-                  : selectedWorker
-                    ? selectedWorker.longitude.toFixed(7)
-                    : "마커를 선택하세요"}
+                    : selectedAssignment
+                      ? formatGridLocation(
+                          selectedAssignment.targetLatitude,
+                          selectedAssignment.targetLongitude,
+                          selectedAssignment.targetEmdName,
+                        )
+                      : selectedWorker
+                        ? formatGridLocation(
+                            selectedWorker.latitude,
+                            selectedWorker.longitude,
+                          )
+                        : "마커를 선택하세요"}
+                </span>
               </div>
             </div>
           </div>

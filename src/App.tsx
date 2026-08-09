@@ -65,6 +65,10 @@ import {
 import Dashboard from "./components/Dashboard";
 import type { DashboardMapViewState } from "./components/DashboardRiskMapCard";
 import { createTreeId } from "./utils/treeId";
+import {
+  formatGridLocation,
+  loadGridLookup,
+} from "./utils/gridLookup";
 import MonitoringSection from "./components/MonitoringSection";
 import FieldSection from "./components/FieldSection";
 import ThermalAnalysisSection from "./components/ThermalAnalysisSection";
@@ -459,10 +463,11 @@ function mapPineRecordToCrowdReport(
 
     title: "시민 모바일 신고 건",
 
+    // 좌표를 그대로 주소칸에 넣지 않고 행정동·격자ID로 바꾼다.
     region:
       latitude !== undefined &&
         longitude !== undefined
-        ? `위도 ${latitude.toFixed(5)}, 경도 ${longitude.toFixed(5)}`
+        ? formatGridLocation(latitude, longitude)
         : "위치 정보 미확인",
 
     description:
@@ -629,6 +634,11 @@ export default function App() {
 
   // 관리 ID 채번은 기존 ID를 봐야 번호가 이어진다. 자식에게 목록을 넘긴다.
   const treeIds = trees.map((tree) => tree.id);
+
+  // 화면 곳곳에서 좌표를 행정동·격자ID로 바꿔 쓰므로 앱 진입 시 한 번 받아 둔다.
+  useEffect(() => {
+    void loadGridLookup();
+  }, []);
 
   // 대시보드 지도의 선택 지역·확대 위치. 탭을 옮기면 Dashboard가 언마운트되어
   // 내부 state가 사라지므로, 여기서 보관했다가 돌아올 때 복원한다.

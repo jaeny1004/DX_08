@@ -78,21 +78,28 @@ export function loadGridLookup(): Promise<GridLookupPayload | null> {
 }
 
 /**
+ * 좌표 입력값. 일부 데이터는 좌표가 문자열로 들어와 있어 숫자만 받지 않는다.
+ */
+export type CoordinateInput = number | string | null | undefined;
+
+function toNumber(value: CoordinateInput): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
  * 좌표에 해당하는 격자를 찾는다.
  * 룩업이 아직 로드되지 않았거나 격자 밖이면 null.
  */
 export function resolveGridLocation(
-  latitude: number | null | undefined,
-  longitude: number | null | undefined,
+  latitudeInput: CoordinateInput,
+  longitudeInput: CoordinateInput,
 ): GridLocation | null {
-  if (
-    !payload ||
-    !buckets ||
-    typeof latitude !== "number" ||
-    typeof longitude !== "number" ||
-    !Number.isFinite(latitude) ||
-    !Number.isFinite(longitude)
-  ) {
+  const latitude = toNumber(latitudeInput);
+  const longitude = toNumber(longitudeInput);
+
+  if (!payload || !buckets || latitude === null || longitude === null) {
     return null;
   }
 
@@ -141,8 +148,8 @@ export function resolveGridLocation(
  * @param fallbackRegion 좌표가 없거나 격자를 못 찾았을 때 쓸 주소 문자열
  */
 export function formatGridLocation(
-  latitude: number | null | undefined,
-  longitude: number | null | undefined,
+  latitude: CoordinateInput,
+  longitude: CoordinateInput,
   fallbackRegion?: string,
 ): string {
   const location = resolveGridLocation(latitude, longitude);

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Battery,
@@ -23,6 +23,10 @@ import {
 } from "../config/operationsMockData";
 import { ControlOperationsMap } from "./ControlOperationsMap";
 import { InventoryPanel } from "./InventoryPanel";
+import {
+  formatGridLocation,
+  loadGridLookup,
+} from "../utils/gridLookup";
 
 interface ControlSectionProps {
   mode: "status" | "work";
@@ -147,6 +151,18 @@ export default function ControlSection({
   onUpdateTaskProgress,
   onUpdateDispatchStatus,
 }: ControlSectionProps) {
+  // 좌표를 행정동·격자ID로 바꿔 표시하려면 룩업이 먼저 있어야 한다.
+  const [, setGridLookupReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadGridLookup().then((data) => {
+      if (!cancelled && data) setGridLookupReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [demoOperations, setDemoOperations] = useState<ControlOperation[]>(
     () => CONTROL_OPERATIONS.map((item) => ({ ...item })),
   );
@@ -477,9 +493,15 @@ export default function ControlSection({
                     <div className="mt-1 text-[11px] font-bold text-slate-700">{selectedOperation.currentStage}</div>
                   </div>
                   <div className="rounded-xl bg-slate-50 p-3">
-                    <div className="flex items-center gap-1 text-[9px] font-black text-slate-400"><MapPin size={11} />좌표</div>
-                    <div className="mt-1 font-mono text-[9px] font-bold text-slate-700">
-                      {selectedOperation.latitude.toFixed(5)}, {selectedOperation.longitude.toFixed(5)}
+                    <div className="flex items-center gap-1 text-[9px] font-black text-slate-400"><MapPin size={11} />위치</div>
+                    <div className="mt-1 text-[9px] font-bold text-slate-700">
+                      <span>
+                        {formatGridLocation(
+                          selectedOperation.latitude,
+                          selectedOperation.longitude,
+                          selectedOperation.area,
+                        )}
+                      </span>
                     </div>
                   </div>
                   <div className="rounded-xl bg-slate-50 p-3">
@@ -561,7 +583,12 @@ export default function ControlSection({
                     <div className="mt-1.5 grid gap-1 text-[10px] font-semibold text-slate-500 sm:grid-cols-2">
                       <span>작업 ID: {operation.id}</span>
                       <span>
-                        위치: {operation.latitude.toFixed(6)}, {operation.longitude.toFixed(6)}
+                        위치:{" "}
+                        {formatGridLocation(
+                          operation.latitude,
+                          operation.longitude,
+                          operation.area,
+                        )}
                       </span>
                       <span>방제 방법: {operation.method}</span>
                       <span className="truncate">작업 구역: {operation.area}</span>

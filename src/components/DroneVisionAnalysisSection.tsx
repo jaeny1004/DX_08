@@ -910,10 +910,12 @@ export default function DroneVisionAnalysisSection({
                       ALT: {selectedInput.gps.altitude.toFixed(1)}m
                     </div>
                     <div>
-                      LAT: {selectedInput.gps.latitude.toFixed(6)}
-                    </div>
-                    <div>
-                      LNG: {selectedInput.gps.longitude.toFixed(6)}
+                      <span>
+                        {formatGridLocation(
+                          selectedInput.gps.latitude,
+                          selectedInput.gps.longitude,
+                        )}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -1140,16 +1142,13 @@ export default function DroneVisionAnalysisSection({
                         )}
 
                         <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-white/80 p-2 text-[8px] font-semibold text-slate-500">
-                          <span>
-                            위도<br />
+                          <span className="col-span-2">
+                            촬영 위치<br />
                             <b className="text-slate-700">
-                              {item.gps.latitude.toFixed(6)}
-                            </b>
-                          </span>
-                          <span>
-                            경도<br />
-                            <b className="text-slate-700">
-                              {item.gps.longitude.toFixed(6)}
+                              {formatGridLocation(
+                                item.gps.latitude,
+                                item.gps.longitude,
+                              )}
                             </b>
                           </span>
                           <span>

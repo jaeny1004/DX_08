@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   CircleMarker,
   MapContainer,
@@ -14,6 +14,10 @@ import "leaflet/dist/leaflet.css";
 import type { CrowdReport } from "../types";
 import type { FieldWorkerMarker } from "../config/operationsMockData";
 import type { DispatchAssignment } from "../types/dispatch";
+import {
+  formatGridLocation,
+  loadGridLookup,
+} from "../utils/gridLookup";
 
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -171,6 +175,18 @@ export function LeafletMap({
   selectedAssignmentId,
   onAssignmentClick,
 }: LeafletMapProps) {
+  // 팝업에 좌표 대신 행정동·격자ID를 쓰므로 룩업을 미리 받아 둔다.
+  const [, setGridLookupReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadGridLookup().then((data) => {
+      if (!cancelled && data) setGridLookupReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const validRecords = records.filter(hasValidCoordinates);
   const validAssignments = assignments.filter(
     hasValidAssignmentCoordinates,
@@ -234,8 +250,7 @@ export function LeafletMap({
                 <strong>시민 제보 #{record.id}</strong><br />
                 제보자: {record.reporter || record.phone_number || "미확인"}<br />
                 상태: {record.status}<br />
-                위도: {record.latitude.toFixed(6)}<br />
-                경도: {record.longitude.toFixed(6)}
+                위치: {formatGridLocation(record.latitude, record.longitude)}
               </div>
             </Popup>
           </Marker>
@@ -305,8 +320,12 @@ export function LeafletMap({
                   <strong>GRID-{assignment.gridId} 예찰 배정</strong><br />
                   담당 요원: {assignment.workerName}<br />
                   상태: {assignment.status}<br />
-                  위도: {assignment.targetLatitude.toFixed(6)}<br />
-                  경도: {assignment.targetLongitude.toFixed(6)}
+                  위치:{" "}
+                  {formatGridLocation(
+                    assignment.targetLatitude,
+                    assignment.targetLongitude,
+                    assignment.targetEmdName,
+                  )}
                 </div>
               </Popup>
             </CircleMarker>

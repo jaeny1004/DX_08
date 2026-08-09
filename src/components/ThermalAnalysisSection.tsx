@@ -952,10 +952,12 @@ export default function ThermalAnalysisSection({
                                             ALT: {selectedThermalInput.gps.altitude.toFixed(1)}m
                                         </div>
                                         <div>
-                                            LAT: {selectedThermalInput.gps.latitude.toFixed(6)}
-                                        </div>
-                                        <div>
-                                            LNG: {selectedThermalInput.gps.longitude.toFixed(6)}
+                                            <span>
+                                                {formatGridLocation(
+                                                    selectedThermalInput.gps.latitude,
+                                                    selectedThermalInput.gps.longitude,
+                                                )}
+                                            </span>
                                         </div>
                                     </div>
                                 )}
@@ -1210,20 +1212,17 @@ export default function ThermalAnalysisSection({
                                                 </div>
 
                                                 <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-2 text-[9px]">
-                                                    <div>
+                                                    <div className="col-span-2">
                                                         <p className="font-bold text-slate-400">
-                                                            위도
+                                                            촬영 위치
                                                         </p>
-                                                        <p className="mt-0.5 font-mono font-bold text-slate-700">
-                                                            {item.gps.latitude.toFixed(6)}
-                                                        </p>
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-bold text-slate-400">
-                                                            경도
-                                                        </p>
-                                                        <p className="mt-0.5 font-mono font-bold text-slate-700">
-                                                            {item.gps.longitude.toFixed(6)}
+                                                        <p className="mt-0.5 font-bold text-slate-700">
+                                                            <span>
+                                                                {formatGridLocation(
+                                                                    item.gps.latitude,
+                                                                    item.gps.longitude,
+                                                                )}
+                                                            </span>
                                                         </p>
                                                     </div>
                                                     <div>
