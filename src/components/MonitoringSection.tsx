@@ -32,11 +32,30 @@ import {
   FieldPhotoRecord,
   TreeRecord,
   FieldVoiceLogRecord,
+  TREE_STATUS_OPTIONS,
 } from "../types";
 import type {
   DispatchAssignment,
   DispatchTaskType,
 } from "../types/dispatch";
+import {
+  formatGridLocation,
+  loadGridLookup,
+} from "../utils/gridLookup";
+import { createTreeId } from "../utils/treeId";
+
+/** 요원 배정에 쓸 수 있는 좌표가 있는지. */
+function hasAssignableCoords(tree: {
+  latitude?: number;
+  longitude?: number;
+}) {
+  return (
+    typeof tree.latitude === "number" &&
+    Number.isFinite(tree.latitude) &&
+    typeof tree.longitude === "number" &&
+    Number.isFinite(tree.longitude)
+  );
+}
 
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL as string;
@@ -520,6 +539,20 @@ export default function MonitoringSection({
 
   const [controlAssignmentMessage, setControlAssignmentMessage] =
     useState("");
+
+  // 좌표를 행정동·격자ID로 바꿔 보여주려면 룩업이 먼저 있어야 한다.
+  // 도착 전에는 fallback 문자열이 잠깐 보이므로, 로드되면 한 번 다시 그린다.
+  const [gridLookupReady, setGridLookupReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    loadGridLookup().then((data) => {
+      if (!cancelled && data) setGridLookupReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  void gridLookupReady;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1764,12 +1797,7 @@ export default function MonitoringSection({
 
     const newRecord: TreeRecord = {
 
-      id:
-        `PT-${new Date().getFullYear()}-` +
-        `${Math.floor(
-          1000 +
-          Math.random() * 9000
-        )}`,
+      id: createTreeId(trees.map((item) => item.id)),
 
       region,
 
@@ -1780,7 +1808,7 @@ export default function MonitoringSection({
           .toISOString()
           .split("T")[0],
 
-      status: "예찰의심",
+      status: "확진완료",
 
       severity,
 
@@ -2053,11 +2081,23 @@ export default function MonitoringSection({
   ) => {
 
     if (status === "확진완료") {
-      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+      return "bg-rose-50 text-rose-700 border-rose-200";
     }
 
     if (status === "방제중") {
       return "bg-blue-50 text-blue-700 border-blue-200";
+    }
+
+    if (status === "방제완료") {
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    }
+
+    if (status === "행정처리") {
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    }
+
+    if (status === "사후관리") {
+      return "bg-slate-100 text-slate-700 border-slate-300";
     }
 
     return "bg-slate-50 text-slate-700 border-slate-200";
@@ -2099,7 +2139,9 @@ export default function MonitoringSection({
       return "시민신고";
     }
 
-    return "수동등록";
+    // 유형은 비가시 / 가시 / 시민신고 / AI 예측 네 가지만 쓴다.
+    // 위 조건에 걸리지 않는 건은 AI 위험예측에서 넘어온 확진목으로 본다.
+    return "AI 예측";
   };
 
   const getTreeTypeClass = (
@@ -2134,7 +2176,8 @@ export default function MonitoringSection({
     try {
       await onUpdateTreeStatus(tree.id, nextStatus);
 
-      if (nextStatus === "방제대기") {
+      // 요원 배정은 확진이 끝난 시점에 시작한다.
+      if (nextStatus === "확진완료") {
         setIsRegistering(false);
         setIsVideoOpen(false);
         setIsImageOpen(false);
@@ -2653,7 +2696,7 @@ export default function MonitoringSection({
                               onClick={(event) => {
                                 event.stopPropagation();
 
-                                if (tree.status === "방제대기") {
+                                if (tree.status === "확진완료") {
                                   setSelectedTreeId(tree.id);
                                   setIsRegistering(false);
                                   setIsVideoOpen(false);
@@ -2671,37 +2714,11 @@ export default function MonitoringSection({
                               )}`}
                             >
 
-                              <option value="예찰의심">
-                                예찰의심
-                              </option>
-
-                              <option value="현장확인">
-                                현장확인
-                              </option>
-
-                              <option value="시료검사">
-                                시료검사
-                              </option>
-
-                              <option value="확진완료">
-                                확진완료
-                              </option>
-
-                              <option value="방제대기">
-                                방제대기
-                              </option>
-
-                              <option value="방제중">
-                                방제중
-                              </option>
-
-                              <option value="방제완료">
-                                방제완료
-                              </option>
-
-                              <option value="사후관리">
-                                사후관리
-                              </option>
+                              {TREE_STATUS_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
 
                             </select>
 
@@ -2988,18 +3005,21 @@ export default function MonitoringSection({
                       </p>
                     </div>
                     <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black text-emerald-700 shadow-sm">
-                      방제대기
+                      <span>{controlAssignmentTree.status}</span>
                     </span>
                   </div>
 
                   <div className="mt-3 flex items-center gap-2 text-[10px] font-bold text-slate-500">
                     <MapPin size={13} className="text-emerald-600" />
-                    {typeof controlAssignmentTree.latitude === "number" &&
-                    Number.isFinite(controlAssignmentTree.latitude) &&
-                    typeof controlAssignmentTree.longitude === "number" &&
-                    Number.isFinite(controlAssignmentTree.longitude)
-                      ? `위도 ${controlAssignmentTree.latitude.toFixed(6)}, 경도 ${controlAssignmentTree.longitude.toFixed(6)}`
-                      : "위도·경도 없음 — 요원 배정 불가"}
+                    <span>
+                      {hasAssignableCoords(controlAssignmentTree)
+                        ? formatGridLocation(
+                            controlAssignmentTree.latitude,
+                            controlAssignmentTree.longitude,
+                            controlAssignmentTree.region,
+                          )
+                        : "좌표 정보 없음 — 요원 배정 불가"}
+                    </span>
                   </div>
                 </div>
 
@@ -3671,7 +3691,7 @@ export default function MonitoringSection({
                 </p>
               </div>
 
-              {/* 위도·경도 */}
+              {/* 촬영 위치 — 좌표 대신 행정동·격자ID로 표시 */}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <MapPin
@@ -3684,31 +3704,14 @@ export default function MonitoringSection({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-[9px] font-bold text-slate-400">
-                      위도
-                    </p>
-
-                    <p className="mt-1 font-mono text-sm font-black text-slate-800">
-                      {selectedImage.latitude !== undefined
-                        ? selectedImage.latitude.toFixed(6)
-                        : "정보 없음"}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-[9px] font-bold text-slate-400">
-                      경도
-                    </p>
-
-                    <p className="mt-1 font-mono text-sm font-black text-slate-800">
-                      {selectedImage.longitude !== undefined
-                        ? selectedImage.longitude.toFixed(6)
-                        : "정보 없음"}
-                    </p>
-                  </div>
-                </div>
+                <p className="text-sm font-black text-slate-800">
+                  <span>
+                    {formatGridLocation(
+                      selectedImage.latitude,
+                      selectedImage.longitude,
+                    )}
+                  </span>
+                </p>
               </div>
 
               {/* 드론 AI 판독 정보 */}
@@ -3922,37 +3925,14 @@ export default function MonitoringSection({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-[9px] font-bold text-slate-400">
-                      위도
-                    </p>
-
-                    <p className="mt-1 font-mono text-sm font-black text-slate-800">
-                      {selectedAudio.latitude !==
-                        undefined
-                        ? selectedAudio.latitude.toFixed(
-                          6
-                        )
-                        : "정보 없음"}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-[9px] font-bold text-slate-400">
-                      경도
-                    </p>
-
-                    <p className="mt-1 font-mono text-sm font-black text-slate-800">
-                      {selectedAudio.longitude !==
-                        undefined
-                        ? selectedAudio.longitude.toFixed(
-                          6
-                        )
-                        : "정보 없음"}
-                    </p>
-                  </div>
-                </div>
+                <p className="text-sm font-black text-slate-800">
+                  <span>
+                    {formatGridLocation(
+                      selectedAudio.latitude,
+                      selectedAudio.longitude,
+                    )}
+                  </span>
+                </p>
               </div>
 
               <div className="rounded-xl bg-emerald-50 px-4 py-3 text-[11px] font-bold text-emerald-700">
@@ -4090,10 +4070,12 @@ export default function MonitoringSection({
                       ALT {selectedThermalInput.gps.altitude.toFixed(1)}m
                     </div>
                     <div>
-                      LAT {selectedThermalInput.gps.latitude.toFixed(6)}
-                    </div>
-                    <div>
-                      LNG {selectedThermalInput.gps.longitude.toFixed(6)}
+                      <span>
+                        {formatGridLocation(
+                          selectedThermalInput.gps.latitude,
+                          selectedThermalInput.gps.longitude,
+                        )}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -4294,21 +4276,17 @@ export default function MonitoringSection({
                         </div>
 
                         <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-2 text-[9px]">
-                          <div>
+                          <div className="col-span-2">
                             <p className="font-bold text-slate-400">
-                              위도
+                              촬영 위치
                             </p>
-                            <p className="mt-0.5 font-mono font-bold text-slate-700">
-                              {item.gps.latitude.toFixed(6)}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="font-bold text-slate-400">
-                              경도
-                            </p>
-                            <p className="mt-0.5 font-mono font-bold text-slate-700">
-                              {item.gps.longitude.toFixed(6)}
+                            <p className="mt-0.5 font-bold text-slate-700">
+                              <span>
+                                {formatGridLocation(
+                                  item.gps.latitude,
+                                  item.gps.longitude,
+                                )}
+                              </span>
                             </p>
                           </div>
 

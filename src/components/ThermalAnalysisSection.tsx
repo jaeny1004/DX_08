@@ -22,6 +22,11 @@ import {
 import {
     TreeRecord,
 } from "../types";
+import {
+    formatGridLocation,
+    loadGridLookup,
+} from "../utils/gridLookup";
+import { createTreeId } from "../utils/treeId";
 
 const SUPABASE_URL =
     import.meta.env.VITE_SUPABASE_URL as string;
@@ -190,11 +195,19 @@ type ThermalAnalysisSectionProps = {
     onAddTree: (
         tree: TreeRecord
     ) => void;
+    /** 관리 ID 번호를 이어서 매기기 위한 기존 ID 목록 */
+    existingTreeIds?: string[];
 };
 
 export default function ThermalAnalysisSection({
     onAddTree,
+    existingTreeIds = [],
 }: ThermalAnalysisSectionProps) {
+    // 확진목 전환 시 좌표를 행정동·격자ID로 바꿔야 하므로 미리 받아 둔다.
+    useEffect(() => {
+        void loadGridLookup();
+    }, []);
+
     const [thermalInputs, setThermalInputs] =
         useState<ThermalInputItem[]>([]);
 
@@ -606,6 +619,9 @@ export default function ThermalAnalysisSection({
 
         const now = new Date();
 
+        // 한 번에 여러 건을 만들 수 있어, 발급한 ID를 누적해야 번호가 겹치지 않는다.
+        const issuedIds = [...existingTreeIds];
+
         selectedResult.predictions.forEach(
             (prediction, index) => {
                 const aiProbability = Number(
@@ -638,17 +654,14 @@ export default function ThermalAnalysisSection({
                             ? "중"
                             : "경";
 
-                const newTree: TreeRecord = {
-                    id:
-                        `PT-${now.getFullYear()}-` +
-                        crypto
-                            .randomUUID()
-                            .slice(0, 8)
-                            .toUpperCase(),
+                const treeId = createTreeId(issuedIds, now);
+                issuedIds.push(treeId);
 
-                    region:
-                        `위도 ${latitude.toFixed(6)}, ` +
-                        `경도 ${longitude.toFixed(6)}`,
+                const newTree: TreeRecord = {
+                    id: treeId,
+
+                    // 좌표를 그대로 주소칸에 넣지 않고 행정동·격자ID로 바꾼다.
+                    region: formatGridLocation(latitude, longitude),
 
                     species: "소나무",
 

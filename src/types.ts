@@ -32,12 +32,32 @@ export interface GridCell {
   historyCount: number;
 }
 
+/**
+ * 확진목 처리 단계. 확진 이후의 흐름만 다룬다
+ * (확진 이전 단계인 예찰의심·현장확인·시료검사는 확진목 리스트의 관심사가 아니다).
+ * 요원 배정은 '확진완료' 시점에 이루어진다.
+ */
+export type TreeStatus =
+  | "확진완료"
+  | "방제중"
+  | "방제완료"
+  | "행정처리"
+  | "사후관리";
+
+export const TREE_STATUS_OPTIONS: TreeStatus[] = [
+  "확진완료",
+  "방제중",
+  "방제완료",
+  "행정처리",
+  "사후관리",
+];
+
 export interface TreeRecord {
   id: string;
   region: string;
   species: "소나무" | "해송" | "잣나무";
   confirmedDate: string;
-  status: "예찰의심" | "현장확인" | "시료검사" | "확진완료" | "방제대기" | "방제중" | "방제완료" | "사후관리";
+  status: TreeStatus;
   severity: "경" | "중" | "심";
   x: number;
   y: number;
@@ -48,6 +68,10 @@ export interface TreeRecord {
   aiProbability?: number;
   latitude?: number;
   longitude?: number;
+  /** 위경도로 역조회한 행정동명. 화면에는 좌표 대신 이 값을 쓴다. */
+  emdName?: string;
+  /** 위경도로 역조회한 500m 격자 ID. */
+  gridId?: string;
   imageUrl?: string;
   imageSource?: TreeImageSource;
 imageBucket?: string;
@@ -345,7 +369,7 @@ export const initialTrees: TreeRecord[] = [
     region: "경북 포항시 북구 죽장면 산42",
     species: "소나무",
     confirmedDate: "2026-07-06",
-    status: "방제대기",
+    status: "확진완료",
     severity: "심",
     x: 62.4,
     y: 35.2,
