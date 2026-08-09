@@ -26,9 +26,12 @@ import { InventoryPanel } from "./InventoryPanel";
 import {
   formatGridLocation,
   loadGridLookup,
-  resolveGridByRegionText,
-  resolveGridLocation,
+  type GridLocation,
 } from "../utils/gridLookup";
+import RegionPicker, {
+  EMPTY_REGION,
+  type RegionPickerValue,
+} from "./RegionPicker";
 import {
   filterAssignable,
   loadWorkforce,
@@ -200,22 +203,15 @@ export default function ControlSection({
     CONTROL_OPERATIONS[0]?.id ?? null,
   );
   const [isRegistering, setIsRegistering] = useState(false);
-  const [area, setArea] = useState("");
   const [method, setMethod] = useState<ControlTask["method"]>("파쇄");
   const [company, setCompany] = useState("동해산림방제(주)");
   const [workers, setWorkers] = useState(10);
 
-  // 다른 등록 화면과 같은 방식으로, 지역명 또는 좌표 중 하나만 넣어도
-  // 행정동·격자를 찾아 준다.
-  const [newLatitude, setNewLatitude] = useState("");
-  const [newLongitude, setNewLongitude] = useState("");
-
-  const newGridLocation = useMemo(
-    () =>
-      resolveGridLocation(newLatitude, newLongitude) ??
-      resolveGridByRegionText(area),
-    [newLatitude, newLongitude, area, gridLookupReady],
-  );
+  // 주소는 목록에서 고르고 지번만 직접 적는다.
+  const [regionValue, setRegionValue] =
+    useState<RegionPickerValue>(EMPTY_REGION);
+  const [newGridLocation, setNewGridLocation] =
+    useState<GridLocation | null>(null);
 
   // 방제 담당 요원 선택
   const [workforce, setWorkforce] = useState<WorkforceMember[]>([]);
@@ -238,7 +234,8 @@ export default function ControlSection({
       .map((worker) => ({
         worker,
         localRegion: Boolean(
-          worker.homeSigunguName && area.includes(worker.homeSigunguName),
+          worker.homeSigunguName &&
+            regionValue.sigungu.includes(worker.homeSigunguName),
         ),
         distanceKm: point
           ? distanceKmBetween(
@@ -259,7 +256,7 @@ export default function ControlSection({
         return 0;
       })
       .slice(0, 30);
-  }, [workforce, newGridLocation, area]);
+  }, [workforce, newGridLocation, regionValue.sigungu]);
 
   const selectedWorker =
     workforce.find((worker) => worker.workerId === selectedWorkerId) ?? null;
@@ -270,6 +267,14 @@ export default function ControlSection({
    */
   const [methodOverrides, setMethodOverrides] = useState<
     Record<string, ControlTask["method"]>
+  >({});
+
+  /**
+   * 진척률도 마찬가지다. 배정 파생 작업은 진척률이 배정 상태에서 역산되어
+   * 임의 값을 담을 자리가 없으므로 여기에 보관한다.
+   */
+  const [progressOverrides, setProgressOverrides] = useState<
+    Record<string, number>
   >({});
 
   void mode;
@@ -297,12 +302,41 @@ export default function ControlSection({
       .filter((task) => !knownOperationIds.has(task.id))
       .map((task, index) => attachFallbackOperationLocation(task, index));
 
+    // 화면에서 조정한 방제 방식·진척률을 마지막에 덮어쓴다.
+    // 배정 파생 작업은 원본에 저장할 자리가 없어 이 방식으로만 반영된다.
     return [
       ...controlDispatchOperations,
       ...demoOperations,
       ...externalOperations,
-    ];
-  }, [controlDispatchOperations, demoOperations, tasks]);
+    ].map((operation) => {
+      const method = methodOverrides[operation.id];
+      const progress = progressOverrides[operation.id];
+      if (method === undefined && progress === undefined) return operation;
+
+      const nextProgress = progress ?? operation.progress;
+      return {
+        ...operation,
+        ...(method !== undefined ? { method } : {}),
+        ...(progress !== undefined
+          ? {
+              progress: nextProgress,
+              status:
+                nextProgress >= 100
+                  ? ("완료" as const)
+                  : nextProgress > 0
+                    ? ("진행" as const)
+                    : ("예정" as const),
+            }
+          : {}),
+      };
+    });
+  }, [
+    controlDispatchOperations,
+    demoOperations,
+    tasks,
+    methodOverrides,
+    progressOverrides,
+  ]);
 
   const selectedOperation =
     operations.find((operation) => operation.id === selectedOperationId) ??
@@ -321,13 +355,14 @@ export default function ControlSection({
 
   const handleRegisterTask = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!area.trim() && !newGridLocation) return;
+    if (!newGridLocation) return;
 
     const taskId = `CTR-${Math.floor(100 + Math.random() * 900)}`;
     // 목록에 격자를 함께 남긴다. 나중에 지도·보고서에서 위치를 찾을 근거가 된다.
-    const label = newGridLocation
-      ? `${newGridLocation.emdName} · 격자 ${newGridLocation.gridId}`
-      : area.trim();
+    const detail = regionValue.detail.trim();
+    const label =
+      `${newGridLocation.emdName} · 격자 ${newGridLocation.gridId}` +
+      (detail ? ` (${detail})` : "");
 
     const newTask: ControlTask = {
       id: taskId,
@@ -365,9 +400,7 @@ export default function ControlSection({
       ]);
     }
 
-    setArea("");
-    setNewLatitude("");
-    setNewLongitude("");
+    setRegionValue(EMPTY_REGION);
     setSelectedWorkerId("");
     setIsRegistering(false);
     setSelectedOperationId(taskId);
@@ -425,6 +458,14 @@ export default function ControlSection({
       operation.assignmentId &&
       onUpdateDispatchStatus
     ) {
+      // 배정에서 파생된 작업은 진척률이 배정 상태에서 역산되어,
+      // 상태를 갱신하는 것만으로는 10·60·100처럼 정해진 값으로만 튄다.
+      // 사용자가 조정한 값을 그대로 보여주려면 따로 담아 둬야 한다.
+      setProgressOverrides((previous) => ({
+        ...previous,
+        [operation.id]: progress,
+      }));
+
       onUpdateDispatchStatus(
         operation.assignmentId,
         progress >= 100
@@ -480,66 +521,14 @@ export default function ControlSection({
                 >
                   <div className="grid grid-cols-1 gap-3 p-5 md:grid-cols-2">
 
-                    {/* 방제 대상 위치 — 지역 또는 좌표 하나만 넣어도 됨 */}
+                    {/* 방제 대상 위치 — 목록에서 고르고 지번만 직접 적는다 */}
                     <div className="md:col-span-2">
-                      <label className="text-[11px] font-bold text-slate-600">
-                        방제 대상 위치
-                        <span className="ml-1 font-semibold text-slate-400">
-                          (지역 또는 좌표 중 하나만 입력해도 됩니다)
-                        </span>
-                      </label>
-
-                      <input
-                        value={area}
-                        onChange={(event) => setArea(event.target.value)}
-                        placeholder="예: 경상북도 포항시 북구 죽장면 상옥리 산42"
-                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-emerald-500"
+                      <RegionPicker
+                        label="방제 대상 위치"
+                        value={regionValue}
+                        onChange={setRegionValue}
+                        onResolve={setNewGridLocation}
                       />
-
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <input
-                          inputMode="decimal"
-                          value={newLatitude}
-                          onChange={(event) => setNewLatitude(event.target.value)}
-                          placeholder="위도 37.910052"
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-emerald-500"
-                        />
-                        <input
-                          inputMode="decimal"
-                          value={newLongitude}
-                          onChange={(event) => setNewLongitude(event.target.value)}
-                          placeholder="경도 127.787793"
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-emerald-500"
-                        />
-                      </div>
-
-                      <div
-                        className={
-                          newGridLocation
-                            ? "mt-2 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2"
-                            : "mt-2 flex items-center gap-2 rounded-lg bg-white px-3 py-2"
-                        }
-                      >
-                        <MapPin
-                          size={13}
-                          className={
-                            newGridLocation
-                              ? "shrink-0 text-emerald-600"
-                              : "shrink-0 text-slate-400"
-                          }
-                        />
-                        <span
-                          className={
-                            newGridLocation
-                              ? "text-[11px] font-black text-emerald-800"
-                              : "text-[11px] font-bold text-slate-500"
-                          }
-                        >
-                          {newGridLocation
-                            ? `${newGridLocation.emdName} · 격자 ${newGridLocation.gridId}`
-                            : "지역명 또는 좌표를 입력하면 행정동과 격자를 찾습니다."}
-                        </span>
-                      </div>
                     </div>
 
                     <label className="text-[11px] font-bold text-slate-600">
@@ -608,7 +597,7 @@ export default function ControlSection({
                       </button>
                       <button
                         type="submit"
-                        disabled={!area.trim() && !newGridLocation}
+                        disabled={!newGridLocation}
                         className="rounded-lg bg-emerald-800 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         배정 등록
@@ -664,7 +653,7 @@ export default function ControlSection({
                         </td>
                         <td className="px-3 py-3">
                           <select
-                            value={methodOverrides[operation.id] ?? operation.method}
+                            value={operation.method}
                             onClick={(event) => event.stopPropagation()}
                             onChange={(event) => {
                               event.stopPropagation();
@@ -674,7 +663,7 @@ export default function ControlSection({
                               );
                             }}
                             className={`rounded-md border px-1.5 py-1 text-[10px] font-bold outline-none ${methodBadge(
-                              methodOverrides[operation.id] ?? operation.method,
+                              operation.method,
                             )}`}
                           >
                             <option>파쇄</option>

@@ -37,9 +37,20 @@ def main() -> None:
     print(f"      {len(feats):,}개")
 
     print("[2/3] 중심점 추출")
-    ids, lats, lngs, emds = [], [], [], []
-    emd_names: list[str] = []
-    emd_index: dict[str, int] = {}
+    ids, lats, lngs = [], [], []
+    emds, sigungus, sidos = [], [], []
+
+    # 이름은 반복이 심하므로 문자열 테이블 + 인덱스로 저장한다.
+    tables: dict[str, list[str]] = {"emd": [], "sigungu": [], "sido": []}
+    indexes: dict[str, dict[str, int]] = {"emd": {}, "sigungu": {}, "sido": {}}
+
+    def slot_for(kind: str, name: str) -> int:
+        slot = indexes[kind].get(name)
+        if slot is None:
+            slot = len(tables[kind])
+            indexes[kind][name] = slot
+            tables[kind].append(name)
+        return slot
 
     for feature in feats:
         geom = feature.get("geometry") or {}
@@ -51,19 +62,20 @@ def main() -> None:
         lng, lat = ring_center(coords)
 
         props = feature.get("properties") or {}
-        name = str(props.get("emd_name") or "")
-        slot = emd_index.get(name)
-        if slot is None:
-            slot = len(emd_names)
-            emd_index[name] = slot
-            emd_names.append(name)
 
         ids.append(int(props.get("id")))
         lats.append(round(lat, 5))
         lngs.append(round(lng, 5))
-        emds.append(slot)
+        emds.append(slot_for("emd", str(props.get("emd_name") or "")))
+        sigungus.append(
+            slot_for("sigungu", str(props.get("sigungu_name") or ""))
+        )
+        sidos.append(slot_for("sido", str(props.get("sido_name") or "")))
 
-    print(f"      격자 {len(ids):,}개 / 행정동 {len(emd_names):,}개")
+    print(
+        f"      격자 {len(ids):,}개 / 시도 {len(tables['sido'])}개 / "
+        f"시군구 {len(tables['sigungu'])}개 / 행정동 {len(tables['emd']):,}개"
+    )
 
     print(f"[3/3] 저장: {OUT}")
     payload = {
@@ -71,9 +83,13 @@ def main() -> None:
         "ids": ids,
         "lats": lats,
         "lngs": lngs,
-        # emds[i]는 emdNames의 인덱스(같은 행정동 이름을 반복 저장하지 않기 위함)
+        # emds[i] 등은 각 이름 테이블의 인덱스(같은 이름을 반복 저장하지 않기 위함)
         "emds": emds,
-        "emdNames": emd_names,
+        "emdNames": tables["emd"],
+        "sigungus": sigungus,
+        "sigunguNames": tables["sigungu"],
+        "sidos": sidos,
+        "sidoNames": tables["sido"],
     }
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))

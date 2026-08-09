@@ -31,9 +31,13 @@ import {
 import {
   formatGridLocation,
   loadGridLookup,
-  resolveGridByRegionText,
-  resolveGridLocation,
+  type GridLocation,
 } from "../utils/gridLookup";
+import RegionPicker, {
+  EMPTY_REGION,
+  formatRegionText,
+  type RegionPickerValue,
+} from "./RegionPicker";
 
 type SurveyWorkerCandidate = {
   workerId: string;
@@ -330,10 +334,13 @@ export default function FieldSection({
   // 시민 제보 없이도 지역을 직접 지정해 예찰 요원을 배정할 수 있게 한다.
   // ---------------------------------------------------------
   const [isCreatingSurvey, setIsCreatingSurvey] = useState(false);
-  const [surveyRegion, setSurveyRegion] = useState("");
-  const [surveyLatitude, setSurveyLatitude] = useState("");
-  const [surveyLongitude, setSurveyLongitude] = useState("");
+  const [surveyRegionValue, setSurveyRegionValue] =
+    useState<RegionPickerValue>(EMPTY_REGION);
+  const [surveyGridLocation, setSurveyGridLocation] =
+    useState<GridLocation | null>(null);
   const [surveyMessage, setSurveyMessage] = useState("");
+
+  const surveyRegion = formatRegionText(surveyRegionValue);
 
   // 작업 완료 시 뜨는 현장 판정 팝업.
   // step: 감염 여부 -> (미감염일 때) 방제 이관 / 반려 선택
@@ -341,14 +348,6 @@ export default function FieldSection({
     useState<DispatchAssignment | null>(null);
   const [completionStep, setCompletionStep] =
     useState<"infection" | "clean">("infection");
-
-  // 지역명 또는 좌표 중 하나만 넣어도 행정동·격자를 찾는다.
-  const surveyGridLocation = useMemo(
-    () =>
-      resolveGridLocation(surveyLatitude, surveyLongitude) ??
-      resolveGridByRegionText(surveyRegion),
-    [surveyLatitude, surveyLongitude, surveyRegion, gridLookupReady],
-  );
 
   const selectedReport =
     reports.find(
@@ -747,19 +746,6 @@ export default function FieldSection({
       return;
     }
 
-    const regionParts = surveyRegion
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
-
-    const typedLatitude = Number(surveyLatitude);
-    const typedLongitude = Number(surveyLongitude);
-    const hasTypedCoords =
-      surveyLatitude.trim() !== "" &&
-      surveyLongitude.trim() !== "" &&
-      Number.isFinite(typedLatitude) &&
-      Number.isFinite(typedLongitude);
-
     onAssignWorker?.({
       assignmentId: `SURVEY-${surveyGridLocation.gridId}-${Date.now()}`,
       workerId: worker.workerId,
@@ -776,18 +762,14 @@ export default function FieldSection({
       homeSidoName: worker.homeSidoName,
       homeSigunguCode: worker.homeSigunguCode,
       homeSigunguName: worker.homeSigunguName,
-      targetSidoName: regionParts[0] ?? "",
+      targetSidoName: surveyRegionValue.sido,
       targetSigunguCode: "",
-      targetSigunguName: regionParts[1] ?? "",
+      targetSigunguName: surveyRegionValue.sigungu,
       targetEmdCode: "",
       targetEmdName: surveyGridLocation.emdName,
       gridId: surveyGridLocation.gridId,
-      targetLatitude: hasTypedCoords
-        ? typedLatitude
-        : surveyGridLocation.latitude,
-      targetLongitude: hasTypedCoords
-        ? typedLongitude
-        : surveyGridLocation.longitude,
+      targetLatitude: surveyGridLocation.latitude,
+      targetLongitude: surveyGridLocation.longitude,
       priorityGrade: "현장 확인",
       riskGrade: "주의",
       riskScore: 0,
@@ -808,9 +790,7 @@ export default function FieldSection({
       `${worker.workerName} 요원을 ${surveyGridLocation.emdName} 격자 ` +
         `${surveyGridLocation.gridId}에 배정했습니다.`,
     );
-    setSurveyRegion("");
-    setSurveyLatitude("");
-    setSurveyLongitude("");
+    setSurveyRegionValue(EMPTY_REGION);
     setIsCreatingSurvey(false);
   };
 
@@ -998,69 +978,12 @@ export default function FieldSection({
           {/* 신규 예찰 배정 등록 */}
           {isCreatingSurvey && (
             <div className="shrink-0 space-y-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
-              <div>
-                <label className="mb-1 block text-[11px] font-black text-slate-600">
-                  예찰 대상 위치
-                  <span className="ml-1 font-semibold text-slate-400">
-                    (지역 또는 좌표 중 하나만 입력해도 됩니다)
-                  </span>
-                </label>
-
-                <input
-                  type="text"
-                  value={surveyRegion}
-                  onChange={(event) => setSurveyRegion(event.target.value)}
-                  placeholder="예: 경상북도 포항시 북구 죽장면 상옥리 산42"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium outline-none focus:border-emerald-500"
-                />
-
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={surveyLatitude}
-                    onChange={(event) => setSurveyLatitude(event.target.value)}
-                    placeholder="위도 37.910052"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-emerald-500"
-                  />
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={surveyLongitude}
-                    onChange={(event) => setSurveyLongitude(event.target.value)}
-                    placeholder="경도 127.787793"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div
-                  className={
-                    surveyGridLocation
-                      ? "mt-2 flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2"
-                      : "mt-2 flex items-center gap-2 rounded-xl bg-white px-3 py-2"
-                  }
-                >
-                  <MapPin
-                    size={13}
-                    className={
-                      surveyGridLocation
-                        ? "shrink-0 text-emerald-600"
-                        : "shrink-0 text-slate-400"
-                    }
-                  />
-                  <span
-                    className={
-                      surveyGridLocation
-                        ? "text-[11px] font-black text-emerald-800"
-                        : "text-[11px] font-bold text-slate-500"
-                    }
-                  >
-                    {surveyGridLocation
-                      ? `${surveyGridLocation.emdName} · 격자 ${surveyGridLocation.gridId}`
-                      : "지역명 또는 좌표를 입력하면 행정동과 격자를 찾습니다."}
-                  </span>
-                </div>
-              </div>
+              <RegionPicker
+                label="예찰 대상 위치"
+                value={surveyRegionValue}
+                onChange={setSurveyRegionValue}
+                onResolve={setSurveyGridLocation}
+              />
 
               {/* 요원 선택 */}
               <div>

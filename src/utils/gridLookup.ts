@@ -24,6 +24,10 @@ interface GridLookupPayload {
   lngs: number[];
   emds: number[];
   emdNames: string[];
+  sigungus: number[];
+  sigunguNames: string[];
+  sidos: number[];
+  sidoNames: string[];
 }
 
 const LOOKUP_PATH = "/data/grid_lookup.json";
@@ -237,6 +241,118 @@ export function resolveGridByRegionText(
     }
   }
   return matched;
+}
+
+/* ------------------------------------------------------------------
+ * 행정구역 선택(시도 -> 시군구 -> 읍면동)
+ * 등록 화면에서 주소를 직접 적는 대신 목록에서 고르게 하기 위한 것.
+ * ---------------------------------------------------------------- */
+
+/** 격자가 존재하는 시도 목록. */
+export function listSido(): string[] {
+  if (!payload) return [];
+  const seen = new Set<number>();
+  for (const slot of payload.sidos) seen.add(slot);
+  return [...seen]
+    .map((slot) => payload!.sidoNames[slot])
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "ko"));
+}
+
+/** 해당 시도에 속한 시군구 목록. */
+export function listSigungu(sido: string): string[] {
+  if (!payload || !sido) return [];
+  const sidoSlot = payload.sidoNames.indexOf(sido);
+  if (sidoSlot < 0) return [];
+
+  const seen = new Set<number>();
+  for (let i = 0; i < payload.ids.length; i += 1) {
+    if (payload.sidos[i] === sidoSlot) seen.add(payload.sigungus[i]);
+  }
+  return [...seen]
+    .map((slot) => payload!.sigunguNames[slot])
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "ko"));
+}
+
+/** 해당 시군구에 속한 읍면동 목록. */
+export function listEmd(sido: string, sigungu: string): string[] {
+  if (!payload || !sido || !sigungu) return [];
+  const sidoSlot = payload.sidoNames.indexOf(sido);
+  const sigunguSlot = payload.sigunguNames.indexOf(sigungu);
+  if (sidoSlot < 0 || sigunguSlot < 0) return [];
+
+  const seen = new Set<number>();
+  for (let i = 0; i < payload.ids.length; i += 1) {
+    if (
+      payload.sidos[i] === sidoSlot &&
+      payload.sigungus[i] === sigunguSlot
+    ) {
+      seen.add(payload.emds[i]);
+    }
+  }
+  return [...seen]
+    .map((slot) => payload!.emdNames[slot])
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "ko"));
+}
+
+/**
+ * 고른 행정구역의 대표 격자.
+ * 같은 이름의 읍면동이 여러 시군구에 있을 수 있어, 시도·시군구까지 함께 받는다.
+ * 대표 격자는 해당 범위 격자들의 평균 위치에 가장 가까운 격자로 잡는다.
+ */
+export function resolveGridByRegion(
+  sido: string,
+  sigungu: string,
+  emd: string,
+): GridLocation | null {
+  if (!payload || !sido || !sigungu || !emd) return null;
+
+  const sidoSlot = payload.sidoNames.indexOf(sido);
+  const sigunguSlot = payload.sigunguNames.indexOf(sigungu);
+  const emdSlot = payload.emdNames.indexOf(emd);
+  if (sidoSlot < 0 || sigunguSlot < 0 || emdSlot < 0) return null;
+
+  const members: number[] = [];
+  let sumLat = 0;
+  let sumLng = 0;
+  for (let i = 0; i < payload.ids.length; i += 1) {
+    if (
+      payload.sidos[i] !== sidoSlot ||
+      payload.sigungus[i] !== sigunguSlot ||
+      payload.emds[i] !== emdSlot
+    ) {
+      continue;
+    }
+    members.push(i);
+    sumLat += payload.lats[i];
+    sumLng += payload.lngs[i];
+  }
+  if (!members.length) return null;
+
+  const meanLat = sumLat / members.length;
+  const meanLng = sumLng / members.length;
+
+  let best = members[0];
+  let bestSquared = Infinity;
+  for (const index of members) {
+    const dLat = payload.lats[index] - meanLat;
+    const dLng = payload.lngs[index] - meanLng;
+    const squared = dLat * dLat + dLng * dLng;
+    if (squared < bestSquared) {
+      bestSquared = squared;
+      best = index;
+    }
+  }
+
+  return {
+    gridId: String(payload.ids[best]),
+    emdName: emd,
+    latitude: payload.lats[best],
+    longitude: payload.lngs[best],
+    distanceM: 0,
+  };
 }
 
 /**
