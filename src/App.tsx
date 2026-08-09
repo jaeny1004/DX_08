@@ -1362,16 +1362,30 @@ export default function App() {
     assignmentId: string,
     status: DispatchStatus
   ) => {
+    let finishedControlTreeId: string | null = null;
+
     setDispatchAssignments((previous) =>
-      previous.map((assignment) =>
-        assignment.assignmentId === assignmentId
-          ? {
-            ...assignment,
-            status,
-          }
-          : assignment
-      )
+      previous.map((assignment) => {
+        if (assignment.assignmentId !== assignmentId) return assignment;
+
+        // 방제 작업이 끝나면 원래 확진목도 방제완료로 넘긴다.
+        if (
+          assignment.taskType === "CONTROL" &&
+          assignment.sourceTreeId &&
+          (status === "작업 완료" ||
+            status === "복귀" ||
+            status === "복귀 완료")
+        ) {
+          finishedControlTreeId = assignment.sourceTreeId;
+        }
+
+        return { ...assignment, status };
+      })
     );
+
+    if (finishedControlTreeId) {
+      void handleUpdateTreeStatus(finishedControlTreeId, "방제완료");
+    }
   };
 
   const handleCancelDispatch = (

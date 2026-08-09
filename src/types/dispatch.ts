@@ -51,6 +51,12 @@ export type DispatchAssignment = {
 
   gridId: string;
 
+  /**
+   * 이 배정을 만든 확진목의 관리 ID.
+   * 방제 작업이 끝났을 때 어느 확진목을 방제완료로 바꿔야 하는지 찾는 데 쓴다.
+   */
+  sourceTreeId?: string;
+
   /** 선택 격자의 중심점(WGS84) — 예찰 리스트와 지도에서 대표 좌표로 사용 */
   targetLatitude?: number;
   targetLongitude?: number;

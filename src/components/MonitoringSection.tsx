@@ -2473,6 +2473,8 @@ export default function MonitoringSection({
         resolvedGrid?.emdName || regionParts.slice(2).join(" "),
       // 격자를 못 찾은 경우에만 확진목 관리 ID로 대체한다.
       gridId: resolvedGrid?.gridId ?? controlAssignmentTree.id,
+      // 방제가 끝나면 이 확진목을 방제완료로 바꾼다.
+      sourceTreeId: controlAssignmentTree.id,
       targetLatitude: latitude,
       targetLongitude: longitude,
       priorityGrade,

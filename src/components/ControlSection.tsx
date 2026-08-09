@@ -70,8 +70,9 @@ interface ControlSectionProps {
 
 const DISPATCH_PROGRESS: Record<DispatchStatus, number> = {
   "배정 대기": 0,
+  // 배정 직후 '진행'으로 잡히는 단계는 10%에서 시작한다.
   "배정 수락": 10,
-  "출동": 25,
+  "출동": 10,
   "현장 도착": 40,
   "작업 중": 60,
   "작업 완료": 100,
@@ -308,10 +309,12 @@ export default function ControlSection({
     operations[0] ??
     null;
 
+  // 완료된 작업은 현황 탭에서 내린다. 진척률 100%도 완료로 본다.
   const activeOperations = useMemo(
     () =>
       operations.filter(
-        (operation) => operation.status !== "완료",
+        (operation) =>
+          operation.status !== "완료" && operation.progress < 100,
       ),
     [operations],
   );
@@ -400,8 +403,9 @@ export default function ControlSection({
     operation: ControlOperation,
     nextStatus: ControlTask["status"],
   ) => {
+    // 진행으로 바꾸면 10%에서 시작한다.
     const targetProgress =
-      nextStatus === "완료" ? 100 : nextStatus === "진행" ? 60 : 0;
+      nextStatus === "완료" ? 100 : nextStatus === "진행" ? 10 : 0;
     updateProgress(operation, targetProgress - operation.progress);
   };
 
@@ -616,7 +620,7 @@ export default function ControlSection({
             </AnimatePresence>
 
             <div className="custom-scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-auto">
-              {operations.length === 0 ? (
+              {activeOperations.length === 0 ? (
                 <div className="flex h-full min-h-[320px] min-w-[660px] items-center justify-center px-6 py-12 text-center">
                   <div>
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
@@ -642,7 +646,7 @@ export default function ControlSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {operations.map((operation) => {
+                  {activeOperations.map((operation) => {
                     const selected = operation.id === selectedOperation?.id;
                     return (
                       <tr
