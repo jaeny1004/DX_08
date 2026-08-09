@@ -1,4 +1,4 @@
-"""표지, 목차, 섹션 헤더 바(Ⅰ│ │제목) 빌더."""
+"""표지, 목차, 섹션 헤더 바 빌더."""
 from __future__ import annotations
 
 from xml.sax.saxutils import escape
@@ -30,7 +30,13 @@ def build_toc(entries: list[str]) -> list:
 
 
 def build_section_bar(roman: str, title: str) -> Table:
-    table = Table([[roman, title]], colWidths=[1.6 * cm, 14.4 * cm], rowHeights=[1 * cm])
+    # Table의 일반 문자열은 Paragraph처럼 for_pdf()를 자동으로 거치지 않는다.
+    # 섹션 번호의 Ⅰ~Ⅴ도 반드시 여기에서 치환해야 엑박이 생기지 않는다.
+    table = Table(
+        [[for_pdf(roman), for_pdf(title)]],
+        colWidths=[1.6 * cm, 14.4 * cm],
+        rowHeights=[1 * cm],
+    )
     table.setStyle(
         TableStyle(
             [

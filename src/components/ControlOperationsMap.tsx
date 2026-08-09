@@ -15,6 +15,7 @@ interface ControlOperationsMapProps {
   operations: ControlOperation[];
   selectedOperationId: string | null;
   onSelect: (operation: ControlOperation) => void;
+  sessionOperationIds?: string[];
 }
 
 const DEFAULT_CENTER: [number, number] = [37.979365, 127.649056];
@@ -61,7 +62,11 @@ export function ControlOperationsMap({
   operations,
   selectedOperationId,
   onSelect,
+  sessionOperationIds = [],
 }: ControlOperationsMapProps) {
+  const sessionOperationIdSet = new Set(sessionOperationIds);
+  const sessionLayerKey =
+    [...sessionOperationIds].sort().join("|") || "empty";
   const selected = operations.find((item) => item.id === selectedOperationId);
   const initial = selected ?? operations[0];
   const center: [number, number] = initial
@@ -69,8 +74,9 @@ export function ControlOperationsMap({
     : DEFAULT_CENTER;
 
   return (
-    <div className="relative h-[600px] w-full overflow-hidden bg-slate-100">
+    <div className="relative h-[360px] w-full overflow-hidden bg-slate-100">
       <MapContainer
+        key={`control-map-${sessionLayerKey}`}
         center={center}
         zoom={selected ? 16 : 13}
         scrollWheelZoom
@@ -88,6 +94,7 @@ export function ControlOperationsMap({
 
         {operations.map((operation) => {
           const isSelected = operation.id === selectedOperationId;
+          const isSessionOperation = sessionOperationIdSet.has(operation.id);
 
           return (
             <CircleMarker
@@ -95,19 +102,28 @@ export function ControlOperationsMap({
               center={[operation.latitude, operation.longitude]}
               radius={isSelected ? 13 : 10}
               pathOptions={{
-                color: "#ffffff",
+                color: isSessionOperation
+                  ? isSelected
+                    ? "#5b21b6"
+                    : "#7c3aed"
+                  : "#ffffff",
                 weight: isSelected ? 4 : 3,
-                fillColor: statusColor(operation.status),
+                fillColor: isSessionOperation
+                  ? "#ede9fe"
+                  : statusColor(operation.status),
                 fillOpacity: 1,
               }}
               eventHandlers={{ click: () => onSelect(operation) }}
             >
               <Tooltip direction="top" offset={[0, -9]} opacity={1}>
+                {isSessionOperation && <strong>이번 세션 배정 · </strong>}
                 <strong>{operation.workerName}</strong> · {operation.progress}% 진행
               </Tooltip>
               <Popup>
                 <div className="min-w-[230px] text-xs leading-5">
-                  <strong>{operation.id} · {operation.method}</strong><br />
+                  <strong>
+                    {isSessionOperation ? "홈 지도 방제 배정" : operation.id} · {operation.method}
+                  </strong><br />
                   위치: {operation.area}<br />
                   담당: {operation.workerName} ({operation.workerRole})<br />
                   업체: {operation.company}<br />
@@ -124,6 +140,7 @@ export function ControlOperationsMap({
       <div className="pointer-events-none absolute bottom-3 left-3 z-[500] flex gap-3 rounded-lg bg-slate-900/90 px-3 py-2 text-[9px] font-bold text-white shadow-lg">
         <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-emerald-600" /> 진행</span>
         <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-amber-500" /> 예정</span>
+        <span className="flex items-center gap-1"><i className="h-2 w-2 rounded-full border-2 border-violet-700 bg-violet-100" /> 이번 세션 방제 배정</span>
         <span>GPS SYNC · DEMO</span>
       </div>
     </div>

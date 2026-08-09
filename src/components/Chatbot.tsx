@@ -112,7 +112,7 @@ export default function Chatbot({
   const [isPresetOpen, setIsPresetOpen] =
     useState(false);
 
-  const messagesEndRef =
+  const messagesContainerRef =
     useRef<HTMLDivElement>(null);
 
   const gridContext = useMemo(
@@ -121,9 +121,25 @@ export default function Chatbot({
   );
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth",
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    // scrollIntoView()는 챗봇 바깥의 홈 스크롤 영역까지 움직일 수 있다.
+    // 메시지 컨테이너 자체의 scrollTop만 변경해 Leaflet 지도가 재배치되는
+    // 현상을 막는다.
+    const frameId = window.requestAnimationFrame(() => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior:
+          messages.length > 1 || isLoading
+            ? "smooth"
+            : "auto",
+      });
     });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, [messages, isLoading]);
 
   const handleSendMessage = async (
@@ -239,7 +255,10 @@ export default function Chatbot({
 
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 text-sm">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto px-6 py-5 space-y-5 text-sm"
+      >
         {messages.map((message) => (
           <div
             key={message.id}
@@ -321,7 +340,6 @@ export default function Chatbot({
           </div>
         )}
 
-        <div ref={messagesEndRef} />
       </div>
 
       <div className="border-t border-slate-200 bg-white px-6 py-4 shrink-0">

@@ -50,6 +50,11 @@ export type DispatchAssignment = {
   targetEmdName: string;
 
   gridId: string;
+
+  /** 선택 격자의 중심점(WGS84) — 예찰 리스트와 지도에서 대표 좌표로 사용 */
+  targetLatitude?: number;
+  targetLongitude?: number;
+
   priorityGrade: string;
   riskGrade: string;
   riskScore: number;

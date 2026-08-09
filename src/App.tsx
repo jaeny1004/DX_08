@@ -488,28 +488,6 @@ function mapPineRecordToCrowdReport(
   };
 }
 
-function mapCrowdStatusToPineStatus(
-  status: CrowdReport["status"]
-):
-  | "pending"
-  | "in_progress"
-  | "completed"
-  | "rejected" {
-  switch (status) {
-    case "접수 완료":
-      return "pending";
-
-    case "조사 완료":
-      return "in_progress";
-
-    case "방제 완료":
-      return "completed";
-
-    case "반려":
-      return "rejected";
-  }
-}
-
 type ModuleId =
   | "dashboard"
   | "monitoring"
@@ -636,25 +614,7 @@ export default function App() {
   const [
     dispatchAssignments,
     setDispatchAssignments,
-  ] = useState<DispatchAssignment[]>(() => {
-    try {
-      const saved = localStorage.getItem(
-        "pwd-dispatch-assignments"
-      );
-
-      if (!saved) {
-        return [];
-      }
-
-      const parsed = JSON.parse(saved);
-
-      return Array.isArray(parsed)
-        ? parsed
-        : [];
-    } catch {
-      return [];
-    }
-  });
+  ] = useState<DispatchAssignment[]>([]);
 
   const [isChatOpen, setIsChatOpen] =
     useState(false);
@@ -691,13 +651,6 @@ export default function App() {
         setIsAuthChecking(false);
       });
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem(
-      "pwd-dispatch-assignments",
-      JSON.stringify(dispatchAssignments)
-    );
-  }, [dispatchAssignments]);
 
   useEffect(() => {
     if (!authUser) {
@@ -1277,6 +1230,71 @@ export default function App() {
     }
   };
 
+  const handleDeleteTrees = async (
+    ids: string[]
+  ): Promise<string[]> => {
+    const uniqueIds = Array.from(
+      new Set(ids.filter(Boolean))
+    );
+
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from("confirmed_trees")
+      .delete()
+      .in("id", uniqueIds)
+      .select("id");
+
+    if (error) {
+      console.error(
+        "확진목 삭제 실패:",
+        error
+      );
+
+      window.alert(
+        "확진목을 삭제하지 못했습니다. Supabase DELETE 정책과 콘솔 오류를 확인해 주세요."
+      );
+
+      return [];
+    }
+
+    const deletedIds = Array.isArray(data)
+      ? data.map((row) => String(row.id))
+      : [];
+
+    if (deletedIds.length === 0) {
+      window.alert(
+        "삭제 요청은 처리됐지만 실제 삭제된 행이 없습니다. Supabase DELETE 정책을 확인해 주세요."
+      );
+
+      return [];
+    }
+
+    const deletedIdSet = new Set(
+      deletedIds
+    );
+
+    setTrees((previous) =>
+      previous.filter(
+        (tree) =>
+          !deletedIdSet.has(tree.id)
+      )
+    );
+
+    if (
+      deletedIds.length !==
+      uniqueIds.length
+    ) {
+      window.alert(
+        `${uniqueIds.length}건 중 ${deletedIds.length}건만 삭제되었습니다.`
+      );
+    }
+
+    return deletedIds;
+  };
+
   const handleUpdateWorkerStatus = (
     id: string,
     status: WorkerStatus["status"]
@@ -1336,48 +1354,6 @@ export default function App() {
           assignment.assignmentId !== assignmentId
       )
     );
-  };
-
-  const handleUpdateReportStatus = async (
-    id: string,
-    status: CrowdReport["status"]
-  ) => {
-    const previousReports = reports;
-
-    // 화면부터 즉시 변경
-    setReports((previous) =>
-      previous.map((report) =>
-        report.id === id
-          ? {
-            ...report,
-            status,
-          }
-          : report
-      )
-    );
-
-    const pineStatus =
-      mapCrowdStatusToPineStatus(status);
-
-    const { error } = await supabase
-      .from("pine_records")
-      .update({
-        status: pineStatus,
-      })
-      .eq("id", id);
-
-    if (error) {
-      console.error(
-        "민원 처리 상태 저장 실패:",
-        error
-      );
-
-      setReports(previousReports);
-
-      window.alert(
-        "민원 처리 상태를 저장하지 못했습니다."
-      );
-    }
   };
 
   const handleConfirmInfection = async (
@@ -1502,7 +1478,7 @@ export default function App() {
         "확진목은 등록됐지만 원본 제보의 전환 상태를 저장하지 못했습니다."
       );
 
-      return;
+      return false;
     }
 
     /*
@@ -1523,7 +1499,55 @@ export default function App() {
       "monitoring"
     );
 
+    return true;
+  };
 
+  const handleRejectReport = async (
+    report: CrowdReport
+  ) => {
+    const confirmed = window.confirm(
+      `제보 [${report.title}]을 반려하고 원본 데이터를 삭제하시겠습니까?\n\n` +
+      "삭제한 제보 데이터는 복구할 수 없습니다."
+    );
+
+    if (!confirmed) {
+      return false;
+    }
+
+    const { data, error } = await supabase
+      .from("pine_records")
+      .delete()
+      .eq("id", report.id)
+      .select("id");
+
+    if (error) {
+      console.error(
+        "시민 제보 반려 삭제 실패:",
+        error
+      );
+
+      window.alert(
+        `반려 처리 중 데이터를 삭제하지 못했습니다.\n${error.message}`
+      );
+
+      return false;
+    }
+
+    if (!data || data.length === 0) {
+      window.alert(
+        "삭제된 데이터가 없습니다. pine_records의 DELETE 정책을 확인해 주세요."
+      );
+
+      return false;
+    }
+
+    setReports((previous) =>
+      previous.filter(
+        (item) => String(item.id) !== String(report.id)
+      )
+    );
+
+    return true;
   };
 
   const handleAddTask = (
@@ -1591,7 +1615,7 @@ export default function App() {
     },
     {
       id: "control",
-      label: "실시간 방제 현황",
+      label: "방제",
       icon: ShieldCheck,
     },
     ...adminGroup.items,
@@ -2054,14 +2078,14 @@ export default function App() {
 
                 {isSidebarOpen && (
                   <span className="truncate text-sm font-extrabold">
-                    실시간 방제 현황
+                    방제
                   </span>
                 )}
 
                 {/* 접힌 상태에서 방제 이름 Tooltip */}
                 {!isSidebarOpen && (
                   <span className="pointer-events-none absolute left-[58px] z-[100] hidden whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-lg group-hover:block">
-                    실시간 방제 현황
+                    방제
                   </span>
                 )}
               </div>
@@ -2409,6 +2433,15 @@ export default function App() {
                     onUpdateTreeStatus={
                       handleUpdateTreeStatus
                     }
+                    onDeleteTrees={
+                      handleDeleteTrees
+                    }
+                    dispatchAssignments={
+                      dispatchAssignments
+                    }
+                    onAssignWorker={
+                      handleAssignWorker
+                    }
                   />
                 )}
 
@@ -2421,8 +2454,9 @@ export default function App() {
                       onUpdateDispatchStatus={handleUpdateDispatchStatus}
                       onCancelDispatch={handleCancelDispatch}
                       onUpdateWorkerStatus={handleUpdateWorkerStatus}
-                      onUpdateReportStatus={handleUpdateReportStatus}
                       onConfirmInfection={handleConfirmInfection}
+                      onRejectReport={handleRejectReport}
+                      onAssignWorker={handleAssignWorker}
                     />
                   </div>
                 )}
@@ -2449,8 +2483,10 @@ export default function App() {
                       mode="status"
                       tasks={tasks}
                       grids={grids}
+                      dispatchAssignments={dispatchAssignments}
                       onAddTask={handleAddTask}
                       onUpdateTaskProgress={handleUpdateTaskProgress}
+                      onUpdateDispatchStatus={handleUpdateDispatchStatus}
                     />
                   </div>
                 )}
@@ -2596,7 +2632,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[55] bg-slate-950/25 backdrop-blur-[1px]"
+              className="fixed inset-0 z-[2000] bg-slate-950/25 backdrop-blur-[1px]"
             />
 
             <motion.aside
@@ -2608,7 +2644,7 @@ export default function App() {
                 stiffness: 320,
                 damping: 34,
               }}
-              className="fixed bottom-0 right-0 top-0 z-[60] w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[480px]"
+              className="fixed bottom-0 right-0 top-0 z-[2010] w-full border-l border-slate-200 bg-white shadow-2xl sm:w-[480px]"
             >
               <button
                 type="button"

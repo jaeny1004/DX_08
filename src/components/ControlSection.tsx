@@ -12,6 +12,10 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 import type { ControlTask, GridCell } from "../types";
+import type {
+  DispatchAssignment,
+  DispatchStatus,
+} from "../types/dispatch";
 import {
   CONTROL_OPERATIONS,
   attachFallbackOperationLocation,
@@ -24,8 +28,93 @@ interface ControlSectionProps {
   mode: "status" | "work";
   tasks: ControlTask[];
   grids: GridCell[];
+  dispatchAssignments?: DispatchAssignment[];
   onAddTask: (task: ControlTask) => void;
   onUpdateTaskProgress: (id: string, progress: number) => void;
+  onUpdateDispatchStatus?: (
+    assignmentId: string,
+    status: DispatchStatus,
+  ) => void;
+}
+
+const DISPATCH_PROGRESS: Record<DispatchStatus, number> = {
+  "배정 대기": 0,
+  "배정 수락": 10,
+  "출동": 25,
+  "현장 도착": 40,
+  "작업 중": 60,
+  "작업 완료": 100,
+  "복귀": 100,
+  "복귀 완료": 100,
+};
+
+function controlTaskStatus(
+  status: DispatchStatus,
+): ControlTask["status"] {
+  if (
+    status === "작업 완료" ||
+    status === "복귀" ||
+    status === "복귀 완료"
+  ) {
+    return "완료";
+  }
+
+  if (
+    status === "출동" ||
+    status === "현장 도착" ||
+    status === "작업 중"
+  ) {
+    return "진행";
+  }
+
+  return "예정";
+}
+
+function dispatchToControlOperation(
+  assignment: DispatchAssignment,
+  index: number,
+): ControlOperation {
+  const latitude = Number(assignment.targetLatitude);
+  const longitude = Number(assignment.targetLongitude);
+  const assignedAt = new Date(assignment.assignedAt);
+  const startDate = Number.isNaN(assignedAt.getTime())
+    ? new Date()
+    : assignedAt;
+  const endDate = new Date(
+    startDate.getTime() + 7 * 24 * 60 * 60 * 1000,
+  );
+  const area = [
+    assignment.targetSidoName,
+    assignment.targetSigunguName,
+    assignment.targetEmdName,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    id: `CTR-${assignment.gridId}-${assignment.workerId}`,
+    assignmentId: assignment.assignmentId,
+    area: area || `GRID-${assignment.gridId}`,
+    method: "훈증",
+    status: controlTaskStatus(assignment.status),
+    company: `${assignment.assignmentType} 방제팀`,
+    workers: 1,
+    progress: DISPATCH_PROGRESS[assignment.status],
+    startDate: startDate.toISOString().split("T")[0],
+    endDate: endDate.toISOString().split("T")[0],
+    latitude: Number.isFinite(latitude)
+      ? latitude
+      : 37.979365 + index * 0.004,
+    longitude: Number.isFinite(longitude)
+      ? longitude
+      : 127.649056 - index * 0.004,
+    workerId: assignment.workerId,
+    workerName: assignment.workerName,
+    workerRole: "방제요원",
+    vehicle: "차량 배정 대기",
+    currentStage: assignment.status,
+    batteryPercent: assignment.batteryPercent,
+  };
 }
 
 function methodBadge(method: ControlTask["method"]) {
@@ -53,8 +142,10 @@ export default function ControlSection({
   mode,
   tasks,
   grids,
+  dispatchAssignments = [],
   onAddTask,
   onUpdateTaskProgress,
+  onUpdateDispatchStatus,
 }: ControlSectionProps) {
   const [demoOperations, setDemoOperations] = useState<ControlOperation[]>(
     () => CONTROL_OPERATIONS.map((item) => ({ ...item })),
@@ -71,18 +162,47 @@ export default function ControlSection({
   void mode;
   void grids;
 
+  const controlDispatchOperations = useMemo(
+    () =>
+      dispatchAssignments
+        .filter(
+          (assignment) =>
+            assignment.taskType === "CONTROL",
+        )
+        .map(dispatchToControlOperation),
+    [dispatchAssignments],
+  );
+
   const operations = useMemo(() => {
+    const knownOperationIds = new Set([
+      ...demoOperations.map((operation) => operation.id),
+      ...controlDispatchOperations.map(
+        (operation) => operation.id,
+      ),
+    ]);
     const externalOperations = tasks
-      .filter((task) => !demoOperations.some((demo) => demo.id === task.id))
+      .filter((task) => !knownOperationIds.has(task.id))
       .map((task, index) => attachFallbackOperationLocation(task, index));
 
-    return [...demoOperations, ...externalOperations];
-  }, [demoOperations, tasks]);
+    return [
+      ...controlDispatchOperations,
+      ...demoOperations,
+      ...externalOperations,
+    ];
+  }, [controlDispatchOperations, demoOperations, tasks]);
 
   const selectedOperation =
     operations.find((operation) => operation.id === selectedOperationId) ??
     operations[0] ??
     null;
+
+  const activeOperations = useMemo(
+    () =>
+      operations.filter(
+        (operation) => operation.status !== "완료",
+      ),
+    [operations],
+  );
 
   const handleRegisterTask = (event: React.FormEvent) => {
     event.preventDefault();
@@ -120,16 +240,29 @@ export default function ControlSection({
           item.id === operation.id ? { ...item, progress, status } : item,
         ),
       );
+    } else if (
+      operation.assignmentId &&
+      onUpdateDispatchStatus
+    ) {
+      onUpdateDispatchStatus(
+        operation.assignmentId,
+        progress >= 100
+          ? "작업 완료"
+          : progress > 0
+            ? "작업 중"
+            : "배정 대기",
+      );
     } else {
       onUpdateTaskProgress(operation.id, progress);
     }
   };
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        <section className="min-w-0 xl:col-span-6">
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="h-full min-h-0">
+      <div className="grid h-full min-h-0 grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="flex h-full min-h-0 min-w-0 flex-col gap-6 xl:col-span-6">
+        <section className="flex min-h-0 flex-1">
+          <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <header className="border-b border-slate-200 px-5 py-4">
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
@@ -140,7 +273,7 @@ export default function ControlSection({
                     </h2>
                   </div>
                   <p className="mt-1 text-[10px] font-semibold text-slate-400">
-                    목록과 지도는 동일한 시연용 작업 데이터를 사용합니다.
+                    등록·배정된 작업이 목록과 지도에 함께 표시됩니다.
                   </p>
                 </div>
 
@@ -191,7 +324,7 @@ export default function ControlSection({
                       </select>
                     </label>
                     <label className="text-[11px] font-bold text-slate-600">
-                      수주 시공사
+                      담당 요원
                       <input
                         value={company}
                         onChange={(event) => setCompany(event.target.value)}
@@ -228,11 +361,26 @@ export default function ControlSection({
               )}
             </AnimatePresence>
 
-            <div className="max-h-[600px] overflow-auto">
+            <div className="custom-scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+              {operations.length === 0 ? (
+                <div className="flex h-full min-h-[320px] min-w-[660px] items-center justify-center px-6 py-12 text-center">
+                  <div>
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+                      <ListCheckIcon size={22} />
+                    </div>
+                    <p className="mt-4 text-sm font-black text-slate-700">
+                      등록된 방제 작업이 없습니다.
+                    </p>
+                    <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                      홈 지도에서 방제 요원을 배정하거나 새 작업을 추가해 주세요.
+                    </p>
+                  </div>
+                </div>
+              ) : (
               <table className="w-full min-w-[660px] text-left text-xs">
                 <thead className="sticky top-0 z-10 bg-slate-50">
                   <tr className="border-b border-slate-200">
-                    {['공정 ID', '방제 구역', '방제 방식', '시공 업체', '진척률', '상태'].map((label) => (
+                    {['공정 ID', '방제 구역', '방제 방식', '담당 요원', '진척률', '상태'].map((label) => (
                       <th key={label} className="whitespace-nowrap px-3 py-2.5 text-[10px] font-bold text-slate-500">
                         {label}
                       </th>
@@ -261,7 +409,7 @@ export default function ControlSection({
                             {operation.method}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-[11px] text-slate-700">{operation.company}</td>
+                        <td className="px-3 py-3 text-[11px] font-bold text-slate-700">{operation.workerName}</td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-1.5">
                             <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
@@ -280,11 +428,18 @@ export default function ControlSection({
                   })}
                 </tbody>
               </table>
+              )}
             </div>
           </div>
         </section>
 
-        <section className="min-w-0 xl:col-span-6">
+        <div className="shrink-0">
+          <InventoryPanel />
+        </div>
+        </div>
+
+        <div className="flex h-full min-h-0 min-w-0 flex-col gap-6 xl:col-span-6">
+        <section className="min-w-0 shrink-0">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <header className="border-b border-slate-200 px-5 py-4">
               <div className="flex items-center justify-between gap-4">
@@ -340,9 +495,92 @@ export default function ControlSection({
             )}
           </div>
         </section>
-      </div>
 
-      <InventoryPanel />
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <header className="border-b border-slate-200 px-5 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Navigation size={17} className="text-emerald-700" />
+                  <h2 className="text-base font-black text-slate-950">
+                    출동 중인 방제 요원
+                  </h2>
+                </div>
+                <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                  작업 목록과 지도에 표시된 방제 요원의 현재 정보를 확인합니다.
+                </p>
+              </div>
+
+              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">
+                {activeOperations.length}명
+              </span>
+            </div>
+          </header>
+
+          <div className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-4 pr-3">
+            {activeOperations.length === 0 && (
+              <div className="flex h-full min-h-24 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400">
+                현재 출동 중인 방제 요원이 없습니다.
+              </div>
+            )}
+
+            {activeOperations.map((operation) => {
+              const isSelected =
+                operation.id === selectedOperation?.id;
+
+              return (
+                <button
+                  key={operation.id}
+                  type="button"
+                  onClick={() =>
+                    setSelectedOperationId(operation.id)
+                  }
+                  className={`grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border p-3 text-left transition ${
+                    isSelected
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-slate-100 bg-slate-50/70 hover:border-emerald-200 hover:bg-emerald-50/40"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-xs font-black text-slate-800">
+                        {operation.workerName}
+                      </span>
+                      <span className="font-mono text-[9px] font-bold text-slate-400">
+                        {operation.workerId}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[9px] font-black ${statusBadge(
+                          operation.status,
+                        )}`}
+                      >
+                        {operation.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-1.5 grid gap-1 text-[10px] font-semibold text-slate-500 sm:grid-cols-2">
+                      <span>작업 ID: {operation.id}</span>
+                      <span>
+                        위치: {operation.latitude.toFixed(6)}, {operation.longitude.toFixed(6)}
+                      </span>
+                      <span>방제 방법: {operation.method}</span>
+                      <span className="truncate">작업 구역: {operation.area}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 rounded-lg bg-white px-2 py-1.5 text-[10px] font-black text-slate-600 shadow-sm">
+                    <Battery size={12} className="text-emerald-600" />
+                    {operation.batteryPercent == null
+                      ? "-"
+                      : `${operation.batteryPercent}%`}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+        </div>
+      </div>
     </div>
   );
 }

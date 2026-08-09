@@ -11,11 +11,13 @@ export type FieldWorkerMarker = WorkerStatus & {
 export type ControlOperation = ControlTask & {
   latitude: number;
   longitude: number;
+  assignmentId?: string;
   workerId: string;
   workerName: string;
   workerRole: string;
   vehicle: string;
   currentStage: string;
+  batteryPercent?: number | null;
 };
 
 export type InventoryItem = {
@@ -77,62 +79,7 @@ export const FIELD_WORKERS: FieldWorkerMarker[] = [
   },
 ];
 
-export const CONTROL_OPERATIONS: ControlOperation[] = [
-  {
-    id: "CTR-2026-014",
-    area: "강원 춘천시 북산면 부귀리 산 42",
-    method: "훈증",
-    status: "진행",
-    company: "강원산림방제(주)",
-    workers: 8,
-    progress: 75,
-    startDate: "2026-08-04",
-    endDate: "2026-08-08",
-    latitude: 37.99114,
-    longitude: 127.65982,
-    workerId: "CTR-W-201",
-    workerName: "김방제",
-    workerRole: "현장 반장",
-    vehicle: "강원 83가 1024",
-    currentStage: "훈증 천막 밀폐 점검",
-  },
-  {
-    id: "CTR-2026-015",
-    area: "강원 춘천시 북산면 물로리 산 18",
-    method: "파쇄",
-    status: "진행",
-    company: "동해산림방제(주)",
-    workers: 10,
-    progress: 48,
-    startDate: "2026-08-04",
-    endDate: "2026-08-09",
-    latitude: 37.97466,
-    longitude: 127.64431,
-    workerId: "CTR-W-202",
-    workerName: "박방제",
-    workerRole: "파쇄기 책임자",
-    vehicle: "강원 91나 4812",
-    currentStage: "피해목 운반 및 파쇄",
-  },
-  {
-    id: "CTR-2026-016",
-    area: "강원 춘천시 북산면 청평리 산 7",
-    method: "나무주사",
-    status: "예정",
-    company: "푸른숲방제(주)",
-    workers: 6,
-    progress: 0,
-    startDate: "2026-08-05",
-    endDate: "2026-08-07",
-    latitude: 37.96541,
-    longitude: 127.66622,
-    workerId: "CTR-W-203",
-    workerName: "최예방",
-    workerRole: "예방주사 팀장",
-    vehicle: "강원 80다 3361",
-    currentStage: "약제 및 천공 장비 준비",
-  },
-];
+export const CONTROL_OPERATIONS: ControlOperation[] = [];
 
 export const INVENTORY_ITEMS: InventoryItem[] = [
   {

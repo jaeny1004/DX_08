@@ -136,6 +136,25 @@ function confidencePercent(
     );
 }
 
+function formatConfidenceRange(
+    confidences: number[],
+): string {
+    const values = confidences
+        .map(confidencePercent)
+        .filter(Number.isFinite);
+
+    if (values.length === 0) {
+        return "-";
+    }
+
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
+
+    return minimum === maximum
+        ? `${minimum.toFixed(1)}%`
+        : `${minimum.toFixed(1)}~${maximum.toFixed(1)}%`;
+}
+
 async function getEdgeFunctionErrorMessage(
     error: unknown,
 ): Promise<string> {
@@ -860,41 +879,59 @@ export default function ThermalAnalysisSection({
                                     },
                                 )}
 
-                                {selectedProcess?.status ===
-                                    "uploading" && (
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/55 text-white backdrop-blur-[1px]">
-                                            <LoaderCircle
-                                                size={28}
-                                                className="animate-spin text-emerald-300"
+                                {(selectedProcess?.status ===
+                                    "uploading" ||
+                                    selectedProcess?.status ===
+                                    "analyzing") && (
+                                    <div className="absolute inset-0 z-20 flex items-center justify-center overflow-hidden bg-slate-950/65 text-white backdrop-blur-[1px]">
+                                        {selectedProcess.status ===
+                                            "analyzing" && (
+                                            <motion.div
+                                                className="absolute left-[8%] right-[8%] h-px bg-gradient-to-r from-transparent via-emerald-300 to-transparent shadow-[0_0_14px_rgba(110,231,183,0.9)]"
+                                                animate={{
+                                                    top: [
+                                                        "12%",
+                                                        "88%",
+                                                        "12%",
+                                                    ],
+                                                }}
+                                                transition={{
+                                                    duration: 3,
+                                                    repeat: Infinity,
+                                                    ease: "easeInOut",
+                                                }}
                                             />
-                                            <div className="text-center">
-                                                <p className="text-xs font-black">
-                                                    Supabase Storage 업로드 중
-                                                </p>
-                                                <p className="mt-1 text-[10px] font-semibold text-white/70">
-                                                    정상적으로 처리 중입니다.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    )}
+                                        )}
 
-                                {selectedProcess?.status ===
-                                    "analyzing" && (
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/55 text-white backdrop-blur-[1px]">
+                                        <div className="relative flex min-w-[260px] flex-col items-center rounded-2xl border border-white/15 bg-slate-950/75 px-7 py-6 text-center shadow-2xl backdrop-blur-md">
                                             <LoaderCircle
-                                                size={28}
-                                                className="animate-spin text-amber-300"
+                                                size={32}
+                                                className={`animate-spin ${
+                                                    selectedProcess.status ===
+                                                    "uploading"
+                                                        ? "text-sky-300"
+                                                        : "text-emerald-300"
+                                                }`}
                                             />
-                                            <div className="text-center">
-                                                <p className="text-xs font-black">
-                                                    Roboflow AI 분석 중
-                                                </p>
-                                                <p className="mt-1 text-[10px] font-semibold text-white/70">
-                                                    열 이상 영역을 탐지하고 있습니다.
-                                                </p>
-                                            </div>
+
+                                            <p className="mt-3 text-sm font-black">
+                                                {selectedProcess.status ===
+                                                "uploading"
+                                                    ? "열화상 이미지를 업로드하고 있습니다."
+                                                    : "비전 AI가 열 이상 영역을 탐지하고 있습니다."}
+                                            </p>
+
+                                            <p className="mt-1 text-[10px] font-semibold text-white/65">
+                                                정상적으로 처리 중입니다. 잠시만 기다려 주세요.
+                                            </p>
+
+                                            <span className="mt-3 flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[10px] font-black tabular-nums text-white/85">
+                                                <Clock3 size={12} />
+                                                경과 {activeElapsedText}
+                                            </span>
                                         </div>
-                                    )}
+                                    </div>
+                                )}
 
                                 {selectedThermalInput && (
                                     <div className="absolute right-4 top-4 space-y-1 rounded-xl border border-white/10 bg-black/60 p-3 font-mono text-[10px] text-white backdrop-blur-md">
@@ -1240,20 +1277,15 @@ export default function ThermalAnalysisSection({
 
                                 <div className="rounded-lg bg-slate-50 p-3">
                                     <p className="text-[10px] font-bold text-slate-400">
-                                        최고 신뢰도
+                                        탐지 신뢰도 범위
                                     </p>
                                     <p className="mt-1 text-xl font-black text-rose-600">
-                                        {selectedResult.predictions.length > 0
-                                            ? Math.max(
-                                                ...selectedResult.predictions.map(
-                                                    (prediction) =>
-                                                        confidencePercent(
-                                                            prediction.confidence,
-                                                        ),
-                                                ),
-                                            ).toFixed(1)
-                                            : "0.0"}
-                                        %
+                                        {formatConfidenceRange(
+                                            selectedResult.predictions.map(
+                                                (prediction) =>
+                                                    prediction.confidence,
+                                            ),
+                                        )}
                                     </p>
                                 </div>
                             </div>
