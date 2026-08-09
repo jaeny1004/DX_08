@@ -38,14 +38,27 @@ def apply_prediction_template(
         and isinstance(data_summary.get("center_grid"), dict)
         else {}
     )
-    # 기존 생성기는 후보 GeoJSON에서 risk_score/risk_grade와
-    # access_score_v3만 실제 지표에 덮어썼다. draft의 정규화된 다른
-    # 값까지 전달하면 기존 보고서 수치가 달라지므로 같은 입력만 넘긴다.
+    # 예찰 우선순위도 함께 넘긴다.
+    # 넘기지 않으면 생성기가 자체 공식(risk*0.72+압력*0.20+접근성*0.08)으로
+    # 다시 계산해, 화면에는 "우선 예찰 65.0점"인데 발행된 문서에는
+    # "집중 관찰 56.2점"이 찍히는 불일치가 생긴다. 등급은 곧 인력 배치
+    # 근거이므로 화면·대시보드와 같은 실측 예측값으로 통일한다.
     candidate_metrics = {
         "risk_score": center_metrics.get("risk_score"),
         "risk_grade": center_metrics.get("risk_grade"),
         "access_score_v3": center_metrics.get("access_score"),
+        "priority_score": center_metrics.get("priority_score"),
+        "priority_grade": center_metrics.get("priority_grade"),
     }
+
+    # 인접 격자 표에 채울 실제 값(방위·거리·위험도·우선순위).
+    # 생성기는 격자 ID만 알고 있어 표가 전부 "-"로 비어 있었다.
+    neighbor_metrics = (
+        data_summary.get("neighbor_grids")
+        if isinstance(data_summary, dict)
+        and isinstance(data_summary.get("neighbor_grids"), list)
+        else []
+    )
     with TemporaryDirectory(prefix=f"{draft_id}-") as temporary_directory:
         output_directory = Path(temporary_directory) / "prediction_template"
         result = generate_single_prediction_report(
@@ -54,6 +67,7 @@ def apply_prediction_template(
             output_root=output_directory,
             report_no=1,
             candidate_metrics=candidate_metrics,
+            neighbor_metrics=neighbor_metrics,
         )
 
         docx_path = Path(result["docx_path"]).resolve()

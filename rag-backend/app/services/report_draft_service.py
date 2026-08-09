@@ -238,14 +238,25 @@ def collect_current_data(sido_name: str, sigungu_name: str, grid_ids: list[str])
     }
 
 
+def _score_text(value: Any) -> str:
+    """본문에 넣을 점수 문자열. 원값을 그대로 쓰면 92.79422028458156처럼
+    소수점이 그대로 노출되므로 문서와 같은 소수점 2자리로 맞춘다."""
+    if value is None:
+        return "-"
+    try:
+        return f"{round(float(value), 2):g}"
+    except (TypeError, ValueError):
+        return "-"
+
+
 def build_sections(payload: dict[str, Any], summary: dict[str, Any]) -> list[dict[str, str]]:
     region = f"{payload['sido_name']} {payload.get('sigungu_name', '')}".strip()
     center = summary.get("center_grid", {})
     common = (
         f"대상 지역은 {region}, 중심 격자는 {center.get('grid_id', '-')}이다. "
-        f"신규 확산위험 점수 {center.get('risk_score') if center.get('risk_score') is not None else '-'}점"
+        f"신규 확산위험 점수 {_score_text(center.get('risk_score'))}점"
         f"({center.get('risk_grade') or '등급 없음'}), 예찰 우선순위 "
-        f"{center.get('priority_score') if center.get('priority_score') is not None else '-'}점"
+        f"{_score_text(center.get('priority_score'))}점"
         f"({center.get('priority_grade') or '등급 없음'})을 기준으로 작성하였다."
     )
     report_type = payload["report_type"]

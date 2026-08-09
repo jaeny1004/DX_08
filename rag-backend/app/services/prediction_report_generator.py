@@ -1025,6 +1025,21 @@ def render_vworld_overlay(
     return Image.alpha_composite(image, overlay).convert("RGB"), trace
 
 
+def _referer_url(domain: str | None) -> str | None:
+    """VWORLD_API_DOMAIN을 Referer 헤더에 쓸 수 있는 형태로 정규화한다.
+
+    환경변수에는 스킴 없이 도메인만 들어 있는데(예: example.vercel.app),
+    그대로 Referer로 보내면 VWorld WMTS가 500을 돌려준다.
+    그러면 배경지도가 조용히 OSM으로 넘어가 보고서에 다른 지도가 실린다.
+    """
+    value = (domain or "").strip()
+    if not value:
+        return None
+    if value.startswith(("http://", "https://")):
+        return value
+    return f"https://{value}"
+
+
 def build_vworld_overlay_map(
     output_path: Path,
     record: ReportRecord,
@@ -1060,7 +1075,7 @@ def build_vworld_overlay_map(
                         "https://api.vworld.kr/req/wmts/1.0.0/"
                         f"{api_key}/Base/{{z}}/{{y}}/{{x}}.png"
                     ),
-                    referer=domain or None,
+                    referer=_referer_url(domain),
                 )
                 background_source = "© VWorld"
             except Exception as exc:
@@ -1688,17 +1703,25 @@ def build_prediction_render_payload(
     metrics: dict[str, Any],
     source: ReportSourceData,
     map_path: Path,
+    neighbor_metrics: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     center_point = source.static.get("center_point_4326") or {}
     coordinates = center_point.get("coordinates") or [None, None]
     longitude = coordinates[0] if len(coordinates) > 0 else None
     latitude = coordinates[1] if len(coordinates) > 1 else None
     block_grid_ids = [int(value) for value in metrics["block_grid_ids"]]
-    neighbor_grids = [
-        {"grid_id": grid_id}
-        for grid_id in block_grid_ids
-        if grid_id != record.center_grid_id
-    ][:4]
+
+    # 방위·거리·위험도·우선순위가 실린 인접 격자 정보가 넘어오면 그대로 쓴다.
+    # 없을 때만 3x3 블록에서 격자 ID만 뽑아 쓰던 기존 동작으로 되돌아간다
+    # (이 경우 표의 수치 칸은 "-"로 표시된다).
+    if neighbor_metrics:
+        neighbor_grids = [dict(item) for item in neighbor_metrics][:4]
+    else:
+        neighbor_grids = [
+            {"grid_id": grid_id}
+            for grid_id in block_grid_ids
+            if grid_id != record.center_grid_id
+        ][:4]
     end_day = 10 + (record.report_no % 18)
     center_grid = {
         "grid_id": record.center_grid_id,
@@ -1766,6 +1789,7 @@ def generate_single_prediction_report(
     report_no: int = 1,
     zoom: int | None = None,
     candidate_metrics: dict[str, Any] | None = None,
+    neighbor_metrics: list[dict[str, Any]] | None = None,
     client: Any | None = None,
 ) -> dict[str, Any]:
     if year < 2016 or year > 2100:
@@ -1852,6 +1876,7 @@ def generate_single_prediction_report(
         metrics=metrics,
         source=source,
         map_path=map_path,
+        neighbor_metrics=neighbor_metrics,
     )
     from app.services.report_render.renderer import render_report_pdf
 
