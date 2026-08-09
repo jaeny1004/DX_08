@@ -1481,35 +1481,86 @@ export default function DashboardRiskMapCard({
       : (emdBoundary.features ?? []);
     if (!visible.length) return;
 
-    const layer = L.geoJSON(
-      { type: "FeatureCollection", features: visible } as any,
-      {
-        // 반드시 격자와 같은 GRID_RENDERER를 써야 한다.
-        // renderer를 생략하면 지도 기본 렌더러가 별도 <canvas>를 새로 만들고,
-        // 그 캔버스가 격자 캔버스 위에 얹혀 클릭을 가로채 버린다
-        // (interactive: false여도 DOM 이벤트는 위 캔버스가 먼저 삼킨다).
-        // 같은 캔버스를 공유하면 Leaflet이 비대화형 레이어를 건너뛰고
-        // 아래 격자에 정상적으로 클릭이 전달된다.
-        renderer: GRID_RENDERER,
-        interactive: false,
-        style: {
-          color: "#475569",
-          weight: 1,
-          opacity: 0.55,
-          dashArray: "3 3",
-          fill: false,
-        },
-      } as L.GeoJSONOptions,
-    ).addTo(map);
-    emdLayerRef.current = layer;
-    // 격자 위에 선만 얹되, 격자 클릭을 막지 않도록 interactive: false로 둔다.
-    layer.bringToFront();
+    const collection = {
+      type: "FeatureCollection",
+      features: visible,
+    } as any;
+
+    // 위성지도 위에서는 어두운 선이 묻히므로 색을 뒤집는다.
+    const isSatellite = baseMapMode !== "base";
+    const haloColor = isSatellite ? "#0f172a" : "#ffffff";
+    const lineColor = isSatellite ? "#fde047" : "#1e293b";
+
+    // 알록달록한 격자 위에서도 경계가 읽히도록 두 겹으로 그린다.
+    // 아래에 굵은 테두리(halo)를 깔고 그 위에 실선을 얹는 방식.
+    // 반드시 격자와 같은 GRID_RENDERER를 써야 한다. renderer를 생략하면
+    // 지도 기본 렌더러가 별도 <canvas>를 만들고, 그 캔버스가 격자 캔버스 위에
+    // 얹혀 클릭을 가로챈다(interactive: false여도 DOM 이벤트는 위가 먼저 삼킴).
+    const baseOptions = {
+      renderer: GRID_RENDERER,
+      interactive: false,
+    };
+
+    const halo = L.geoJSON(collection, {
+      ...baseOptions,
+      style: {
+        color: haloColor,
+        weight: 5,
+        opacity: 0.85,
+        fill: false,
+        lineJoin: "round",
+      },
+    } as L.GeoJSONOptions).addTo(map);
+
+    const line = L.geoJSON(collection, {
+      ...baseOptions,
+      style: {
+        color: lineColor,
+        weight: 2,
+        opacity: 1,
+        fill: false,
+        lineJoin: "round",
+      },
+    } as L.GeoJSONOptions).addTo(map);
+
+    halo.bringToFront();
+    line.bringToFront();
+    emdLayerRef.current = line;
+
+    // 시군구를 선택하면 대상이 수십 개로 줄어드니 이름표까지 붙인다.
+    // 전국 뷰(1,090개)에서는 라벨이 서로 겹쳐 오히려 읽기 어려워 생략한다.
+    const labels = L.layerGroup();
+    if (selectedSigunguCode) {
+      for (const feature of visible) {
+        const name = String(feature?.properties?.emd_name ?? "").trim();
+        if (!name) continue;
+        const center = L.geoJSON(feature).getBounds().getCenter();
+        L.marker(center, {
+          interactive: false,
+          keyboard: false,
+          icon: L.divIcon({
+            className: "pine-emd-label",
+            html: `<span>${escapeHtml(name)}</span>`,
+            iconSize: [0, 0],
+          }),
+        }).addTo(labels);
+      }
+      labels.addTo(map);
+    }
 
     return () => {
-      layer.removeFrom(map);
-      if (emdLayerRef.current === layer) emdLayerRef.current = null;
+      halo.removeFrom(map);
+      line.removeFrom(map);
+      labels.removeFrom(map);
+      if (emdLayerRef.current === line) emdLayerRef.current = null;
     };
-  }, [emdBoundary, selectedSigunguCode, zoomLevel, featureIndex]);
+  }, [
+    emdBoundary,
+    selectedSigunguCode,
+    zoomLevel,
+    featureIndex,
+    baseMapMode,
+  ]);
 
   useEffect(() => {
     const map = leafletMapRef.current;

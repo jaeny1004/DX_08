@@ -10,6 +10,33 @@
   }
 }
 
+/*
+  대시보드 지도의 행정동 이름표.
+  divIcon 기본 스타일(흰 배경 박스)을 지우고, 어떤 배경 위에서도 읽히도록
+  글자 주변에 흰 테두리를 둘러 준다. 지도 조작을 막지 않게 클릭은 통과시킨다.
+*/
+.pine-emd-label {
+  background: transparent;
+  border: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.pine-emd-label > span {
+  position: relative;
+  left: -50%;
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  color: #0f172a;
+  text-shadow:
+    -1.5px -1.5px 0 #fff,
+    1.5px -1.5px 0 #fff,
+    -1.5px 1.5px 0 #fff,
+    1.5px 1.5px 0 #fff,
+    0 0 3px #fff;
+}
+
 @layer utilities {
   .text-2xs {
     font-size: 0.6875rem;
