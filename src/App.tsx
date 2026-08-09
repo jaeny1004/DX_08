@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL as string;
@@ -63,6 +63,7 @@ import {
 } from "lucide-react";
 
 import Dashboard from "./components/Dashboard";
+import type { DashboardMapViewState } from "./components/DashboardRiskMapCard";
 import MonitoringSection from "./components/MonitoringSection";
 import FieldSection from "./components/FieldSection";
 import ThermalAnalysisSection from "./components/ThermalAnalysisSection";
@@ -624,6 +625,16 @@ export default function App() {
 
   const [isAlertPanelOpen, setIsAlertPanelOpen] =
     useState(false);
+
+  // 대시보드 지도의 선택 지역·확대 위치. 탭을 옮기면 Dashboard가 언마운트되어
+  // 내부 state가 사라지므로, 여기서 보관했다가 돌아올 때 복원한다.
+  // state가 아니라 ref인 이유: 지도를 움직일 때마다 App이 리렌더되면 안 되기 때문.
+  const dashboardMapViewRef = useRef<DashboardMapViewState>({
+    sigunguCode: "",
+    emdCode: "",
+    center: null,
+    zoom: null,
+  });
 
   const [authUser, setAuthUser] =
     useState<AuthUser | null>(null);
@@ -2409,7 +2420,6 @@ export default function App() {
                   <div className="h-full min-h-0 overflow-y-auto pr-1">
                     <Dashboard
                       title={activeModuleLabel}
-                      grids={grids}
                       trees={trees}
                       workers={workers}
                       reports={reports}
@@ -2418,6 +2428,7 @@ export default function App() {
                       onGridSelect={setSelectedGrid}
                       authUser={authUser}
                       liveAlerts={liveAlerts}
+                      mapViewStateRef={dashboardMapViewRef}
                     />
                   </div>
                 )}
@@ -2527,7 +2538,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[45] bg-slate-950/20"
+              className="fixed inset-0 z-[2020] bg-slate-950/20"
             />
 
             <motion.aside
@@ -2549,7 +2560,7 @@ export default function App() {
               transition={{
                 duration: 0.18,
               }}
-              className="fixed left-4 top-4 z-[50] flex max-h-[calc(100vh-32px)] w-[390px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+              className="fixed left-4 top-4 z-[2030] flex max-h-[calc(100vh-32px)] w-[390px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
             >
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                 <div>

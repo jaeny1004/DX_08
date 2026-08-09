@@ -9,7 +9,6 @@ import {
 
 import {
   CrowdReport,
-  GridCell,
   TreeRecord,
   WorkerStatus,
 } from "../types";
@@ -21,6 +20,10 @@ import {
 import { AuthUser } from "../types/auth";
 
 import DashboardRiskMapCard from "./DashboardRiskMapCard";
+import type {
+  DashboardMapViewState,
+  DashboardRegionStats,
+} from "./DashboardRiskMapCard";
 import SectionTitle from "./SectionTitle";
 
 interface DashboardLiveAlert {
@@ -32,7 +35,6 @@ interface DashboardLiveAlert {
 
 interface DashboardProps {
   title: string;
-  grids: GridCell[];
   trees: TreeRecord[];
   workers: WorkerStatus[];
   reports: CrowdReport[];
@@ -41,11 +43,12 @@ interface DashboardProps {
   onGridSelect?: (grid: any) => void;
   authUser: AuthUser;
   liveAlerts: DashboardLiveAlert[];
+  /** 탭을 옮겨도 유지되는 지도 상태(App 소유). */
+  mapViewStateRef: React.MutableRefObject<DashboardMapViewState>;
 }
 
 export default function Dashboard({
   title,
-  grids,
   trees,
   workers,
   reports,
@@ -54,8 +57,15 @@ export default function Dashboard({
   onGridSelect,
   authUser,
   liveAlerts,
+  mapViewStateRef,
 }: DashboardProps) {
   const [now, setNow] = useState(() => new Date());
+
+  // 지도에서 선택한 지역의 고위험 격자 수. 지도 카드가 계산해서 올려준다.
+  const [regionStats, setRegionStats] = useState<DashboardRegionStats>({
+    regionLabel: "전국",
+    highRiskCount: 0,
+  });
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -93,16 +103,13 @@ export default function Dashboard({
       ? (completedTreeCount / trees.length) * 100
       : 0;
 
-  const highRiskGridCount = grids.filter(
-    (grid) => grid.riskScore >= 0.7,
-  ).length;
-
   const kpis = [
     {
       id: "risk",
-      label: "고위험 위험 지역",
-      value: `${highRiskGridCount.toLocaleString("ko-KR")}개소`,
-      caption: "신규 확산위험 후보",
+      label: "고위험 지역",
+      // 지도에서 선택한 지역 기준(위험등급 "매우 높음"+"높음"). 미선택이면 전국 합계.
+      value: `${regionStats.highRiskCount.toLocaleString("ko-KR")}개소`,
+      caption: regionStats.regionLabel,
       icon: ShieldAlert,
       iconClass: "bg-rose-500",
       accentClass: "bg-rose-50",
@@ -216,6 +223,8 @@ export default function Dashboard({
           onGridSelect={onGridSelect}
           initialSigunguCode={authUser.sigunguCode}
           initialSigunguName={authUser.sigunguName}
+          viewStateRef={mapViewStateRef}
+          onRegionStatsChange={setRegionStats}
         />
       </div>
     </div>
