@@ -30,7 +30,12 @@ interface GridLookupPayload {
   sidoNames: string[];
 }
 
-const LOOKUP_PATH = "/data/grid_lookup.json";
+/**
+ * 파일 구조가 바뀌면 v를 올린다.
+ * force-cache로 받기 때문에, 올리지 않으면 브라우저가 예전 파일을 계속 쓴다.
+ * v1에는 시도·시군구가 없어서 목록 선택이 빈 채로 깨졌다.
+ */
+const LOOKUP_PATH = "/data/grid_lookup.json?v=2";
 
 /**
  * 격자 한 변이 500m라 중심에서 최대 약 354m(대각선 절반) 떨어질 수 있다.
@@ -248,9 +253,25 @@ export function resolveGridByRegionText(
  * 등록 화면에서 주소를 직접 적는 대신 목록에서 고르게 하기 위한 것.
  * ---------------------------------------------------------------- */
 
+/**
+ * 예전 캐시본에는 시도·시군구가 없다.
+ * 없는 필드를 그대로 순회하면 화면이 통째로 죽으므로 여기서 걸러 낸다.
+ */
+function hasRegionTables(
+  value: GridLookupPayload | null,
+): value is GridLookupPayload {
+  return Boolean(
+    value &&
+      Array.isArray(value.sidos) &&
+      Array.isArray(value.sidoNames) &&
+      Array.isArray(value.sigungus) &&
+      Array.isArray(value.sigunguNames),
+  );
+}
+
 /** 격자가 존재하는 시도 목록. */
 export function listSido(): string[] {
-  if (!payload) return [];
+  if (!hasRegionTables(payload)) return [];
   const seen = new Set<number>();
   for (const slot of payload.sidos) seen.add(slot);
   return [...seen]
@@ -261,7 +282,7 @@ export function listSido(): string[] {
 
 /** 해당 시도에 속한 시군구 목록. */
 export function listSigungu(sido: string): string[] {
-  if (!payload || !sido) return [];
+  if (!hasRegionTables(payload) || !sido) return [];
   const sidoSlot = payload.sidoNames.indexOf(sido);
   if (sidoSlot < 0) return [];
 
@@ -277,7 +298,7 @@ export function listSigungu(sido: string): string[] {
 
 /** 해당 시군구에 속한 읍면동 목록. */
 export function listEmd(sido: string, sigungu: string): string[] {
-  if (!payload || !sido || !sigungu) return [];
+  if (!hasRegionTables(payload) || !sido || !sigungu) return [];
   const sidoSlot = payload.sidoNames.indexOf(sido);
   const sigunguSlot = payload.sigunguNames.indexOf(sigungu);
   if (sidoSlot < 0 || sigunguSlot < 0) return [];
@@ -307,7 +328,7 @@ export function resolveGridByRegion(
   sigungu: string,
   emd: string,
 ): GridLocation | null {
-  if (!payload || !sido || !sigungu || !emd) return null;
+  if (!hasRegionTables(payload) || !sido || !sigungu || !emd) return null;
 
   const sidoSlot = payload.sidoNames.indexOf(sido);
   const sigunguSlot = payload.sigunguNames.indexOf(sigungu);

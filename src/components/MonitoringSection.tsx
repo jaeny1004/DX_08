@@ -39,12 +39,16 @@ import type {
   DispatchTaskType,
 } from "../types/dispatch";
 import {
-  findNearestGrid,
   formatGridLocation,
   loadGridLookup,
-  resolveGridByRegionText,
   resolveGridLocation,
+  type GridLocation,
 } from "../utils/gridLookup";
+import RegionPicker, {
+  EMPTY_REGION,
+  formatRegionText,
+  type RegionPickerValue,
+} from "./RegionPicker";
 import { createTreeId } from "../utils/treeId";
 import { geocodeAddress } from "../services/geocodeApi";
 
@@ -498,18 +502,20 @@ export default function MonitoringSection({
   // 신규 등록 폼
   // =========================================================
 
-  const [region, setRegion] = useState("");
-
   const [species, setSpecies] =
     useState<TreeRecord["species"]>("소나무");
 
   const [severity, setSeverity] =
     useState<TreeRecord["severity"]>("중");
 
-  // 위경도로 받는다. 이 값으로 행정동·격자ID를 역조회해 목록에 표시하고
-  // 요원 배정에도 쓰기 때문에, 쓰이지 않던 EPSG:5186 X/Y 입력을 대체한다.
-  const [newLatitude, setNewLatitude] = useState("");
-  const [newLongitude, setNewLongitude] = useState("");
+  // 주소는 목록에서 고르고 지번만 직접 적는다.
+  // 자유 입력은 표기 차이로 격자를 못 찾는 일이 잦았다.
+  const [regionValue, setRegionValue] =
+    useState<RegionPickerValue>(EMPTY_REGION);
+  const [pickedGridLocation, setPickedGridLocation] =
+    useState<GridLocation | null>(null);
+
+  const region = formatRegionText(regionValue);
 
   // 확진목 유형(비가시/가시/시민신고/AI 예측)은 imageSource로 저장한다.
   // "ai"는 imageSource 없이 저장해 getTreeType이 AI 예측으로 판정하게 한다.
@@ -543,73 +549,9 @@ export default function MonitoringSection({
     };
   }, []);
 
-  // 주소를 지번까지 입력하면 지오코딩으로 실제 지점 좌표를 받아 온다.
-  // 행정동 이름만 있을 때 쓰는 대표 격자보다 정확하다.
-  const [geocoded, setGeocoded] =
-    useState<{ latitude: number; longitude: number } | null>(null);
-  const [isGeocoding, setIsGeocoding] = useState(false);
-
-  useEffect(() => {
-    const address = region.trim();
-    // 좌표를 직접 넣었으면 그 값이 우선이라 굳이 조회하지 않는다.
-    if (
-      !isRegistering ||
-      address.length < 6 ||
-      (newLatitude.trim() && newLongitude.trim())
-    ) {
-      setGeocoded(null);
-      setIsGeocoding(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    // 타이핑 중 매 글자마다 부르지 않도록 잠시 기다린다.
-    const timer = window.setTimeout(() => {
-      setIsGeocoding(true);
-      geocodeAddress(address, controller.signal)
-        .then((result) => setGeocoded(result))
-        .finally(() => setIsGeocoding(false));
-    }, 600);
-
-    return () => {
-      controller.abort();
-      window.clearTimeout(timer);
-    };
-  }, [region, newLatitude, newLongitude, isRegistering]);
-
-  /**
-   * 발견 지역과 발견 좌표 중 하나만 넣어도 행정동·격자를 찾는다.
-   * 우선순위: 직접 입력한 좌표 > 지번 지오코딩 결과 > 행정동 대표 격자.
-   *
-   * 격자 데이터가 전국이 아니라 위험후보 격자만 담고 있어서, 실제 지점이
-   * 어느 격자에도 속하지 않을 수 있다. 그 경우를 "far"로 구분해 알려 준다.
-   */
-  const newLocationResult = useMemo(() => {
-    const point =
-      resolveGridLocation(newLatitude, newLongitude) !== null
-        ? { lat: newLatitude as unknown as number, lng: newLongitude as unknown as number }
-        : geocoded
-          ? { lat: geocoded.latitude, lng: geocoded.longitude }
-          : null;
-
-    if (point) {
-      const exact = resolveGridLocation(point.lat, point.lng);
-      if (exact) return { grid: exact, kind: "exact" as const };
-
-      const nearest = findNearestGrid(point.lat, point.lng);
-      if (nearest) return { grid: nearest, kind: "far" as const };
-    }
-
-    const representative = resolveGridByRegionText(region);
-    if (representative) {
-      return { grid: representative, kind: "representative" as const };
-    }
-    return null;
-    // gridLookupReady: 룩업 로드가 끝나면 다시 계산해야 한다.
-    // 없으면 로드 전에 입력한 주소가 계속 미판정으로 남는다.
-  }, [newLatitude, newLongitude, region, geocoded, gridLookupReady]);
-
-  const newGridLocation = newLocationResult?.grid ?? null;
+  // 읍면동까지 고르면 그 범위의 대표 격자가 잡힌다.
+  // 지번은 상세 주소로만 남기고, 격자 판정에는 쓰지 않는다.
+  const newGridLocation = pickedGridLocation;
 
 
   // =========================================================
@@ -1933,30 +1875,15 @@ export default function MonitoringSection({
 
     event.preventDefault();
 
-    if (!region.trim()) {
+    // 읍면동까지 골라야 격자가 잡히고, 그래야 요원 배정과 방제 연계가 된다.
+    if (!newGridLocation) {
       return;
     }
 
-    // 좌표를 직접 넣었으면 그 값을, 지역명만 넣었으면 판정된 격자 중심을 쓴다.
-    // 어느 쪽이든 위경도를 남겨야 요원 배정과 방제 현황 연계가 가능하다.
-    const typedLatitude = Number(newLatitude);
-    const typedLongitude = Number(newLongitude);
-    const hasTypedCoords =
-      newLatitude.trim() !== "" &&
-      newLongitude.trim() !== "" &&
-      Number.isFinite(typedLatitude) &&
-      Number.isFinite(typedLongitude);
-
     const resolved = newGridLocation;
-    // 좌표 직접 입력 > 지번 지오코딩 결과 > 판정된 격자 중심 순으로 쓴다.
-    const latitude = hasTypedCoords
-      ? typedLatitude
-      : geocoded?.latitude ?? resolved?.latitude;
-    const longitude = hasTypedCoords
-      ? typedLongitude
-      : geocoded?.longitude ?? resolved?.longitude;
-    const hasCoords =
-      typeof latitude === "number" && typeof longitude === "number";
+    const latitude = resolved.latitude;
+    const longitude = resolved.longitude;
+    const hasCoords = true;
 
     const newRecord: TreeRecord = {
 
@@ -2024,9 +1951,7 @@ export default function MonitoringSection({
 
 
     // 입력 초기화
-    setRegion("");
-    setNewLatitude("");
-    setNewLongitude("");
+    setRegionValue(EMPTY_REGION);
     setNewTreeSource("ai");
     setInspector("해당 없음");
     setSeverity("중");
@@ -3502,90 +3427,12 @@ export default function MonitoringSection({
                       발견 위치 (지역 또는 좌표 — 하나만 넣어도 됨)
                   ====================================== */}
 
-                  <div className="rounded-xl border border-slate-200 p-3">
-
-                    <label className="mb-2 block text-xs font-bold text-slate-600">
-                      발견 위치
-                      <span className="ml-1 font-semibold text-slate-400">
-                        (지역 또는 좌표 중 하나만 입력해도 됩니다)
-                      </span>
-                    </label>
-
-                    <input
-                      type="text"
-                      required
-                      value={region}
-                      onChange={(event) =>
-                        setRegion(
-                          event.target.value
-                        )
-                      }
-                      placeholder="발견 지역 · 예: 경북 포항시 북구 죽장면 산42"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                    />
-
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={newLatitude}
-                        onChange={(event) =>
-                          setNewLatitude(event.target.value)
-                        }
-                        placeholder="위도 37.801634"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs outline-none focus:border-emerald-500"
-                      />
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={newLongitude}
-                        onChange={(event) =>
-                          setNewLongitude(event.target.value)
-                        }
-                        placeholder="경도 127.729268"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs outline-none focus:border-emerald-500"
-                      />
-                    </div>
-
-                    {/* 판정 결과 */}
-                    <div
-                      className={
-                        newGridLocation
-                          ? "mt-2 flex items-start gap-2 rounded-xl bg-emerald-50 px-3 py-2"
-                          : "mt-2 flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2"
-                      }
-                    >
-                      <MapPin
-                        size={13}
-                        className={
-                          newGridLocation
-                            ? "mt-0.5 shrink-0 text-emerald-600"
-                            : "mt-0.5 shrink-0 text-slate-400"
-                        }
-                      />
-                      <span
-                        className={
-                          newGridLocation
-                            ? "text-[11px] font-black text-emerald-800"
-                            : "text-[11px] font-bold text-slate-500"
-                        }
-                      >
-                        {isGeocoding
-                          ? "주소로 위치를 찾는 중..."
-                          : newLocationResult
-                            ? `${newLocationResult.grid.emdName} · 격자 ${newLocationResult.grid.gridId}` +
-                              (newLocationResult.kind === "representative"
-                                ? " (행정동 대표 격자 — 지번까지 입력하면 정확해집니다)"
-                                : newLocationResult.kind === "far"
-                                  ? ` (이 지점은 위험후보 격자 밖 · 최근접 ${(
-                                      newLocationResult.grid.distanceM / 1000
-                                    ).toFixed(1)}km)`
-                                  : "")
-                            : "지역명 또는 좌표를 입력하면 행정동과 격자를 자동으로 찾습니다."}
-                      </span>
-                    </div>
-
-                  </div>
+                  <RegionPicker
+                    label="발견 위치"
+                    value={regionValue}
+                    onChange={setRegionValue}
+                    onResolve={setPickedGridLocation}
+                  />
 
 
                   {/* =====================================
