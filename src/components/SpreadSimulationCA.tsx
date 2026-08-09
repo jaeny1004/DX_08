@@ -60,7 +60,14 @@ export default function SpreadSimulationCA() {
   const [grid, setGrid] = useState<CaGrid | null>(null);
   const [loadError, setLoadError] = useState("");
 
-  const [frames, setFrames] = useState<Float32Array[]>([]);
+  /**
+   * 두 시나리오 결과를 각각 들고 있다가 버튼으로 전환만 한다.
+   * 같은 시점에서 방제 유무를 바로 비교하려면 다시 계산해서는 안 된다.
+   */
+  const [controlFrames, setControlFrames] = useState<Float32Array[]>([]);
+  const [scenario, setScenario] = useState<"none" | "baseline" | "control">(
+    "none",
+  );
   const [month, setMonth] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
@@ -69,17 +76,21 @@ export default function SpreadSimulationCA() {
   // 방제 구역 중심. 지도를 클릭해 옮긴다.
   const [controlCenter, setControlCenter] =
     useState<{ lat: number; lng: number } | null>(null);
-  const [controlApplied, setControlApplied] = useState(false);
   const [radiusKm, setRadiusKm] = useState(5);
 
-  /**
-   * 방제 전후를 나란히 보기 위해 기본 시나리오 결과를 따로 들고 있는다.
-   * 같은 시점끼리 비교해야 방제 효과가 얼마인지 말할 수 있다.
-   */
+  /** 방제 미적용 결과. 비교 기준이자 전환 대상. */
   const [baselineFrames, setBaselineFrames] = useState<Float32Array[]>([]);
 
   const directRadiusM = radiusKm * 1000;
   const indirectRadiusM = directRadiusM * 2;
+
+  const controlApplied = scenario === "control";
+  const frames =
+    scenario === "control"
+      ? controlFrames
+      : scenario === "baseline"
+        ? baselineFrames
+        : [];
 
   // ---------------------------------------------------------------
   // 데이터 로드
@@ -334,8 +345,20 @@ export default function SpreadSimulationCA() {
     return seed;
   }
 
-  function runSimulation(withControl: boolean) {
+  /**
+   * 시나리오를 고른다.
+   * 이미 계산해 둔 결과가 있으면 다시 돌리지 않고 보고 있던 시점 그대로 전환한다.
+   * "12개월 뒤에 방제하면 이렇고 안 하면 이렇다"를 즉시 견줘 보기 위한 것이다.
+   */
+  function selectScenario(next: "baseline" | "control") {
     if (!weights || !grid || isRunning) return;
+
+    const cached = next === "control" ? controlFrames : baselineFrames;
+    if (cached.length) {
+      setScenario(next);
+      setIsPlaying(false);
+      return;
+    }
 
     setIsRunning(true);
     setIsPlaying(false);
@@ -345,19 +368,19 @@ export default function SpreadSimulationCA() {
     window.setTimeout(() => {
       try {
         const stepFrames = runRollout(weights, grid, {
-          seed: buildSeed(withControl),
+          seed: buildSeed(next === "control"),
           onStep: (step) => {
             setProgressText(`${step + 1} / ${CA_STEPS} 단계`);
           },
         });
         const monthly = toMonthlyFrames(stepFrames);
-        setFrames(monthly);
-        // 방제를 적용하지 않은 실행은 비교 기준으로 따로 보관한다.
-        if (!withControl) setBaselineFrames(monthly);
+        if (next === "control") setControlFrames(monthly);
+        else setBaselineFrames(monthly);
+
+        setScenario(next);
         setMonth(0);
-        setControlApplied(withControl);
         setProgressText("");
-        // 실행하면 바로 재생한다(별도 재생 버튼 없음).
+        // 처음 계산했을 때만 자동 재생한다.
         setIsPlaying(true);
       } catch {
         setProgressText("");
@@ -369,13 +392,22 @@ export default function SpreadSimulationCA() {
   }
 
   function reset() {
-    setFrames([]);
     setBaselineFrames([]);
+    setControlFrames([]);
+    setScenario("none");
     setMonth(0);
     setIsPlaying(false);
-    setControlApplied(false);
-    setControlCenter(null);
   }
+
+  /**
+   * 방제 구역이나 반경이 바뀌면 방제 결과는 더 이상 맞지 않는다.
+   * 캐시를 비워 다음에 누를 때 다시 계산하게 한다.
+   */
+  useEffect(() => {
+    setControlFrames([]);
+    setScenario((previous) => (previous === "control" ? "baseline" : previous));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlCenter, radiusKm]);
 
   // ---------------------------------------------------------------
   // 요약 수치
@@ -504,11 +536,11 @@ export default function SpreadSimulationCA() {
               <button
                 type="button"
                 disabled={!isReady || isRunning}
-                onClick={() => runSimulation(false)}
+                onClick={() => selectScenario("baseline")}
                 className={
-                  frames.length > 0 && !controlApplied
+                  scenario === "baseline"
                     ? "w-full rounded-xl bg-rose-700 py-2.5 text-[11px] font-black text-white ring-2 ring-rose-300 transition disabled:cursor-not-allowed disabled:bg-slate-300"
-                    : "w-full rounded-xl bg-rose-700 py-2.5 text-[11px] font-black text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    : "w-full rounded-xl bg-rose-700/90 py-2.5 text-[11px] font-black text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                 }
               >
                 방제 미적용 시나리오
@@ -517,11 +549,11 @@ export default function SpreadSimulationCA() {
               <button
                 type="button"
                 disabled={!controlCenter || !isReady || isRunning}
-                onClick={() => runSimulation(true)}
+                onClick={() => selectScenario("control")}
                 className={
-                  controlApplied
+                  scenario === "control"
                     ? "w-full rounded-xl bg-sky-700 py-2.5 text-[11px] font-black text-white ring-2 ring-sky-300 transition disabled:cursor-not-allowed disabled:bg-slate-300"
-                    : "w-full rounded-xl bg-sky-700 py-2.5 text-[11px] font-black text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    : "w-full rounded-xl bg-sky-700/90 py-2.5 text-[11px] font-black text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                 }
               >
                 방제 적용 시나리오
@@ -557,11 +589,6 @@ export default function SpreadSimulationCA() {
                 <span>12개월</span>
               </div>
             </div>
-
-            <p className="mt-2 text-[10px] font-semibold text-slate-400">
-              월별은 실제 월 단위 예측이 아니라 연 단위 결과의 진행 단계를
-              나눈 것입니다.
-            </p>
           </div>
 
           {/* 방제 시나리오 */}
@@ -572,11 +599,6 @@ export default function SpreadSimulationCA() {
                 방제 시나리오
               </span>
             </div>
-
-            <p className="mt-1 text-[10px] font-semibold text-slate-400">
-              감염이 가장 밀집한 구역에 미리 지정해 두었습니다.
-              지도를 클릭하면 다른 곳으로 옮길 수 있습니다.
-            </p>
 
             {/* 방제 반경 선택 */}
             <div className="mt-3">
@@ -665,17 +687,6 @@ export default function SpreadSimulationCA() {
             </div>
           )}
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="text-[10px] font-black text-slate-500">
-              해석 시 유의사항
-            </div>
-            <ul className="mt-2 space-y-1 text-[10px] font-semibold leading-relaxed text-slate-500">
-              <li>
-                · 시간 전이 표본이 7개, 단일 지역 파일럿이라 정밀 역학모델이
-                아닙니다.
-              </li>
-            </ul>
-          </div>
         </div>
       </div>
     </div>
