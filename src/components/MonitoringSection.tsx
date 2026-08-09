@@ -3650,11 +3650,6 @@ export default function MonitoringSection({
 
                     <label className="mb-1 block text-xs font-bold text-slate-600">
                       담당 요원
-                      {newGridLocation && (
-                        <span className="ml-1 font-semibold text-slate-400">
-                          ({newGridLocation.emdName} 인근 · 가까운 순)
-                        </span>
-                      )}
                     </label>
 
                     <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200">
