@@ -4,8 +4,6 @@ import "leaflet/dist/leaflet.css";
 import {
   CircleDot,
   LoaderCircle,
-  Pause,
-  Play,
   RotateCcw,
   Sparkles,
 } from "lucide-react";
@@ -72,7 +70,7 @@ export default function SpreadSimulationCA() {
   const [controlCenter, setControlCenter] =
     useState<{ lat: number; lng: number } | null>(null);
   const [controlApplied, setControlApplied] = useState(false);
-  const [radiusKm, setRadiusKm] = useState(2);
+  const [radiusKm, setRadiusKm] = useState(5);
 
   /**
    * 방제 전후를 나란히 보기 위해 기본 시나리오 결과를 따로 들고 있는다.
@@ -185,6 +183,44 @@ export default function SpreadSimulationCA() {
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [20, 20] });
 
     paintInitial(built);
+    setControlCenter(findHighestRiskCenter(built));
+  }
+
+  /**
+   * 감염이 가장 밀집한 지점을 찾아 방제 구역 초깃값으로 쓴다.
+   * 감염 격자마다 반경 안의 다른 감염 격자 수를 세고, 가장 많은 곳을 고른다.
+   * 화면을 열자마자 의미 있는 구역이 잡혀 있도록 하기 위한 것이다.
+   */
+  function findHighestRiskCenter(
+    cells: CellFeature[],
+  ): { lat: number; lng: number } | null {
+    const seeded = cells.filter((cell) => cell.seeded);
+    if (!seeded.length) return null;
+
+    const radius = 5000;
+    const latScale = 111_320;
+    let bestIndex = 0;
+    let bestCount = -1;
+
+    for (let i = 0; i < seeded.length; i += 1) {
+      const origin = seeded[i];
+      const lngScale = latScale * Math.cos((origin.latitude * Math.PI) / 180);
+      let count = 0;
+      for (let j = 0; j < seeded.length; j += 1) {
+        const dy = (seeded[j].latitude - origin.latitude) * latScale;
+        const dx = (seeded[j].longitude - origin.longitude) * lngScale;
+        if (dx * dx + dy * dy <= radius * radius) count += 1;
+      }
+      if (count > bestCount) {
+        bestCount = count;
+        bestIndex = i;
+      }
+    }
+
+    return {
+      lat: seeded[bestIndex].latitude,
+      lng: seeded[bestIndex].longitude,
+    };
   }
 
   /** 시작 시점 표시. 감염 격자는 가장 짙은 붉은색으로 둔다. */
@@ -321,6 +357,8 @@ export default function SpreadSimulationCA() {
         setMonth(0);
         setControlApplied(withControl);
         setProgressText("");
+        // 실행하면 바로 재생한다(별도 재생 버튼 없음).
+        setIsPlaying(true);
       } catch {
         setProgressText("");
         setLoadError("시뮬레이션 계산 중 오류가 발생했습니다.");
@@ -447,60 +485,83 @@ export default function SpreadSimulationCA() {
         {/* 컨트롤 */}
         <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-black text-slate-900">시뮬레이션</div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-slate-900">
+                시나리오
+              </span>
+              <button
+                type="button"
+                onClick={reset}
+                title="초기화"
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-500 transition hover:bg-slate-50"
+              >
+                <RotateCcw size={12} />
+              </button>
+            </div>
 
-            <div className="mt-3 flex gap-2">
+            {/* 두 시나리오를 위아래로 두고, 누르면 바로 재생한다. */}
+            <div className="mt-3 space-y-2">
               <button
                 type="button"
                 disabled={!isReady || isRunning}
                 onClick={() => runSimulation(false)}
-                className="flex-1 rounded-xl bg-emerald-800 py-2.5 text-[11px] font-black text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className={
+                  frames.length > 0 && !controlApplied
+                    ? "w-full rounded-xl bg-rose-700 py-2.5 text-[11px] font-black text-white ring-2 ring-rose-300 transition disabled:cursor-not-allowed disabled:bg-slate-300"
+                    : "w-full rounded-xl bg-rose-700 py-2.5 text-[11px] font-black text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                }
               >
-                기본 시나리오 실행
+                방제 미적용 시나리오
               </button>
+
               <button
                 type="button"
-                onClick={reset}
-                className="rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
+                disabled={!controlCenter || !isReady || isRunning}
+                onClick={() => runSimulation(true)}
+                className={
+                  controlApplied
+                    ? "w-full rounded-xl bg-sky-700 py-2.5 text-[11px] font-black text-white ring-2 ring-sky-300 transition disabled:cursor-not-allowed disabled:bg-slate-300"
+                    : "w-full rounded-xl bg-sky-700 py-2.5 text-[11px] font-black text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                }
               >
-                <RotateCcw size={13} />
+                방제 적용 시나리오
               </button>
             </div>
 
-            {frames.length > 0 && (
-              <>
-                <div className="mt-4 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsPlaying((value) => !value)}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white transition hover:bg-slate-800"
-                  >
-                    {isPlaying ? <Pause size={15} /> : <Play size={15} />}
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <input
-                      type="range"
-                      min={0}
-                      max={frames.length - 1}
-                      value={month}
-                      onChange={(event) => {
-                        setIsPlaying(false);
-                        setMonth(Number(event.target.value));
-                      }}
-                      className="w-full accent-emerald-700"
-                    />
-                  </div>
-                  <span className="w-14 shrink-0 text-right text-[11px] font-black text-slate-700">
-                    +{month + 1}개월
-                  </span>
-                </div>
+            {/* 기간 선택 */}
+            <div className="mt-4">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-[10px] font-black text-slate-500">
+                  경과 기간
+                </span>
+                <span className="text-[11px] font-black text-slate-700">
+                  +{month + 1}개월
+                </span>
+              </div>
 
-                <p className="mt-2 text-[10px] font-semibold text-slate-400">
-                  월별은 실제 월 단위 예측이 아니라 연 단위 결과의 진행 단계를
-                  나눈 것입니다.
-                </p>
-              </>
-            )}
+              <input
+                type="range"
+                min={0}
+                max={11}
+                value={month}
+                disabled={frames.length === 0}
+                onChange={(event) => {
+                  setIsPlaying(false);
+                  setMonth(Number(event.target.value));
+                }}
+                className="w-full accent-emerald-700 disabled:opacity-40"
+              />
+
+              <div className="mt-1 flex justify-between text-[9px] font-bold text-slate-400">
+                <span>1개월</span>
+                <span>12개월</span>
+              </div>
+            </div>
+
+            <p className="mt-2 text-[10px] font-semibold text-slate-400">
+              월별은 실제 월 단위 예측이 아니라 연 단위 결과의 진행 단계를
+              나눈 것입니다.
+            </p>
           </div>
 
           {/* 방제 시나리오 */}
@@ -513,8 +574,8 @@ export default function SpreadSimulationCA() {
             </div>
 
             <p className="mt-1 text-[10px] font-semibold text-slate-400">
-              지도를 클릭해 방제 구역을 놓고 다시 실행하면, 그 구역의 감염원을
-              제거했을 때의 확산을 비교할 수 있습니다.
+              감염이 가장 밀집한 구역에 미리 지정해 두었습니다.
+              지도를 클릭하면 다른 곳으로 옮길 수 있습니다.
             </p>
 
             {/* 방제 반경 선택 */}
@@ -542,18 +603,9 @@ export default function SpreadSimulationCA() {
 
             <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-600">
               {controlCenter
-                ? `방제 구역 지정됨 · 직접 ${radiusKm}km / 간접 ${radiusKm * 2}km`
+                ? `직접 ${radiusKm}km / 간접 ${radiusKm * 2}km`
                 : "지도를 클릭해 방제 구역을 지정하세요."}
             </div>
-
-            <button
-              type="button"
-              disabled={!controlCenter || !isReady || isRunning}
-              onClick={() => runSimulation(true)}
-              className="mt-3 w-full rounded-xl bg-sky-700 py-2.5 text-[11px] font-black text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              방제 적용 후 재실행
-            </button>
 
             {controlApplied && (
               <p className="mt-2 text-[10px] font-bold text-sky-700">
