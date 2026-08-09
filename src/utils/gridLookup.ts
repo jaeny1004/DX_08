@@ -99,6 +99,21 @@ export function resolveGridLocation(
   latitudeInput: CoordinateInput,
   longitudeInput: CoordinateInput,
 ): GridLocation | null {
+  const nearest = findNearestGrid(latitudeInput, longitudeInput);
+  if (!nearest || nearest.distanceM > MAX_MATCH_DISTANCE_M) return null;
+  return nearest;
+}
+
+/**
+ * 거리 제한 없이 가장 가까운 격자를 돌려준다.
+ * 격자 데이터가 전국이 아니라 위험후보 격자만 담고 있어, 실제 주소가
+ * 격자 밖에 떨어지는 경우가 흔하다. 그때 "가장 가까운 후보가 얼마나 먼지"를
+ * 사용자에게 알려주기 위해 쓴다.
+ */
+export function findNearestGrid(
+  latitudeInput: CoordinateInput,
+  longitudeInput: CoordinateInput,
+): GridLocation | null {
   const latitude = toNumber(latitudeInput);
   const longitude = toNumber(longitudeInput);
 
@@ -112,21 +127,24 @@ export function resolveGridLocation(
   let bestIndex = -1;
   let bestSquared = Infinity;
 
-  // 자기 버킷과 인접 8개만 훑는다(버킷 5.5km > 격자 500m라 경계 누락 없음).
+  // 자기 버킷부터 시작해 후보를 찾을 때까지 반경을 넓힌다.
+  // 위험후보 격자만 담긴 데이터라 주변에 격자가 아예 없는 지역도 있다.
   const baseLat = Math.floor(latitude / BUCKET_SIZE_DEG);
   const baseLng = Math.floor(longitude / BUCKET_SIZE_DEG);
 
-  for (let dLat = -1; dLat <= 1; dLat += 1) {
-    for (let dLng = -1; dLng <= 1; dLng += 1) {
-      const list = buckets.get(`${baseLat + dLat}:${baseLng + dLng}`);
-      if (!list) continue;
-      for (const index of list) {
-        const dy = (payload.lats[index] - latitude) * latScale;
-        const dx = (payload.lngs[index] - longitude) * lngScale;
-        const squared = dx * dx + dy * dy;
-        if (squared < bestSquared) {
-          bestSquared = squared;
-          bestIndex = index;
+  for (let ring = 1; ring <= 8 && bestIndex < 0; ring += 1) {
+    for (let dLat = -ring; dLat <= ring; dLat += 1) {
+      for (let dLng = -ring; dLng <= ring; dLng += 1) {
+        const list = buckets.get(`${baseLat + dLat}:${baseLng + dLng}`);
+        if (!list) continue;
+        for (const index of list) {
+          const dy = (payload.lats[index] - latitude) * latScale;
+          const dx = (payload.lngs[index] - longitude) * lngScale;
+          const squared = dx * dx + dy * dy;
+          if (squared < bestSquared) {
+            bestSquared = squared;
+            bestIndex = index;
+          }
         }
       }
     }
@@ -135,7 +153,6 @@ export function resolveGridLocation(
   if (bestIndex < 0) return null;
 
   const distanceM = Math.sqrt(bestSquared);
-  if (distanceM > MAX_MATCH_DISTANCE_M) return null;
 
   return {
     gridId: String(payload.ids[bestIndex]),

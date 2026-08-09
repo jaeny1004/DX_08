@@ -39,12 +39,14 @@ import type {
   DispatchTaskType,
 } from "../types/dispatch";
 import {
+  findNearestGrid,
   formatGridLocation,
   loadGridLookup,
+  resolveGridByRegionText,
   resolveGridLocation,
-  resolveGridLoose,
 } from "../utils/gridLookup";
 import { createTreeId } from "../utils/treeId";
+import { geocodeAddress } from "../services/geocodeApi";
 
 /** 등록 폼의 유형 선택지. 화면 라벨과 저장값(imageSource)을 함께 관리한다. */
 const TREE_SOURCE_LABELS = {
@@ -527,12 +529,71 @@ export default function MonitoringSection({
     [trees],
   );
 
-  // 발견 지역과 발견 좌표 중 하나만 넣어도 행정동·격자를 찾는다.
-  // 좌표가 있으면 좌표가 우선이고, 없으면 주소에서 행정동 이름을 뽑아 쓴다.
-  const newGridLocation = useMemo(
-    () => resolveGridLoose(newLatitude, newLongitude, region),
-    [newLatitude, newLongitude, region],
-  );
+  // 주소를 지번까지 입력하면 지오코딩으로 실제 지점 좌표를 받아 온다.
+  // 행정동 이름만 있을 때 쓰는 대표 격자보다 정확하다.
+  const [geocoded, setGeocoded] =
+    useState<{ latitude: number; longitude: number } | null>(null);
+  const [isGeocoding, setIsGeocoding] = useState(false);
+
+  useEffect(() => {
+    const address = region.trim();
+    // 좌표를 직접 넣었으면 그 값이 우선이라 굳이 조회하지 않는다.
+    if (
+      !isRegistering ||
+      address.length < 6 ||
+      (newLatitude.trim() && newLongitude.trim())
+    ) {
+      setGeocoded(null);
+      setIsGeocoding(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    // 타이핑 중 매 글자마다 부르지 않도록 잠시 기다린다.
+    const timer = window.setTimeout(() => {
+      setIsGeocoding(true);
+      geocodeAddress(address, controller.signal)
+        .then((result) => setGeocoded(result))
+        .finally(() => setIsGeocoding(false));
+    }, 600);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [region, newLatitude, newLongitude, isRegistering]);
+
+  /**
+   * 발견 지역과 발견 좌표 중 하나만 넣어도 행정동·격자를 찾는다.
+   * 우선순위: 직접 입력한 좌표 > 지번 지오코딩 결과 > 행정동 대표 격자.
+   *
+   * 격자 데이터가 전국이 아니라 위험후보 격자만 담고 있어서, 실제 지점이
+   * 어느 격자에도 속하지 않을 수 있다. 그 경우를 "far"로 구분해 알려 준다.
+   */
+  const newLocationResult = useMemo(() => {
+    const point =
+      resolveGridLocation(newLatitude, newLongitude) !== null
+        ? { lat: newLatitude as unknown as number, lng: newLongitude as unknown as number }
+        : geocoded
+          ? { lat: geocoded.latitude, lng: geocoded.longitude }
+          : null;
+
+    if (point) {
+      const exact = resolveGridLocation(point.lat, point.lng);
+      if (exact) return { grid: exact, kind: "exact" as const };
+
+      const nearest = findNearestGrid(point.lat, point.lng);
+      if (nearest) return { grid: nearest, kind: "far" as const };
+    }
+
+    const representative = resolveGridByRegionText(region);
+    if (representative) {
+      return { grid: representative, kind: "representative" as const };
+    }
+    return null;
+  }, [newLatitude, newLongitude, region, geocoded]);
+
+  const newGridLocation = newLocationResult?.grid ?? null;
 
 
   // =========================================================
@@ -1885,12 +1946,13 @@ export default function MonitoringSection({
       Number.isFinite(typedLongitude);
 
     const resolved = newGridLocation;
+    // 좌표 직접 입력 > 지번 지오코딩 결과 > 판정된 격자 중심 순으로 쓴다.
     const latitude = hasTypedCoords
       ? typedLatitude
-      : resolved?.latitude;
+      : geocoded?.latitude ?? resolved?.latitude;
     const longitude = hasTypedCoords
       ? typedLongitude
-      : resolved?.longitude;
+      : geocoded?.longitude ?? resolved?.longitude;
     const hasCoords =
       typeof latitude === "number" && typeof longitude === "number";
 
@@ -3475,9 +3537,18 @@ export default function MonitoringSection({
                             : "text-[11px] font-bold text-slate-500"
                         }
                       >
-                        {newGridLocation
-                          ? `${newGridLocation.emdName} · 격자 ${newGridLocation.gridId}`
-                          : "지역명 또는 좌표를 입력하면 행정동과 격자를 자동으로 찾습니다."}
+                        {isGeocoding
+                          ? "주소로 위치를 찾는 중..."
+                          : newLocationResult
+                            ? `${newLocationResult.grid.emdName} · 격자 ${newLocationResult.grid.gridId}` +
+                              (newLocationResult.kind === "representative"
+                                ? " (행정동 대표 격자 — 지번까지 입력하면 정확해집니다)"
+                                : newLocationResult.kind === "far"
+                                  ? ` (이 지점은 위험후보 격자 밖 · 최근접 ${(
+                                      newLocationResult.grid.distanceM / 1000
+                                    ).toFixed(1)}km)`
+                                  : "")
+                            : "지역명 또는 좌표를 입력하면 행정동과 격자를 자동으로 찾습니다."}
                       </span>
                     </div>
 
