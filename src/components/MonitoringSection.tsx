@@ -45,6 +45,14 @@ import {
 } from "../utils/gridLookup";
 import { createTreeId } from "../utils/treeId";
 
+/** 등록 폼의 유형 선택지. 화면 라벨과 저장값(imageSource)을 함께 관리한다. */
+const TREE_SOURCE_LABELS = {
+  thermal: "비가시",
+  "drone-visible": "가시",
+  citizen: "시민신고",
+  ai: "AI 예측",
+} as const;
+
 /** 요원 배정에 쓸 수 있는 좌표가 있는지. */
 function hasAssignableCoords(tree: {
   latitude?: number;
@@ -495,17 +503,38 @@ export default function MonitoringSection({
   const [severity, setSeverity] =
     useState<TreeRecord["severity"]>("중");
 
-  const [gpsX, setGpsX] =
-    useState("362947");
+  // 위경도로 받는다. 이 값으로 행정동·격자ID를 역조회해 목록에 표시하고
+  // 요원 배정에도 쓰기 때문에, 쓰이지 않던 EPSG:5186 X/Y 입력을 대체한다.
+  const [newLatitude, setNewLatitude] = useState("");
+  const [newLongitude, setNewLongitude] = useState("");
 
-  const [gpsY, setGpsY] =
-    useState("289014");
+  // 확진목 유형(비가시/가시/시민신고/AI 예측)은 imageSource로 저장한다.
+  // "ai"는 imageSource 없이 저장해 getTreeType이 AI 예측으로 판정하게 한다.
+  const [newTreeSource, setNewTreeSource] =
+    useState<"thermal" | "drone-visible" | "citizen" | "ai">("ai");
+
+  const [newStatus, setNewStatus] =
+    useState<TreeRecord["status"]>("방제대기");
 
   const [inspector, setInspector] =
     useState("김지원");
 
   const [isRegistering, setIsRegistering] =
     useState(false);
+
+  // 등록 폼에 미리 보여줄 다음 관리 ID. 실제 저장 시에도 같은 값을 쓴다.
+  const nextTreeId = useMemo(
+    () => createTreeId(trees.map((item) => item.id)),
+    [trees],
+  );
+
+  // 입력한 좌표가 어느 행정동·격자인지 즉시 확인시켜 준다.
+  const newLocationPreview = useMemo(() => {
+    if (!newLatitude.trim() || !newLongitude.trim()) {
+      return "좌표를 입력하면 행정동과 격자를 자동으로 찾습니다.";
+    }
+    return formatGridLocation(newLatitude, newLongitude);
+  }, [newLatitude, newLongitude]);
 
 
   // =========================================================
@@ -1796,9 +1825,21 @@ export default function MonitoringSection({
       return;
     }
 
+    const latitude = Number(newLatitude);
+    const longitude = Number(newLongitude);
+    const hasCoords =
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      newLatitude.trim() !== "" &&
+      newLongitude.trim() !== "";
+
+    const resolved = hasCoords
+      ? resolveGridLocation(latitude, longitude)
+      : null;
+
     const newRecord: TreeRecord = {
 
-      id: createTreeId(trees.map((item) => item.id)),
+      id: nextTreeId,
 
       region,
 
@@ -1809,28 +1850,40 @@ export default function MonitoringSection({
           .toISOString()
           .split("T")[0],
 
-      status: "확진완료",
+      status: newStatus,
 
       severity,
 
-      x: Number(gpsX),
+      // x/y는 화면 어디에서도 읽지 않는 예전 목업 좌표라 0으로 둔다.
+      x: 0,
+      y: 0,
 
-      y: Number(gpsY),
+      ...(hasCoords ? { latitude, longitude } : {}),
+      ...(resolved
+        ? { emdName: resolved.emdName, gridId: resolved.gridId }
+        : {}),
+
+      // "ai"는 imageSource를 비워 두어 유형이 AI 예측으로 판정되게 한다.
+      ...(newTreeSource === "ai"
+        ? {}
+        : { imageSource: newTreeSource }),
 
       inspector,
 
       timeline: [
         {
-          stage:
-            "현장 제보 등록 (MON-002)",
+          stage: "확진목 등록",
 
           date:
             new Date().toLocaleString(),
 
           note:
-            `GPS 등록 완료 ` +
-            `(EPSG:5186 가상 투영변환 완료). ` +
-            `피해정도: ${severity}`,
+            `${TREE_SOURCE_LABELS[newTreeSource]} 경로로 등록. ` +
+            `위치: ${
+              hasCoords
+                ? formatGridLocation(latitude, longitude, region)
+                : region
+            } / 피해정도: ${severity}`,
 
           actor: inspector,
         },
@@ -1850,6 +1903,12 @@ export default function MonitoringSection({
 
     // 입력 초기화
     setRegion("");
+    setNewLatitude("");
+    setNewLongitude("");
+    setNewTreeSource("ai");
+    setNewStatus("방제대기");
+    setSeverity("중");
+    setSpecies("소나무");
 
     setIsRegistering(false);
 
@@ -2081,7 +2140,7 @@ export default function MonitoringSection({
     status: TreeRecord["status"]
   ) => {
 
-    if (status === "확진완료") {
+    if (status === "방제대기") {
       return "bg-rose-50 text-rose-700 border-rose-200";
     }
 
@@ -2178,7 +2237,7 @@ export default function MonitoringSection({
       await onUpdateTreeStatus(tree.id, nextStatus);
 
       // 요원 배정은 확진이 끝난 시점에 시작한다.
-      if (nextStatus === "확진완료") {
+      if (nextStatus === "방제대기") {
         setIsRegistering(false);
         setIsVideoOpen(false);
         setIsImageOpen(false);
@@ -2709,7 +2768,7 @@ export default function MonitoringSection({
                               onClick={(event) => {
                                 event.stopPropagation();
 
-                                if (tree.status === "확진완료") {
+                                if (tree.status === "방제대기") {
                                   setSelectedTreeId(tree.id);
                                   setIsRegistering(false);
                                   setIsVideoOpen(false);
@@ -3231,13 +3290,69 @@ export default function MonitoringSection({
 
 
                   {/* =====================================
-                      지역
+                      관리 ID (자동 채번)
                   ====================================== */}
 
                   <div>
 
                     <label className="mb-1 block text-xs font-bold text-slate-600">
-                      지역 상세 주소
+                      관리 ID
+                    </label>
+
+                    <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                      <span className="text-sm font-black text-emerald-800">
+                        {nextTreeId}
+                      </span>
+                      <span className="text-[10px] font-bold text-emerald-600">
+                        자동 부여
+                      </span>
+                    </div>
+
+                  </div>
+
+
+                  {/* =====================================
+                      유형
+                  ====================================== */}
+
+                  <div>
+
+                    <label className="mb-1 block text-xs font-bold text-slate-600">
+                      유형
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {(
+                        Object.keys(TREE_SOURCE_LABELS) as Array<
+                          keyof typeof TREE_SOURCE_LABELS
+                        >
+                      ).map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setNewTreeSource(key)}
+                          className={
+                            newTreeSource === key
+                              ? "rounded-xl border border-emerald-500 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800"
+                              : "rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+                          }
+                        >
+                          {TREE_SOURCE_LABELS[key]}
+                        </button>
+                      ))}
+                    </div>
+
+                  </div>
+
+
+                  {/* =====================================
+                      발견 지역
+                  ====================================== */}
+
+                  <div>
+
+                    <label className="mb-1 block text-xs font-bold text-slate-600">
+                      발견 지역
                     </label>
 
                     <input
@@ -3368,62 +3483,90 @@ export default function MonitoringSection({
 
 
                   {/* =====================================
-                      좌표
+                      처리 상태
                   ====================================== */}
 
                   <div>
 
                     <label className="mb-1 block text-xs font-bold text-slate-600">
-                      중부 원점 좌표 (EPSG:5186)
+                      처리 상태
+                    </label>
+
+                    <select
+                      value={newStatus}
+                      onChange={(event) =>
+                        setNewStatus(
+                          event.target.value as TreeRecord["status"]
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium outline-none focus:border-emerald-500"
+                    >
+                      {TREE_STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+
+                  </div>
+
+
+                  {/* =====================================
+                      좌표 (행정동·격자 자동 판정)
+                  ====================================== */}
+
+                  <div>
+
+                    <label className="mb-1 block text-xs font-bold text-slate-600">
+                      발견 좌표 (위경도)
                     </label>
 
                     <div className="grid grid-cols-2 gap-3">
 
-
-                      {/* X */}
-
                       <div>
-
                         <div className="mb-1 text-[10px] font-bold text-slate-400">
-                          X
+                          위도
                         </div>
-
                         <input
                           type="text"
-                          value={gpsX}
+                          inputMode="decimal"
+                          value={newLatitude}
                           onChange={(event) =>
-                            setGpsX(
-                              event.target.value
-                            )
+                            setNewLatitude(event.target.value)
                           }
+                          placeholder="37.801634"
                           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs outline-none focus:border-emerald-500"
                         />
-
                       </div>
 
-
-                      {/* Y */}
-
                       <div>
-
                         <div className="mb-1 text-[10px] font-bold text-slate-400">
-                          Y
+                          경도
                         </div>
-
                         <input
                           type="text"
-                          value={gpsY}
+                          inputMode="decimal"
+                          value={newLongitude}
                           onChange={(event) =>
-                            setGpsY(
-                              event.target.value
-                            )
+                            setNewLongitude(event.target.value)
                           }
+                          placeholder="127.729268"
                           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-xs outline-none focus:border-emerald-500"
                         />
-
                       </div>
 
                     </div>
+
+                    <div className="mt-2 flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2">
+                      <MapPin size={13} className="mt-0.5 shrink-0 text-emerald-600" />
+                      <span className="text-[11px] font-bold text-slate-600">
+                        {newLocationPreview}
+                      </span>
+                    </div>
+
+                    <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                      좌표를 넣어야 요원 배정과 방제 현황 연계가 가능합니다.
+                    </p>
 
                   </div>
 

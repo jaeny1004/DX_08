@@ -1392,7 +1392,7 @@ export default function App() {
         new Date()
           .toISOString()
           .split("T")[0],
-      status: "확진완료",
+      status: "방제대기",
       severity:
         report.aiProbability >= 75
           ? "심"
