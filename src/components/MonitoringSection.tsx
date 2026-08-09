@@ -2485,13 +2485,20 @@ export default function MonitoringSection({
         `${assignmentType} · 방제 ${skillLevel}단계 · ` +
         `잔여 ${Math.round(worker.remainingMinutes)}분`,
       assignmentType,
-      status: "배정 대기",
+      // 배정과 동시에 방제가 시작된 것으로 본다.
+      // 방제 현황 탭에서도 "진행"으로 표시된다(controlTaskStatus 매핑).
+      status: "출동",
       assignedAt: new Date().toISOString(),
     };
 
     onAssignWorker(assignment);
+
+    // 확진목 상태도 방제중으로 함께 넘긴다.
+    void onUpdateTreeStatus(controlAssignmentTree.id, "방제중");
+
     setControlAssignmentMessage(
-      `${worker.workerName} 요원을 ${controlAssignmentTree.id} 방제 업무에 배정했습니다.`,
+      `${worker.workerName} 요원을 ${controlAssignmentTree.id} 방제 업무에 배정했습니다. ` +
+        "상태를 방제중으로 변경했습니다.",
     );
   };
 
@@ -2777,7 +2784,6 @@ export default function MonitoringSection({
                         <tr
                           key={tree.id}
                           onClick={() => {
-                            setControlAssignmentTreeId(null);
                             setControlAssignmentMessage("");
                             setSelectedTreeId(
                               tree.id
@@ -2786,6 +2792,20 @@ export default function MonitoringSection({
                             setIsVideoOpen(false);
                             setIsImageOpen(false);
                             setSelectedImage(null);
+                            setIsRegistering(false);
+                            setIsAudioOpen(false);
+                            setSelectedAudio(null);
+
+                            // 방제대기면 요원 배정, 방제중이면 배정 현황 조회.
+                            // 그 외 상태에서는 우측 패널을 닫는다.
+                            if (
+                              tree.status === "방제대기" ||
+                              tree.status === "방제중"
+                            ) {
+                              setControlAssignmentTreeId(tree.id);
+                            } else {
+                              setControlAssignmentTreeId(null);
+                            }
                           }}
                           className={
                             selected
@@ -2886,19 +2906,9 @@ export default function MonitoringSection({
                                 );
                               }}
                               onClick={(event) => {
+                                // 상태 칸은 상태만 바꾼다.
+                                // 요원 배정 패널은 행을 클릭해서 연다.
                                 event.stopPropagation();
-
-                                if (tree.status === "방제대기") {
-                                  setSelectedTreeId(tree.id);
-                                  setIsRegistering(false);
-                                  setIsVideoOpen(false);
-                                  setIsImageOpen(false);
-                                  setSelectedImage(null);
-                                  setIsAudioOpen(false);
-                                  setSelectedAudio(null);
-                                  setControlAssignmentMessage("");
-                                  setControlAssignmentTreeId(tree.id);
-                                }
                               }}
                               disabled={isDeletingTrees}
                               className={`rounded-lg border px-3 py-1.5 text-[10px] font-black outline-none ${getStatusClass(
@@ -3249,6 +3259,24 @@ export default function MonitoringSection({
                   </div>
                 )}
 
+                {/*
+                  방제중이면 이미 배정이 끝난 건이라 조회만 한다.
+                  배정은 방제대기 상태에서만 할 수 있다.
+                */}
+                {controlAssignmentTree.status !== "방제대기" ? (
+                  <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
+                    <div>
+                      <p className="text-xs font-black text-slate-600">
+                        {controlAssignmentTree.status} 상태입니다.
+                      </p>
+                      <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                        {activeControlAssignment
+                          ? "위에 표시된 배정 요원 정보를 확인만 할 수 있습니다."
+                          : "요원 배정은 방제대기 상태에서만 할 수 있습니다."}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
                 <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200">
                   <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
                     <div>
@@ -3337,6 +3365,7 @@ export default function MonitoringSection({
                     )}
                   </div>
                 </div>
+                )}
               </div>
             </motion.div>
           </aside>
