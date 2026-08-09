@@ -106,6 +106,19 @@ import {
   DispatchAssignment,
   DispatchStatus,
 } from "./types/dispatch";
+
+/*
+ * 요원 배정 영속화.
+ * 예전에는 배정이 이 컴포넌트의 state 에만 있어서 새로고침하면 사라졌고,
+ * 같은 Supabase 를 보는 현장 모바일 앱에서는 볼 수 없었다.
+ */
+import {
+  deleteDispatchAssignment,
+  fetchDispatchAssignments,
+  saveDispatchAssignment,
+  subscribeDispatchAssignments,
+  updateDispatchStatus,
+} from "./services/dispatchApi";
 type PineRecordRow = {
   id: string | number;
   created_at?: string | null;
@@ -624,6 +637,55 @@ export default function App() {
     dispatchAssignments,
     setDispatchAssignments,
   ] = useState<DispatchAssignment[]>([]);
+
+  /*
+   * 저장된 배정을 한 번 읽고, 이후 변경은 Realtime 으로 따라간다.
+   * 현장 앱에서 "작업 완료"를 누르면 새로고침 없이 웹 화면이 바뀐다.
+   *
+   * 마이그레이션(012) 전에는 테이블이 없어 빈 배열이 오고 구독도 조용히 논다.
+   * 그 상태에서도 기존처럼 화면 안에서만 배정이 동작한다.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetchDispatchAssignments().then((rows) => {
+      if (!cancelled && rows.length) {
+        setDispatchAssignments(rows);
+      }
+    });
+
+    const unsubscribe = subscribeDispatchAssignments((event) => {
+      setDispatchAssignments((previous) => {
+        if (event.type === "DELETE") {
+          return previous.filter(
+            (item) =>
+              item.assignmentId !== event.assignmentId
+          );
+        }
+
+        const incoming = event.assignment;
+        if (!incoming) return previous;
+
+        const index = previous.findIndex(
+          (item) =>
+            item.assignmentId === incoming.assignmentId
+        );
+
+        if (index === -1) {
+          return [incoming, ...previous];
+        }
+
+        const next = [...previous];
+        next[index] = incoming;
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
 
   const [isChatOpen, setIsChatOpen] =
     useState(false);
@@ -1341,23 +1403,30 @@ export default function App() {
   const handleAssignWorker = (
     assignment: DispatchAssignment
   ) => {
-    setDispatchAssignments((previous) => {
+    // 중복 판정을 먼저 해야 한다. setState 업데이터 안에서 판정하면
+    // 저장 여부를 바깥에서 알 수 없어 DB에 중복 행이 들어간다.
+    const duplicated = dispatchAssignments.some(
       // 같은 요원이 같은 격자에서 예찰과 방제를 각각 맡을 수 있으므로
       // 업무 종류까지 봐야 한다. taskType을 빼면 예찰 완료 후 방제로 이관할 때
       // 중복으로 판정되어 조용히 버려진다.
-      const duplicated = previous.some(
-        (item) =>
-          item.workerId === assignment.workerId &&
-          item.gridId === assignment.gridId &&
-          item.taskType === assignment.taskType
-      );
+      (item) =>
+        item.workerId === assignment.workerId &&
+        item.gridId === assignment.gridId &&
+        item.taskType === assignment.taskType
+    );
 
-      if (duplicated) {
-        return previous;
-      }
+    if (duplicated) {
+      return;
+    }
 
-      return [assignment, ...previous];
-    });
+    setDispatchAssignments((previous) => [
+      assignment,
+      ...previous,
+    ]);
+
+    // 현장 모바일 앱이 "내 작업"으로 받아볼 수 있도록 DB에도 남긴다.
+    // 실패해도 화면은 그대로 둔다(오프라인/마이그레이션 전 대비).
+    void saveDispatchAssignment(assignment);
   };
 
   const handleUpdateDispatchStatus = (
@@ -1378,6 +1447,8 @@ export default function App() {
           : assignment
       )
     );
+
+    void updateDispatchStatus(assignmentId, status);
 
     // 방제 작업이 끝나면 원래 확진목도 방제완료로 넘긴다.
     if (
@@ -1400,6 +1471,8 @@ export default function App() {
           assignment.assignmentId !== assignmentId
       )
     );
+
+    void deleteDispatchAssignment(assignmentId);
   };
 
   const handleConfirmInfection = async (
