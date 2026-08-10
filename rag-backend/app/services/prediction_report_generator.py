@@ -17,7 +17,7 @@ import httpx
 from docx import Document
 from dotenv import load_dotenv
 from PIL import Image, ImageChops, ImageDraw, ImageFont
-from supabase import create_client
+from app.core.supabase_rest import create_client
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]

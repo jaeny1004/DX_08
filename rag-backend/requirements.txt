@@ -14,7 +14,11 @@ email-validator>=2.2
 # 프로덕션에는 파싱할 PDF 자체가 없다. 로컬 문서 재수집 시에만 필요하다:
 #   pip install -r requirements-ingest.txt
 Pillow>=10.0
-supabase>=2.4
+# supabase SDK 를 뺐다. app/core/supabase_rest.py 가 httpx 로 PostgREST/Storage 를
+# 직접 부른다. SDK 는 인증에 쓰지도 않으면서 아래 경로로 cryptography 를 끌고 와
+# Vercel 225MB 한도를 넘기는 주범이었다.
+#   supabase -> supabase-auth -> pyjwt[crypto] -> cryptography (Linux 휠 14.2MB)
+# SDK 를 되살리려면 이 줄을 풀고 create_client 임포트를 되돌리면 된다.
 openai>=1.40
 python-dotenv>=1.0
 pydantic>=2.7

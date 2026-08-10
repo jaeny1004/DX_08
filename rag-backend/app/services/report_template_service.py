@@ -421,7 +421,7 @@ _storage_client = None
 def _storage():
     global _storage_client
     if _storage_client is None:
-        from supabase import create_client
+        from app.core.supabase_rest import create_client
 
         _storage_client = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
     return _storage_client

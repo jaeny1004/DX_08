@@ -17,7 +17,7 @@ class SupabaseStore:
         rpc: str = "match_document_chunks",
     ):
         if client is None:
-            from supabase import create_client
+            from app.core.supabase_rest import create_client
 
             client = create_client(url, key)
         self._client = client
