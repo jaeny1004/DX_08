@@ -73,6 +73,24 @@ export function buildRagApiUrl(path: string): string {
   return `${RAG_API_BASE}${normalizedPath}`;
 }
 
+/**
+ * 챗봇만 예외적으로 같은 도메인의 서버리스 함수(api/chat.ts)를 부른다.
+ *
+ * FastAPI 백엔드는 Vercel 함수 225MB 한도에 걸려 재배포가 안 되는 상태이고,
+ * 배포돼 있는 옛 빌드는 SUPABASE_KEY 가 폐기된 키라 문서 검색이 401 로 죽는다.
+ * 챗봇이 하는 일은 임베딩 -> pgvector 검색 -> 답변 생성 세 단계뿐이라
+ * 서버리스 함수로 옮겼다. 나머지 API(보고서·인증·수종전환)는 그대로 백엔드를 쓴다.
+ *
+ * 로컬에서 백엔드를 띄우고 그쪽을 쓰고 싶으면 VITE_CHAT_VIA_BACKEND=true 를 준다.
+ */
+const CHAT_VIA_BACKEND =
+  String(import.meta.env.VITE_CHAT_VIA_BACKEND ?? "").toLowerCase() ===
+  "true";
+
+export const CHAT_ENDPOINT = CHAT_VIA_BACKEND
+  ? buildRagApiUrl("/chat")
+  : "/api/chat";
+
 /* =========================================================
  * 채팅 타입
  * ======================================================= */
@@ -460,7 +478,7 @@ export async function askRagChat(
   }, REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(buildRagApiUrl("/chat"), {
+    const response = await fetch(CHAT_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
