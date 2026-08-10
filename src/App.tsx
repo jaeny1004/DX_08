@@ -1765,7 +1765,54 @@ export default function App() {
     );
   }
 
+  /*
+   * 현장 요원이 예찰 자료를 올리고 넘긴 건.
+   * '작업 완료'는 요원이 할 일을 마쳤다는 뜻이고, 감염 여부 판정은 관제 몫이라
+   * 알림 맨 위에 올려 놓쳐도 다시 보이게 한다.
+   */
+  const pendingSurveyReviews = dispatchAssignments.filter(
+    (assignment) =>
+      assignment.taskType === "SURVEY" &&
+      assignment.status === "작업 완료"
+  );
+
   const liveAlerts = [
+    ...pendingSurveyReviews.map((assignment) => {
+      const location =
+        [
+          assignment.targetSigunguName,
+          assignment.targetEmdName,
+        ]
+          .filter(Boolean)
+          .join(" ") || `격자 ${assignment.gridId}`;
+
+      const photoCount = fieldPhotos.filter(
+        (photo) =>
+          photo.relatedRecordId === assignment.assignmentId
+      ).length;
+
+      const voiceCount = fieldVoiceLogs.filter(
+        (log) =>
+          log.relatedRecordId === assignment.assignmentId
+      ).length;
+
+      return {
+        id: assignment.assignmentId,
+        time: new Date(
+          assignment.assignedAt
+        ).toLocaleTimeString("ko-KR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        title: "현장 예찰 결과 판정 대기",
+        description:
+          `${assignment.workerName} 요원이 ${location} 예찰 자료를 제출했습니다. ` +
+          `(사진 ${photoCount}장 · 음성 ${voiceCount}건) ` +
+          "예찰 화면에서 감염 여부를 확인해 주세요.",
+        tone: "danger" as const,
+        icon: ClipboardCheck,
+      };
+    }),
     {
       id: "ALERT-001",
       time: "14:28",
@@ -1829,6 +1876,13 @@ export default function App() {
               title="실시간 알림"
             >
               <AlertTriangle size={22} />
+
+              {/* 현장에서 올라온 판정 대기 건수. 놓치면 현장이 멈춘다 */}
+              {pendingSurveyReviews.length > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-black text-white">
+                  {pendingSurveyReviews.length}
+                </span>
+              )}
             </button>
 
             {isSidebarOpen && (
@@ -2559,6 +2613,14 @@ export default function App() {
                       workers={workers}
                       reports={reports}
                       dispatchAssignments={dispatchAssignments}
+                      {...{
+                        /*
+                         * 현장 요원이 올린 사진·음성. 예찰 배정 ID 로 묶여 있어
+                         * 관제가 감염 여부를 판정할 때 근거로 본다.
+                         */
+                        fieldPhotos,
+                        fieldVoiceLogs,
+                      }}
                       onUpdateDispatchStatus={handleUpdateDispatchStatus}
                       onCancelDispatch={handleCancelDispatch}
                       onUpdateWorkerStatus={handleUpdateWorkerStatus}

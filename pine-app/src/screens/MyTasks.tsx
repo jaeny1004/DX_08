@@ -14,9 +14,11 @@ import {
 } from 'react';
 import { ScreenName } from '../types';
 import {
+  Camera,
   ChevronLeft,
   ClipboardList,
   MapPin,
+  Mic,
   RefreshCw,
   UserCircle2,
 } from 'lucide-react';
@@ -26,14 +28,15 @@ import {
   DISPATCH_FLOW,
   DispatchStatus,
   MyAssignment,
+  SubmissionCount,
   TASK_TYPE_LABEL,
-  completeAsInfected,
+  countSubmissions,
   fetchMyAssignments,
-  rejectAssignment,
   subscribeMyAssignments,
-  transferToControl,
   updateMyAssignmentStatus,
 } from '../services/dispatch';
+import { FieldPhotoPanel } from '../components/FieldPhotoPanel';
+import { FieldSttPanel } from '../components/FieldSttPanel';
 
 interface MyTasksProps {
   navigate: (screen: ScreenName) => void;
@@ -86,24 +89,42 @@ export function MyTasks({
   >(null);
 
   /*
-   * 예찰 완료 판정 팝업.
-   * 'infection' 에서 감염 여부를 묻고, 미감염이면 'followup' 으로 넘어가
-   * 방제로 넘길지 반려할지 고르게 한다. 웹 FieldSection 완료 팝업과 같은 흐름이다.
+   * 예찰 결과 제출 시트.
+   *
+   * 예전에는 여기서 요원이 감염/미감염을 직접 정했다. 지금은 사진과 음성만 올리고
+   * 판단은 관제(웹)가 한다. 현장에서 즉석으로 확진을 확정하면 근거가 남지 않는다.
    */
-  const [outcomeTarget, setOutcomeTarget] =
+  const [submitTarget, setSubmitTarget] =
     useState<MyAssignment | null>(null);
 
-  const [outcomeStep, setOutcomeStep] =
-    useState<'infection' | 'followup'>(
-      'infection',
+  /* 시트 안에서 촬영·녹음 화면을 띄운다 */
+  const [submitPanel, setSubmitPanel] =
+    useState<'menu' | 'photo' | 'voice'>(
+      'menu',
     );
 
-  const [outcomeBusy, setOutcomeBusy] =
+  const [submitCount, setSubmitCount] =
+    useState<SubmissionCount>({
+      photos: 0,
+      voiceLogs: 0,
+    });
+
+  const [submitBusy, setSubmitBusy] =
     useState(false);
 
   const [toast, setToast] = useState<
     string | null
   >(null);
+
+  /** 시트를 열거나 자료를 올린 뒤 제출 건수를 다시 센다 */
+  const refreshSubmissionCount = useCallback(
+    async (assignmentId: string) => {
+      setSubmitCount(
+        await countSubmissions(assignmentId),
+      );
+    },
+    [],
+  );
 
   const reload = useCallback(async () => {
     if (!worker) {
@@ -150,16 +171,18 @@ export function MyTasks({
     }
 
     /*
-     * 예찰은 "작업 완료"로 끝나지 않는다. 현장에서 본 것을
-     * 확진목 / 방제 이관 / 반려 중 하나로 정리해야 다음 단계가 정해진다.
-     * 그래서 바로 반영하지 않고 판정 팝업을 먼저 띄운다.
+     * 예찰은 자료를 올려야 끝난다. 사진·음성 없이 "작업 완료"만 찍으면
+     * 관제가 판단할 근거가 없다. 그래서 상태를 바로 바꾸지 않고 제출 시트를 연다.
      */
     if (
       next === '작업 완료' &&
       assignment.taskType === 'SURVEY'
     ) {
-      setOutcomeTarget(assignment);
-      setOutcomeStep('infection');
+      setSubmitTarget(assignment);
+      setSubmitPanel('menu');
+      void refreshSubmissionCount(
+        assignment.assignmentId,
+      );
       return;
     }
 
@@ -204,35 +227,47 @@ export function MyTasks({
     setPendingId(null);
   };
 
-  /** 판정 세 갈래를 한 곳에서 처리한다. 결과 문구는 서비스가 만들어 준다. */
-  const runOutcome = async (
-    action: (
-      assignment: MyAssignment,
-    ) => Promise<{
-      success: boolean;
-      message: string;
-    }>,
-  ) => {
-    const assignment = outcomeTarget;
-    if (!assignment || outcomeBusy) {
+  /**
+   * 자료를 다 올렸으면 '작업 완료'로 넘긴다.
+   * 이 상태가 관제 화면에서 "판정 대기"로 읽힌다.
+   */
+  const handleSubmitResult = async () => {
+    const assignment = submitTarget;
+    if (!assignment || submitBusy) {
       return;
     }
 
-    setOutcomeBusy(true);
-    const result = await action(assignment);
-    setOutcomeBusy(false);
-
-    if (result.success) {
-      setOutcomeTarget(null);
-      setToast(result.message);
-      window.setTimeout(
-        () => setToast(null),
-        4000,
+    if (submitCount.photos === 0) {
+      window.alert(
+        '현장사진을 최소 1장 올려야 제출할 수 있습니다.',
       );
-      void reload();
-    } else {
-      window.alert(result.message);
+      return;
     }
+
+    setSubmitBusy(true);
+    const ok = await updateMyAssignmentStatus(
+      assignment.assignmentId,
+      '작업 완료',
+      assignment,
+    );
+    setSubmitBusy(false);
+
+    if (!ok) {
+      window.alert(
+        '제출하지 못했습니다. 네트워크를 확인해 주세요.',
+      );
+      return;
+    }
+
+    setSubmitTarget(null);
+    setToast(
+      `격자 ${assignment.gridId} 예찰 결과를 제출했습니다. 관제에서 확인 후 판정합니다.`,
+    );
+    window.setTimeout(
+      () => setToast(null),
+      4000,
+    );
+    void reload();
   };
 
   return (
@@ -416,7 +451,7 @@ export function MyTasks({
                         {next === '작업 완료' &&
                         assignment.taskType ===
                           'SURVEY'
-                          ? '예찰 결과 입력'
+                          ? '예찰 결과 제출'
                           : `${next}로 변경`}
                       </button>
                     )}
@@ -455,17 +490,24 @@ export function MyTasks({
         )}
       </AnimatePresence>
 
-      {/* 예찰 완료 판정 */}
+
+      {/*
+        예찰 결과 제출.
+
+        요원은 감염 여부를 정하지 않는다. 사진과 음성을 올리고 제출하면
+        관제(웹)가 그 자료를 보고 판단한다. 사진은 최소 1장을 요구한다.
+        음성은 선택이다. 현장 상황을 말로 남기기 어려운 경우가 있어서다.
+      */}
       <AnimatePresence>
-        {outcomeTarget && (
+        {submitTarget && submitPanel === 'menu' && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="absolute inset-0 bg-black/40 flex items-end z-50"
             onClick={() => {
-              if (!outcomeBusy) {
-                setOutcomeTarget(null);
+              if (!submitBusy) {
+                setSubmitTarget(null);
               }
             }}
           >
@@ -486,104 +528,140 @@ export function MyTasks({
               <div className="w-10 h-1 bg-black/10 rounded-full mx-auto mb-4" />
 
               <div className="text-[11px] text-text-sub mb-1">
-                격자 {outcomeTarget.gridId}
-                {outcomeTarget.targetEmdName &&
-                  ` · ${outcomeTarget.targetEmdName}`}
+                격자 {submitTarget.gridId}
+                {submitTarget.targetEmdName &&
+                  ` · ${submitTarget.targetEmdName}`}
               </div>
 
-              {outcomeStep === 'infection' ? (
-                <>
-                  <h3 className="text-[16px] font-bold text-text-main mb-1">
-                    현장에서 감염목을 확인했습니까?
-                  </h3>
-                  <p className="text-[12px] text-text-sub mb-5 leading-relaxed">
-                    확인한 경우 확진목 리스트로
-                    넘어가 방제 배정 대상이 됩니다.
-                  </p>
+              <h3 className="text-[16px] font-bold text-text-main mb-1">
+                예찰 결과 제출
+              </h3>
+              <p className="text-[12px] text-text-sub mb-5 leading-relaxed">
+                현장에서 확인한 내용을 사진과 음성으로
+                남겨 주세요. 감염 여부 판단은 관제에서
+                합니다.
+              </p>
 
-                  <div className="space-y-2">
-                    <button
-                      disabled={outcomeBusy}
-                      onClick={() =>
-                        void runOutcome(
-                          completeAsInfected,
-                        )
-                      }
-                      className="w-full py-3.5 bg-red-500 text-white rounded-[12px] text-[14px] font-bold disabled:opacity-50 active:scale-[0.98] transition-transform"
-                    >
-                      감염 확인 · 확진목으로 넘김
-                    </button>
+              <div className="space-y-2 mb-4">
+                <button
+                  onClick={() =>
+                    setSubmitPanel('photo')
+                  }
+                  className="w-full py-3.5 bg-system-bg rounded-[12px] flex items-center gap-3 px-4 active:scale-[0.98] transition-transform"
+                >
+                  <Camera
+                    size={20}
+                    className="text-primary shrink-0"
+                  />
+                  <span className="flex-1 text-left text-[14px] font-bold text-text-main">
+                    현장사진 촬영
+                  </span>
+                  <span
+                    className={`text-[12px] font-bold ${
+                      submitCount.photos > 0
+                        ? 'text-primary'
+                        : 'text-text-sub'
+                    }`}
+                  >
+                    {submitCount.photos > 0
+                      ? `${submitCount.photos}장`
+                      : '필수'}
+                  </span>
+                </button>
 
-                    <button
-                      disabled={outcomeBusy}
-                      onClick={() =>
-                        setOutcomeStep('followup')
-                      }
-                      className="w-full py-3.5 bg-system-bg text-text-main rounded-[12px] text-[14px] font-bold disabled:opacity-50 active:scale-[0.98] transition-transform"
-                    >
-                      미감염
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <h3 className="text-[16px] font-bold text-text-main mb-1">
-                    다음 조치를 골라 주세요
-                  </h3>
-                  <p className="text-[12px] text-text-sub mb-5 leading-relaxed">
-                    감염은 확인되지 않았습니다.
-                    예방 차원의 방제가 필요하면
-                    방제로 넘기고, 아니면 반려할 수
-                    있습니다.
-                  </p>
+                <button
+                  onClick={() =>
+                    setSubmitPanel('voice')
+                  }
+                  className="w-full py-3.5 bg-system-bg rounded-[12px] flex items-center gap-3 px-4 active:scale-[0.98] transition-transform"
+                >
+                  <Mic
+                    size={20}
+                    className="text-primary shrink-0"
+                  />
+                  <span className="flex-1 text-left text-[14px] font-bold text-text-main">
+                    음성 작업일지
+                  </span>
+                  <span
+                    className={`text-[12px] font-bold ${
+                      submitCount.voiceLogs > 0
+                        ? 'text-primary'
+                        : 'text-text-sub'
+                    }`}
+                  >
+                    {submitCount.voiceLogs > 0
+                      ? `${submitCount.voiceLogs}건`
+                      : '선택'}
+                  </span>
+                </button>
+              </div>
 
-                  <div className="space-y-2">
-                    <button
-                      disabled={outcomeBusy}
-                      onClick={() =>
-                        void runOutcome(
-                          transferToControl,
-                        )
-                      }
-                      className="w-full py-3.5 bg-primary text-white rounded-[12px] text-[14px] font-bold disabled:opacity-50 active:scale-[0.98] transition-transform"
-                    >
-                      방제로 넘김
-                    </button>
+              <button
+                disabled={
+                  submitBusy ||
+                  submitCount.photos === 0
+                }
+                onClick={() =>
+                  void handleSubmitResult()
+                }
+                className="w-full py-3.5 bg-primary text-white rounded-[12px] text-[14px] font-bold disabled:opacity-40 active:scale-[0.98] transition-transform"
+              >
+                {submitBusy
+                  ? '제출 중...'
+                  : '관제로 제출'}
+              </button>
 
-                    <button
-                      disabled={outcomeBusy}
-                      onClick={() =>
-                        void runOutcome(
-                          rejectAssignment,
-                        )
-                      }
-                      className="w-full py-3.5 bg-system-bg text-text-main rounded-[12px] text-[14px] font-bold disabled:opacity-50 active:scale-[0.98] transition-transform"
-                    >
-                      반려
-                    </button>
-
-                    <button
-                      disabled={outcomeBusy}
-                      onClick={() =>
-                        setOutcomeStep('infection')
-                      }
-                      className="w-full py-2 text-text-sub text-[12px] disabled:opacity-50"
-                    >
-                      뒤로
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {outcomeBusy && (
+              {submitCount.photos === 0 && (
                 <p className="text-center text-[11px] text-text-sub mt-3">
-                  처리 중...
+                  현장사진을 최소 1장 올려야 제출할 수
+                  있습니다.
                 </p>
               )}
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* 촬영·녹음은 기존 화면을 그대로 띄운다. 배정 ID 로 자료를 묶는다. */}
+      {submitTarget && submitPanel === 'photo' && (
+        <div className="absolute inset-0 z-[60] bg-system-bg">
+          <FieldPhotoPanel
+            workMode="surveillance"
+            relatedRecordId={
+              submitTarget.assignmentId
+            }
+            onBack={() => {
+              setSubmitPanel('menu');
+              void refreshSubmissionCount(
+                submitTarget.assignmentId,
+              );
+            }}
+          />
+        </div>
+      )}
+
+      {submitTarget && submitPanel === 'voice' && (
+        <div className="absolute inset-0 z-[60] bg-system-bg">
+          <FieldSttPanel
+            workMode="surveillance"
+            relatedRecordId={
+              submitTarget.assignmentId
+            }
+            onBack={() => {
+              setSubmitPanel('menu');
+              void refreshSubmissionCount(
+                submitTarget.assignmentId,
+              );
+            }}
+            onComplete={() => {
+              setSubmitPanel('menu');
+              void refreshSubmissionCount(
+                submitTarget.assignmentId,
+              );
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

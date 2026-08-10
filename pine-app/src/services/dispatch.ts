@@ -275,15 +275,63 @@ export async function updateMyAssignmentStatus(
 }
 
 /* ------------------------------------------------------------------
- * 예찰 작업 완료 후 현장 판정
+ * 예찰 결과 제출
  *
- * 예찰(SURVEY)은 "작업 완료"로 끝나지 않는다. 현장에서 본 것을 세 갈래 중
- * 하나로 정리해야 다음 단계가 정해진다. 웹 FieldSection 의 완료 팝업과
- * 같은 데이터 효과를 내도록 맞췄다.
+ * 감염 여부는 현장 요원이 정하지 않는다. 요원은 본 것을 사진과 음성으로 올리고,
+ * 그 자료를 보고 관제(웹)가 감염/미감염을 판단한다. 현장에서 즉석으로 확진을
+ * 확정하면 근거가 남지 않고 판단 주체도 흐려진다.
  *
- *   감염 확인   -> 확진목(confirmed_trees) 생성, 배정은 '복귀 완료'
- *   방제 이관   -> 같은 격자에 CONTROL 배정 생성, 원본은 '복귀 완료'
- *   반려        -> 배정 삭제
+ * 별도 테이블을 만들지 않았다. 앱이 이미 쓰던 field_photos / field_voice_logs 에
+ * related_record_id = 배정 ID 로 넣으면 웹이 그대로 묶어서 볼 수 있다.
+ *
+ * 상태를 이렇게 읽는다. 상태값 자체는 추가하지 않았다.
+ *   작업 완료 = 자료 제출됨, 관제 판정 대기
+ *   복귀 완료 = 관제가 판정을 끝냄
+ * ------------------------------------------------------------------ */
+
+export interface SubmissionCount {
+  photos: number;
+  voiceLogs: number;
+}
+
+/** 이 배정에 올라간 자료 건수. 제출했는지 판단하는 데 쓴다. */
+export async function countSubmissions(
+  assignmentId: string,
+): Promise<SubmissionCount> {
+  if (!supabase) {
+    return { photos: 0, voiceLogs: 0 };
+  }
+
+  const [photos, voices] = await Promise.all([
+    supabase
+      .from('field_photos')
+      .select('id', {
+        count: 'exact',
+        head: true,
+      })
+      .eq('related_record_id', assignmentId),
+    supabase
+      .from('field_voice_logs')
+      .select('id', {
+        count: 'exact',
+        head: true,
+      })
+      .eq('related_record_id', assignmentId),
+  ]);
+
+  return {
+    photos: photos.count ?? 0,
+    voiceLogs: voices.count ?? 0,
+  };
+}
+
+/* ------------------------------------------------------------------
+ * 아래 세 함수는 이제 앱에서 부르지 않는다.
+ *
+ * 판정이 관제로 넘어가면서 웹 FieldSection 이 같은 일을 한다.
+ * 지우지 않고 남겨 둔 이유는, 통신이 끊긴 현장에서 요원이 직접 정리해야 하는
+ * 상황이 생길 수 있다고 보고 되돌릴 여지를 남기기 위함이다.
+ * 6개월쯤 지나도 쓰이지 않으면 지우는 편이 낫다.
  * ------------------------------------------------------------------ */
 
 /** PT-YYYY-NNNN. 웹 src/utils/treeId.ts 와 같은 형식이어야 목록 정렬이 맞는다. */

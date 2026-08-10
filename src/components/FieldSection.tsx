@@ -13,10 +13,13 @@ import {
 
 import {
   CrowdReport,
+  FieldPhotoRecord,
+  FieldVoiceLogRecord,
   TreeRecord,
   WorkerStatus,
 } from "../types";
 import { createTreeId } from "../utils/treeId";
+import { buildStorageUrl } from "../utils/storageUrl";
 
 import {
   DispatchAssignment,
@@ -112,6 +115,14 @@ interface FieldSectionProps {
    */
   workers?: WorkerStatus[];
   dispatchAssignments?: DispatchAssignment[];
+
+  /*
+   * 현장 요원이 앱에서 올린 자료.
+   * related_record_id 에 예찰 배정 ID 가 들어 있어 그것으로 묶어 본다.
+   * 감염 여부 판단은 이 자료를 보고 관제가 한다.
+   */
+  fieldPhotos?: FieldPhotoRecord[];
+  fieldVoiceLogs?: FieldVoiceLogRecord[];
 
   onUpdateDispatchStatus?: (
     assignmentId: string,
@@ -288,6 +299,8 @@ export default function FieldSection({
   onAddTree,
   existingTreeIds = [],
   dispatchAssignments = [],
+  fieldPhotos = [],
+  fieldVoiceLogs = [],
 }: FieldSectionProps) {
   // 좌표를 행정동·격자ID로 바꿔 표시하려면 룩업이 먼저 있어야 한다.
   // 판정 결과 useMemo가 이 값을 의존성으로 잡아야, 로드가 끝난 뒤에 다시 계산된다.
@@ -796,7 +809,7 @@ export default function FieldSection({
 
   /**
    * 상태 변경 진입점.
-   * '작업 완료'를 고르면 바로 반영하지 않고, 현장 판정 팝업을 먼저 띄운다.
+   * '작업 완료'를 고르면 바로 반영하지 않고 판정 화면을 먼저 띄운다.
    * 감염 여부에 따라 이후 흐름(확진목 / 방제 / 반려)이 갈리기 때문이다.
    */
   const handleDispatchStatusChange = (
@@ -810,6 +823,52 @@ export default function FieldSection({
     }
     onUpdateDispatchStatus?.(assignment.assignmentId, nextStatus);
   };
+
+  /*
+   * 현장 요원이 앱에서 자료를 올리고 '작업 완료'로 넘긴 건들.
+   * 관제가 사진·음성을 보고 감염 여부를 정해야 하는 대상이다.
+   * 판정이 끝나면 '복귀 완료'가 되거나 삭제되므로 목록에서 빠진다.
+   */
+  const pendingReviews = useMemo(
+    () =>
+      surveyAssignments.filter(
+        (assignment) => assignment.status === "작업 완료",
+      ),
+    [surveyAssignments],
+  );
+
+  /** 판정 대상에 딸린 제출 자료를 배정 ID 로 묶는다. */
+  const reviewPhotos = useMemo(
+    () =>
+      completionTarget
+        ? fieldPhotos.filter(
+            (photo) =>
+              photo.relatedRecordId === completionTarget.assignmentId,
+          )
+        : [],
+    [completionTarget, fieldPhotos],
+  );
+
+  const reviewVoiceLogs = useMemo(
+    () =>
+      completionTarget
+        ? fieldVoiceLogs.filter(
+            (log) =>
+              log.relatedRecordId === completionTarget.assignmentId,
+          )
+        : [],
+    [completionTarget, fieldVoiceLogs],
+  );
+
+  /** 목록에서 "자료 N건" 배지를 띄우기 위한 건수 */
+  const submissionCountOf = (assignmentId: string) => ({
+    photos: fieldPhotos.filter(
+      (photo) => photo.relatedRecordId === assignmentId,
+    ).length,
+    voiceLogs: fieldVoiceLogs.filter(
+      (log) => log.relatedRecordId === assignmentId,
+    ).length,
+  });
 
   /** 감염이 확인된 경우: 확진목으로 넘기고 배정을 종료한다. */
   const handleCompletionInfected = () => {
@@ -1098,6 +1157,25 @@ export default function FieldSection({
                             <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-black text-emerald-700">
                               격자 예찰 배정
                             </span>
+
+                            {/*
+                              현장에서 자료를 올리고 넘긴 건. 관제가 봐야 할 대상이라
+                              목록에서 바로 눈에 띄게 표시한다.
+                            */}
+                            {assignment.status === "작업 완료" && (
+                              <span className="rounded-full bg-rose-100 px-2 py-0.5 font-black text-rose-700">
+                                판정 대기
+                                {(() => {
+                                  const counts = submissionCountOf(
+                                    assignment.assignmentId,
+                                  );
+                                  const total =
+                                    counts.photos + counts.voiceLogs;
+                                  return total > 0 ? ` · 자료 ${total}건` : "";
+                                })()}
+                              </span>
+                            )}
+
                             <span>
                               {new Date(
                                 assignment.assignedAt
@@ -1154,6 +1232,24 @@ export default function FieldSection({
                       ))}
                     </select>
                   </div>
+
+                  {/*
+                    현장 자료가 올라온 건은 판정 버튼을 따로 둔다.
+                    상태 드롭다운을 다시 건드리게 하면 이미 '작업 완료'인 값을
+                    또 골라야 해서 동작하지 않는다.
+                  */}
+                  {assignment.status === "작업 완료" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCompletionTarget(assignment);
+                        setCompletionStep("infection");
+                      }}
+                      className="w-full border-t border-rose-100 bg-rose-50 px-4 py-2.5 text-[11px] font-black text-rose-700 transition hover:bg-rose-100"
+                    >
+                      현장 자료 확인하고 판정하기
+                    </button>
+                  )}
                 </article>
               );
             })}
@@ -1717,6 +1813,59 @@ export default function FieldSection({
                 </p>
               </div>
 
+              {/*
+                현장 요원이 올린 근거 자료.
+                감염 여부는 관제가 이 자료를 보고 정한다. 자료 없이 판정하면
+                무엇을 보고 확진했는지 남지 않는다.
+              */}
+              {(reviewPhotos.length > 0 ||
+                reviewVoiceLogs.length > 0) && (
+                <div className="border-b border-slate-100 bg-slate-50 p-5">
+                  <p className="mb-3 text-[11px] font-black text-slate-500">
+                    현장 제출 자료 · 사진 {reviewPhotos.length}장 · 음성{" "}
+                    {reviewVoiceLogs.length}건
+                  </p>
+
+                  {reviewPhotos.length > 0 && (
+                    <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+                      {reviewPhotos.map((photo) => (
+                        <img
+                          key={photo.id}
+                          src={buildStorageUrl(
+                            "field-photos",
+                            photo.storagePath,
+                          )}
+                          alt="현장 예찰 사진"
+                          className="h-24 w-24 shrink-0 rounded-xl border border-slate-200 object-cover"
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {reviewVoiceLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="mb-2 rounded-xl border border-slate-200 bg-white p-3"
+                    >
+                      <audio
+                        controls
+                        preload="none"
+                        src={buildStorageUrl(
+                          log.storageBucket || "field-audio",
+                          log.storagePath,
+                        )}
+                        className="w-full"
+                      />
+                      {log.transcript && (
+                        <p className="mt-2 text-[11px] font-semibold leading-5 text-slate-600">
+                          {log.transcript}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="space-y-3 p-5">
                 {completionStep === "infection" ? (
                   <>
@@ -1726,6 +1875,14 @@ export default function FieldSection({
                     <p className="text-[11px] font-semibold text-slate-400">
                       확인 시 확진목 리스트로 넘어가 방제대기 상태로 등록됩니다.
                     </p>
+
+                    {reviewPhotos.length === 0 &&
+                      reviewVoiceLogs.length === 0 && (
+                        <p className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-700">
+                          현장에서 올린 자료가 아직 없습니다. 자료를 확인한 뒤
+                          판정하는 것을 권합니다.
+                        </p>
+                      )}
 
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       <button
