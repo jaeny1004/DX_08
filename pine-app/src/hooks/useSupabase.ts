@@ -646,13 +646,35 @@ export function SupabaseProvider({
     file: File
   ): Promise<string | null> => {
     if (supabase) {
+      /*
+       * Storage 객체 키에 원본 파일명을 그대로 붙이면 안 된다.
+       * Supabase 는 키에 ASCII 외 문자를 허용하지 않아서, 한글 파일명이면
+       * "Invalid key: 1786339489010-소나무.jpg" 로 400 이 난다.
+       * 실제로 시민 신고 사진 업로드가 이 이유로 전부 실패하고 있었다.
+       *
+       * 파일명은 보존할 이유가 없다(원본 이름을 쓰는 화면이 없다).
+       * 확장자만 살리고 나머지는 UUID 로 만든다.
+       * 현장사진·음성 업로드는 원래 이 방식이라 문제가 없었다.
+       */
+      const extension =
+        file.name
+          .split('.')
+          .pop()
+          ?.toLowerCase()
+          .replace(/[^a-z0-9]/g, '') ||
+        'jpg';
+
       const fileName =
-        `${Date.now()}-${file.name}`;
+        `${Date.now()}-${crypto.randomUUID()}.${extension}`;
 
       const { data, error } =
         await supabase.storage
           .from('pine-images')
-          .upload(fileName, file);
+          .upload(fileName, file, {
+            contentType:
+              file.type || 'image/jpeg',
+            upsert: false,
+          });
 
       if (error || !data) {
         console.error(
