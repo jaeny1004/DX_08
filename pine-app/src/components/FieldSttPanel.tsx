@@ -28,6 +28,10 @@ interface FieldSttPanelProps {
   onBack: () => void;
 
   onComplete: () => void;
+
+  /* GPS 를 못 쓸 때 대신 쓸 좌표. FieldPhotoPanel 과 같은 이유다. */
+  fallbackLatitude?: number;
+  fallbackLongitude?: number;
 }
 
 interface Coordinates {
@@ -143,6 +147,8 @@ export function FieldSttPanel({
   relatedRecordId,
   onBack,
   onComplete,
+  fallbackLatitude,
+  fallbackLongitude,
 }: FieldSttPanelProps) {
   const {
     saveFieldVoiceLog,
@@ -611,6 +617,20 @@ export function FieldSttPanel({
       clearCurrentRecording();
     };
 
+  /*
+   * 현재 좌표를 구한다.
+   *
+   * GPS 가 안 잡히면 예전에는 여기서 실패시켜 녹음 저장 자체가 막혔다.
+   * 실내이거나 위치 권한을 거부한 경우가 흔하다. 배정에서 넘어온 격자 중심
+   * 좌표가 있으면 그것으로 대신하고, 둘 다 없을 때만 실패시킨다.
+   * (field_voice_logs 의 좌표는 nullable 이지만 흐름을 사진 쪽과 맞춘다)
+   */
+  const hasFallback =
+    typeof fallbackLatitude === 'number' &&
+    Number.isFinite(fallbackLatitude) &&
+    typeof fallbackLongitude === 'number' &&
+    Number.isFinite(fallbackLongitude);
+
   const getCurrentCoordinates =
     (): Promise<Coordinates> => {
       return new Promise(
@@ -618,13 +638,37 @@ export function FieldSttPanel({
           resolve,
           reject
         ) => {
+          const useFallback = (
+            reason: string
+          ) => {
+            if (hasFallback) {
+              console.warn(
+                `${reason} 배정 격자 좌표로 대신합니다.`
+              );
+
+              resolve({
+                latitude:
+                  fallbackLatitude as number,
+
+                longitude:
+                  fallbackLongitude as number,
+              });
+
+              return;
+            }
+
+            reject(
+              new Error(
+                '현재 위치를 가져올 수 없습니다. 브라우저의 위치 권한을 허용해 주세요.'
+              )
+            );
+          };
+
           if (
             !navigator.geolocation
           ) {
-            reject(
-              new Error(
-                '이 기기에서는 위치정보를 사용할 수 없습니다.'
-              )
+            useFallback(
+              '이 기기에서는 위치정보를 쓸 수 없습니다.'
             );
 
             return;
@@ -650,10 +694,8 @@ export function FieldSttPanel({
                   error
                 );
 
-                reject(
-                  new Error(
-                    '현재 위치를 가져올 수 없습니다. 브라우저의 위치 권한을 허용해 주세요.'
-                  )
+                useFallback(
+                  'GPS 조회에 실패했습니다.'
                 );
               },
 
@@ -720,8 +762,15 @@ export function FieldSttPanel({
               coordinates.longitude,
           });
 
+        /*
+         * 전사에 실패해도 녹음 파일과 기록은 이미 저장돼 있다
+         * (useSupabase 가 stt_status='error' 로 남긴다).
+         * 그런데 여기서 통째로 실패 처리하면 요원은 녹음이 날아간 줄 알고
+         * 다시 녹음한다. 저장 여부와 전사 성공 여부를 나눠서 알린다.
+         */
         if (
-          !result.success
+          !result.success &&
+          !result.voiceLogId
         ) {
           throw new Error(
             result.error ||
@@ -734,6 +783,13 @@ export function FieldSttPanel({
         );
 
         setIsSaved(true);
+
+        if (!result.success) {
+          setSaveError(
+            '녹음은 저장했지만 자동 텍스트 변환에 실패했습니다. ' +
+            '관제에서 녹음을 직접 들을 수 있습니다.'
+          );
+        }
 
         setShowSuccessModal(
           true

@@ -622,13 +622,30 @@ export function MyTasks({
         )}
       </AnimatePresence>
 
-      {/* 촬영·녹음은 기존 화면을 그대로 띄운다. 배정 ID 로 자료를 묶는다. */}
+      {/*
+        촬영·녹음은 기존 화면을 그대로 띄운다. 배정 ID 로 자료를 묶는다.
+
+        두 패널의 루트는 space-y-4 짜리 콘텐츠 블록이라 스스로 스크롤하지 않는다.
+        FieldManagement 에서는 시트 안에 들어가 있어서 문제가 없었는데, 여기서
+        여백 없는 오버레이에 그냥 넣었더니 저장 버튼이 화면 밖으로 밀려 눌리지
+        않았다. 그래서 스크롤과 여백을 감싸는 쪽에서 준다.
+
+        GPS 가 안 잡히는 경우가 흔해 배정 격자 중심 좌표를 폴백으로 넘긴다.
+      */}
       {submitTarget && submitPanel === 'photo' && (
-        <div className="absolute inset-0 z-[60] bg-system-bg">
+        <div className="absolute inset-0 z-[60] overflow-y-auto bg-system-bg p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <FieldPhotoPanel
             workMode="surveillance"
             relatedRecordId={
               submitTarget.assignmentId
+            }
+            fallbackLatitude={
+              submitTarget.targetLatitude ??
+              undefined
+            }
+            fallbackLongitude={
+              submitTarget.targetLongitude ??
+              undefined
             }
             onBack={() => {
               setSubmitPanel('menu');
@@ -641,11 +658,19 @@ export function MyTasks({
       )}
 
       {submitTarget && submitPanel === 'voice' && (
-        <div className="absolute inset-0 z-[60] bg-system-bg">
+        <div className="absolute inset-0 z-[60] overflow-y-auto bg-system-bg p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <FieldSttPanel
             workMode="surveillance"
             relatedRecordId={
               submitTarget.assignmentId
+            }
+            fallbackLatitude={
+              submitTarget.targetLatitude ??
+              undefined
+            }
+            fallbackLongitude={
+              submitTarget.targetLongitude ??
+              undefined
             }
             onBack={() => {
               setSubmitPanel('menu');

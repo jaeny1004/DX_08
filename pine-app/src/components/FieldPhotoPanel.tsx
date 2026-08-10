@@ -21,6 +21,15 @@ interface FieldPhotoPanelProps {
     workMode: FieldPhotoWorkMode;
     relatedRecordId: string;
     onBack: () => void;
+
+    /*
+     * GPS 를 못 쓸 때 대신 쓸 좌표.
+     * field_photos 의 위도·경도는 NOT NULL 이라 좌표가 없으면 저장 자체가 안 된다.
+     * 예전에는 위치 권한이 거부되거나 실내라 잡히지 않으면 그대로 실패했다.
+     * 예찰 배정에서 넘어온 경우 격자 중심 좌표를 넘겨 저장은 되게 한다.
+     */
+    fallbackLatitude?: number;
+    fallbackLongitude?: number;
 }
 
 interface Coordinates {
@@ -32,6 +41,8 @@ export function FieldPhotoPanel({
     workMode,
     relatedRecordId,
     onBack,
+    fallbackLatitude,
+    fallbackLongitude,
 }: FieldPhotoPanelProps) {
     const { saveFieldPhoto } =
         useSupabase();
@@ -278,17 +289,56 @@ export function FieldPhotoPanel({
         );
     };
 
+    /** 폴백 좌표가 넘어왔는지 */
+    const hasFallback =
+        typeof fallbackLatitude === 'number' &&
+        Number.isFinite(fallbackLatitude) &&
+        typeof fallbackLongitude === 'number' &&
+        Number.isFinite(fallbackLongitude);
+
+    /*
+     * 현재 좌표를 구한다.
+     *
+     * GPS 가 안 잡히면 예전에는 여기서 실패시켜 사진 저장 자체가 막혔다.
+     * 실내이거나 위치 권한을 거부한 경우가 흔한데, 그때마다 현장 기록을
+     * 통째로 못 남기는 건 과하다. 배정에서 넘어온 격자 중심 좌표가 있으면
+     * 그것으로 대신한다. 둘 다 없을 때만 실패시킨다.
+     */
     const getCurrentCoordinates =
         (): Promise<Coordinates> => {
             return new Promise(
                 (resolve, reject) => {
+                    const useFallback = (
+                        reason: string
+                    ) => {
+                        if (hasFallback) {
+                            console.warn(
+                                `${reason} 배정 격자 좌표로 대신합니다.`
+                            );
+
+                            resolve({
+                                latitude:
+                                    fallbackLatitude as number,
+
+                                longitude:
+                                    fallbackLongitude as number,
+                            });
+
+                            return;
+                        }
+
+                        reject(
+                            new Error(
+                                '현재 위치를 가져올 수 없습니다. 브라우저의 위치 권한을 허용해 주세요.'
+                            )
+                        );
+                    };
+
                     if (
                         !navigator.geolocation
                     ) {
-                        reject(
-                            new Error(
-                                '이 기기에서는 위치정보를 사용할 수 없습니다.'
-                            )
+                        useFallback(
+                            '이 기기에서는 위치정보를 쓸 수 없습니다.'
                         );
 
                         return;
@@ -314,10 +364,8 @@ export function FieldPhotoPanel({
                                     error
                                 );
 
-                                reject(
-                                    new Error(
-                                        '현재 위치를 가져올 수 없습니다. 브라우저의 위치 권한을 허용해 주세요.'
-                                    )
+                                useFallback(
+                                    'GPS 조회에 실패했습니다.'
                                 );
                             },
 
