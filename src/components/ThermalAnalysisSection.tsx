@@ -371,26 +371,38 @@ export default function ThermalAnalysisSection({
                     storagePath,
                 });
 
-                const { data, error } =
-                    await supabase.functions.invoke<ThermalDetectionResult>(
-                        "thermal-detection",
-                        {
-                            body: {
-                                bucket: DRONE_BUCKET,
-                                path: storagePath,
-                                confidence: 10,
-                                overlap: 30,
-                            },
+                /*
+                 * 예전에는 Supabase Edge Function 'thermal-detection' 을 불렀다.
+                 * Edge Function 은 프로젝트마다 따로 배포해야 해서, Supabase
+                 * 프로젝트를 옮기자 404 가 되고 브라우저에는 CORS 오류로 보였다
+                 * (preflight 가 404 라 통과하지 못한다).
+                 * 같은 도메인의 서버리스 함수 api/thermal-detection.ts 로 옮겼다.
+                 */
+                const response = await fetch(
+                    "/api/thermal-detection",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
                         },
+                        body: JSON.stringify({
+                            bucket: DRONE_BUCKET,
+                            path: storagePath,
+                            confidence: 10,
+                            overlap: 30,
+                        }),
+                    },
+                );
+
+                const data =
+                    (await response.json()) as ThermalDetectionResult;
+
+                if (!response.ok) {
+                    throw new Error(
+                        data?.error ??
+                        `열화상 분석 서버 오류 (HTTP ${response.status})`,
                     );
-
-                if (error) {
-                    const detail =
-                        await getEdgeFunctionErrorMessage(
-                            error,
-                        );
-
-                    throw new Error(detail);
                 }
 
                 if (!data?.ok) {

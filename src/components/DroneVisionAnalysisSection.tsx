@@ -329,24 +329,35 @@ export default function DroneVisionAnalysisSection({
   const requestRoboflowAnalysis = async (
     storagePath: string,
   ): Promise<VisionDetectionResult> => {
-    const { data, error } =
-      await supabase.functions.invoke<VisionDetectionResult>(
-        "drone-visible-detection",
-        {
-          body: {
-            bucket: DRONE_BUCKET,
-            path: storagePath,
-            confidence: 15,
-            overlap: 30,
-          },
+    /*
+     * Supabase Edge Function 은 프로젝트마다 따로 배포해야 해서, 프로젝트를
+     * 옮기면 404 가 되고 브라우저에는 CORS 오류로 보인다. 같은 도메인의
+     * 서버리스 함수 api/drone-visible-detection.ts 로 옮겼다.
+     */
+    const response = await fetch(
+      "/api/drone-visible-detection",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          bucket: DRONE_BUCKET,
+          path: storagePath,
+          confidence: 15,
+          overlap: 30,
+        }),
+      },
+    );
+
+    const data =
+      (await response.json()) as VisionDetectionResult;
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error ??
+        `분석 서버 오류 (HTTP ${response.status})`,
       );
-
-    if (error) {
-      const detail =
-        await getEdgeFunctionErrorMessage(error);
-
-      throw new Error(detail);
     }
 
     if (!data?.ok) {
