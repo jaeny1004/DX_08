@@ -327,8 +327,6 @@ export default function FieldSection({
   const [convertedReportIds, setConvertedReportIds] =
     useState<Set<string>>(() => new Set());
 
-  const [assignmentReportId, setAssignmentReportId] =
-    useState<string | null>(null);
 
   const [processingReportId, setProcessingReportId] =
     useState<string | null>(null);
@@ -399,6 +397,13 @@ export default function FieldSection({
    * 같은 시군구 소속을 먼저 올리고, 그 안에서는 가까운 순으로 둔다.
    * 위치를 모르면 기존처럼 숙련도 순(로드 시 정렬된 순서)을 그대로 쓴다.
    */
+  /*
+   * 위치 정보가 전혀 없을 때 기준으로 삼는 지역.
+   * 이 사업의 주 대상지가 경북 포항이라 그쪽 요원을 먼저 올린다.
+   * 다른 지역을 기준으로 삼으려면 이 값만 바꾸면 된다.
+   */
+  const FALLBACK_SIGUNGU_NAME = "포항시";
+
   const rankWorkersForLocation = (
     latitude: number | undefined,
     longitude: number | undefined,
@@ -410,12 +415,28 @@ export default function FieldSection({
       typeof longitude === "number" &&
       Number.isFinite(longitude);
 
+    /*
+     * 위치도 지역명도 없으면 예전에는 전국 요원이 숙련도 순으로 그냥 쏟아졌다.
+     * 그 목록에서는 누구를 골라야 할지 판단할 근거가 없다.
+     * 이럴 때는 기준 지역을 하나 정해 그 지역 요원을 먼저 보여준다.
+     * (시민 제보에 좌표가 없는 경우가 실제로 있다 — 위치 권한을 거부하면 그렇다)
+     */
     if (!hasPoint && !sigunguName) {
-      return unassignedSurveyWorkers.map((worker) => ({
-        worker,
-        distanceKm: null as number | null,
-        localRegion: false,
-      }));
+      const fallback = unassignedSurveyWorkers
+        .map((worker) => ({
+          worker,
+          distanceKm: null as number | null,
+          localRegion:
+            worker.homeSigunguName === FALLBACK_SIGUNGU_NAME,
+        }))
+        .sort((left, right) => {
+          if (left.localRegion !== right.localRegion) {
+            return left.localRegion ? -1 : 1;
+          }
+          return right.worker.skillLevel - left.worker.skillLevel;
+        });
+
+      return fallback;
     }
 
     return unassignedSurveyWorkers
@@ -739,7 +760,50 @@ export default function FieldSection({
         next.add(reportId);
         return next;
       });
-      setAssignmentReportId(null);
+    } finally {
+      setProcessingReportId(null);
+    }
+  };
+
+  /**
+   * 확진목 전환만 한다.
+   *
+   * 예전에는 이 버튼이 요원 선택 목록을 열고, 요원을 고르면 그때서야 확진
+   * 전환과 배정이 함께 처리됐다. 두 판단은 시점이 다르다. 확진 여부는 제보를
+   * 보고 바로 정하지만, 누구를 보낼지는 인력 상황을 보고 나중에 정한다.
+   * 요원을 고르지 않으면 확진 전환도 안 되는 구조라 제보가 계속 쌓였다.
+   *
+   * 배정은 아래 "예찰 요원 배정"에서 따로 한다.
+   */
+  const handleConfirmOnly = async (report: CrowdReport) => {
+    const reportId = String(report.id);
+
+    if (
+      convertedReportIds.has(reportId) ||
+      processingReportId === reportId
+    ) {
+      return;
+    }
+
+    setProcessingReportId(reportId);
+
+    try {
+      const confirmed = await onConfirmInfection?.(report);
+
+      if (confirmed === false) {
+        return;
+      }
+
+      setConvertedReportIds((previous) => {
+        const next = new Set(previous);
+        next.add(reportId);
+        return next;
+      });
+
+      setSurveyMessage(
+        `시민 제보 ${reportId}을 확진목으로 전환했습니다. ` +
+          "예찰 요원 배정에서 담당자를 지정하세요.",
+      );
     } finally {
       setProcessingReportId(null);
     }
@@ -988,7 +1052,6 @@ export default function FieldSection({
       const rejected = await onRejectReport?.(report);
 
       if (rejected !== false) {
-        setAssignmentReportId(null);
         setSelectedReportId(null);
       }
     } finally {
@@ -1032,16 +1095,21 @@ export default function FieldSection({
                     : "shrink-0 rounded-xl bg-emerald-800 px-3 py-1.5 text-[11px] font-black text-white shadow-sm transition hover:bg-emerald-900"
                 }
               >
-                {isCreatingSurvey ? "등록 취소" : "신규 등록"}
+                {isCreatingSurvey ? "배정 닫기" : "예찰 요원 배정"}
               </button>
             </div>
 
             <p className="mt-1 text-[10px] font-semibold text-slate-400">
               항목을 선택하면 현장 이미지와 처리 정보를 확인할 수 있습니다.
+              확진목으로 전환한 건은 [예찰 요원 배정]에서 담당자를 지정합니다.
             </p>
           </header>
 
-          {/* 신규 예찰 배정 등록 */}
+          {/*
+            예찰 요원 배정.
+            확진목 전환과 분리된 뒤로는 여기가 배정 창구다.
+            위치를 입력하면 가까운 순으로, 위치를 모르면 기준 지역 요원부터 뜬다.
+          */}
           {isCreatingSurvey && (
             <div className="shrink-0 space-y-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
               <RegionPicker
@@ -1412,14 +1480,15 @@ export default function FieldSection({
                             </div>
 
                             <div className="grid grid-cols-2 gap-2 pt-1">
+                              {/*
+                                확진 전환과 요원 배정을 분리했다.
+                                요원을 고르지 않으면 확진 전환도 안 되던 구조라
+                                제보가 계속 쌓였다. 배정은 아래 전용 패널에서 한다.
+                              */}
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setAssignmentReportId((previous) =>
-                                    previous === reportId
-                                      ? null
-                                      : reportId
-                                  );
+                                  void handleConfirmOnly(report);
                                 }}
                                 disabled={
                                   convertedReportIds.has(reportId) ||
@@ -1428,10 +1497,19 @@ export default function FieldSection({
                                 }
                                 className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-800 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-emerald-100 disabled:text-emerald-700"
                               >
-                                <UserCheck size={14} />
+                                {processingReportId === reportId ? (
+                                  <LoaderCircle
+                                    size={14}
+                                    className="animate-spin"
+                                  />
+                                ) : (
+                                  <UserCheck size={14} />
+                                )}
                                 {convertedReportIds.has(reportId)
                                   ? "확진목 전환 완료"
-                                  : "확진목 전환"}
+                                  : processingReportId === reportId
+                                    ? "전환 중"
+                                    : "확진목 전환"}
                               </button>
 
                               <button
@@ -1459,89 +1537,6 @@ export default function FieldSection({
                               </button>
                             </div>
 
-                            {assignmentReportId === reportId && (
-                              <div className="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/50">
-                                <div className="border-b border-emerald-100 px-3 py-2.5">
-                                  <div className="text-xs font-black text-emerald-900">
-                                    예찰 요원 선택
-                                  </div>
-                                  <div className="mt-0.5 text-[10px] font-semibold text-emerald-700/70">
-                                    배정하면 확진목 전환과 현장 출동이 함께 처리됩니다.
-                                  </div>
-                                </div>
-
-                                <div className="custom-scrollbar max-h-56 space-y-2 overflow-y-auto p-2">
-                                  {workerLoadError && (
-                                    <div className="rounded-lg border border-rose-100 bg-white p-3 text-[11px] font-bold text-rose-600">
-                                      {workerLoadError}
-                                    </div>
-                                  )}
-
-                                  {!workerLoadError &&
-                                    reportWorkerOptions.length === 0 && (
-                                      <div className="rounded-lg border border-dashed border-emerald-200 bg-white p-4 text-center text-[11px] font-bold text-slate-400">
-                                        현재 배정 가능한 예찰 요원이 없습니다.
-                                      </div>
-                                    )}
-
-                                  {reportWorkerOptions.map(({ worker, distanceKm, localRegion }) => (
-                                    <div
-                                      key={worker.workerId}
-                                      className="flex items-center justify-between gap-3 rounded-lg border border-emerald-100 bg-white p-3"
-                                    >
-                                      <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                          <span className="truncate text-xs font-black text-slate-800">
-                                            {worker.workerName}
-                                          </span>
-                                          {localRegion && (
-                                            <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-700">
-                                              관내
-                                            </span>
-                                          )}
-                                          <span className="font-mono text-[9px] font-bold text-slate-400">
-                                            {worker.workerId}
-                                          </span>
-                                        </div>
-                                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-500">
-                                          <span>예찰 {worker.skillLevel}단계</span>
-                                          <span>{worker.homeSigunguName}</span>
-                                          {distanceKm !== null && (
-                                            <span>{distanceKm.toFixed(1)}km</span>
-                                          )}
-                                          <span className="flex items-center gap-1">
-                                            <Battery size={11} />
-                                            {worker.batteryPercent ?? "-"}%
-                                          </span>
-                                        </div>
-                                      </div>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          void handleAssignAndConfirm(
-                                            report,
-                                            worker
-                                          );
-                                        }}
-                                        disabled={processingReportId === reportId}
-                                        className="flex shrink-0 items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-black text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-                                      >
-                                        {processingReportId === reportId ? (
-                                          <LoaderCircle
-                                            size={12}
-                                            className="animate-spin"
-                                          />
-                                        ) : (
-                                          <UserCheck size={12} />
-                                        )}
-                                        배정
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
                           </div>
 
                           {/* 현장 이미지 */}
