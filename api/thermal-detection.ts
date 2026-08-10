@@ -26,11 +26,15 @@ const ROBOFLOW_API_KEY = process.env.ROBOFLOW_API_KEY;
 
 /*
  * 열화상은 분류가 아니라 객체탐지 모델이다.
- * Roboflow 워크스페이스(s-workspace-niivv)의 pine-thermal-detection v2 를 쓴다.
+ * Roboflow 워크스페이스(s-workspace-niivv)의 pine-thermal-detection 을 쓴다.
  * 판독 화면의 pine-disease-classification 과는 다른 모델이니 섞지 말 것.
+ *
+ * 버전은 v1 이다. 프로젝트에 v1/v2 가 다 있지만 serverless 추론에 올라간 것은
+ * v1 뿐이다(v2 로 호출하면 "Requested Roboflow resource not found" 가 난다).
+ * v2 를 배포하면 ROBOFLOW_THERMAL_MODEL_ID 로 바꿔 끼우면 된다.
  */
 const THERMAL_MODEL_ID =
-  process.env.ROBOFLOW_THERMAL_MODEL_ID || "pine-thermal-detection/2";
+  process.env.ROBOFLOW_THERMAL_MODEL_ID || "pine-thermal-detection/1";
 
 /* 앱·웹이 올리는 경로만 허용한다. 임의 파일을 읽어가지 못하게 한다. */
 const ALLOWED_BUCKET = "drone-images";
