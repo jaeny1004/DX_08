@@ -357,6 +357,27 @@ export function ReportWizard({
 
       saveReportTokenToDevice(reportToken);
 
+      /*
+       * AI 판독을 걸어 둔다.
+       *
+       * 조원 프로젝트에는 pine_records 트리거가 웹훅을 부르는 구조가 있었지만
+       * 그 트리거는 DB 확장과 시크릿에 의존해 옮기지 않았다. 그래서 판독을
+       * 아무도 돌리지 않아 웹의 "AI 감염도"가 항상 0% 로 떴다.
+       *
+       * 결과를 기다리지 않는다. 신고자는 접수만 되면 되고, 판독은 몇 초 걸린다.
+       * 실패해도 신고 자체는 이미 저장돼 있으므로 로그만 남긴다.
+       */
+      void fetch('/api/analyze-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          record_id: savedRecord.id,
+          image_url: imageUrl,
+        }),
+      }).catch(analysisError => {
+        console.warn('AI 판독 요청 실패:', analysisError);
+      });
+
       onSuccess();
     } catch (error) {
       console.error('Report submit error:', error);
