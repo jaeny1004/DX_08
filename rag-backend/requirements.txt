@@ -2,7 +2,10 @@ fastapi>=0.115
 uvicorn>=0.30
 sqlalchemy>=2.0
 psycopg2-binary>=2.9
-python-jose[cryptography]>=3.3
+# python-jose[cryptography] 에서 옮겨왔다. HS256 하나만 쓰는데도 cryptography
+# 패키지 전체(+ecdsa/rsa/pyasn1)를 끌고 와 Vercel 225MB 한도를 넘겼다.
+# PyJWT 는 HS256 에 cryptography 를 요구하지 않는다. app/core/security.py 참고.
+PyJWT>=2.9
 pwdlib[argon2]>=0.2
 email-validator>=2.2
 # pymupdf(설치 시 53MB)는 배포 의존성에서 뺐다 — Vercel 함수 225MB 한도 초과 때문.
