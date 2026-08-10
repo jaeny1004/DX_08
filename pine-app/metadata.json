@@ -1,0 +1,12 @@
+{
+  "name": "ForestShield AI",
+  "description": "Pine wilt disease reporting and field management mobile application.",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
