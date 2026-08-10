@@ -304,8 +304,32 @@ export function ReportWizard({
 
       const reportToken = crypto.randomUUID();
 
-      // 화면에는 표시하지 않고 제출 시 위치정보만 수집
-      const coordinates = await getCurrentCoordinates();
+      /*
+       * 화면에는 표시하지 않고 제출 시 위치정보만 수집한다.
+       *
+       * 예전에는 위치를 못 잡으면 여기서 실패해 신고 접수 자체가 막혔다.
+       * 실내이거나 위치 권한을 거부한 경우가 흔한데, 사진과 연락처만 있어도
+       * 접수해 두는 편이 낫다. 위치 없이 보낼지는 신고자에게 묻는다.
+       */
+      let coordinates: Coordinates | null = null;
+
+      try {
+        coordinates = await getCurrentCoordinates();
+      } catch (locationError) {
+        console.warn('신고 위치 조회 실패:', locationError);
+
+        const proceed = window.confirm(
+          '현재 위치를 가져오지 못했습니다.\n\n' +
+            '위치 없이 접수하면 담당자가 현장을 찾기 어려울 수 있습니다.\n' +
+            '그대로 접수할까요?'
+        );
+
+        if (!proceed) {
+          throw new Error(
+            '위치 권한을 허용한 뒤 다시 시도해 주세요.'
+          );
+        }
+      }
 
       // Supabase Storage에 사진 업로드
       const imageUrl = await uploadImage(imageFile);
@@ -316,8 +340,8 @@ export function ReportWizard({
 
       // Supabase pine_records 테이블에 신고 데이터 저장
       const savedRecord = await addRecord({
-        latitude: coordinates.latitude,
-        longitude: coordinates.longitude,
+        latitude: coordinates?.latitude ?? null,
+        longitude: coordinates?.longitude ?? null,
         image_url: imageUrl,
         phone_number: phone || '미입력',
         status: 'pending',

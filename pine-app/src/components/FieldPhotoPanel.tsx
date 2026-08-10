@@ -7,6 +7,7 @@ import {
 import {
     ArrowLeft,
     Camera,
+    ImagePlus,
     RotateCcw,
     Save,
     CheckCircle2,
@@ -75,6 +76,39 @@ export function FieldPhotoPanel({
 
     const streamRef =
         useRef<MediaStream | null>(null);
+
+    const fileInputRef =
+        useRef<HTMLInputElement>(null);
+
+    /**
+     * 앨범에서 고른 사진을 미리보기에 올린다.
+     * 카메라가 켜져 있으면 먼저 끄고, 이전 미리보기 blob 도 해제한다.
+     */
+    const handleGallerySelect = (
+        event: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+        const file = event.target.files?.[0];
+
+        if (!file) {
+            return;
+        }
+
+        stopCamera();
+
+        setImagePreview((previous) => {
+            if (previous?.startsWith('blob:')) {
+                URL.revokeObjectURL(previous);
+            }
+            return URL.createObjectURL(file);
+        });
+
+        setImageFile(file);
+        setCameraError('');
+        setSaveError('');
+
+        // 같은 파일을 다시 골라도 change 가 발생하도록 비운다
+        event.target.value = '';
+    };
 
     const stopCamera = () => {
         if (streamRef.current) {
@@ -550,19 +584,46 @@ export function FieldPhotoPanel({
                 )}
             </div>
 
-            {imagePreview && (
+            {/*
+                촬영만 되고 파일 선택이 없었다. 카메라를 못 쓰는 기기이거나
+                이미 찍어 둔 사진을 올려야 하는 경우가 있어 갤러리 선택을 함께 둔다.
+                신고 화면(ReportWizard)은 원래 두 방식을 다 지원하고 있었다.
+            */}
+            <div className="grid grid-cols-2 gap-2">
                 <button
                     type="button"
                     onClick={() =>
                         void startCamera()
                     }
                     disabled={saving}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-[rgba(0,0,0,0.08)] bg-card-bg py-3 text-sm font-bold text-text-main disabled:opacity-50"
+                    className="flex items-center justify-center gap-2 rounded-xl border border-[rgba(0,0,0,0.08)] bg-card-bg py-3 text-sm font-bold text-text-main disabled:opacity-50"
                 >
                     <RotateCcw size={17} />
-                    다시 촬영
+                    {imagePreview
+                        ? '다시 촬영'
+                        : '카메라'}
                 </button>
-            )}
+
+                <button
+                    type="button"
+                    onClick={() =>
+                        fileInputRef.current?.click()
+                    }
+                    disabled={saving}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-[rgba(0,0,0,0.08)] bg-card-bg py-3 text-sm font-bold text-text-main disabled:opacity-50"
+                >
+                    <ImagePlus size={17} />
+                    앨범에서 선택
+                </button>
+            </div>
+
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleGallerySelect}
+            />
 
             {cameraError && (
                 <div className="rounded-xl bg-red-50 p-3 text-xs font-semibold text-red-500">
