@@ -899,6 +899,13 @@ export default function FieldSection({
       emdName: assignment.targetEmdName || undefined,
       gridId: assignment.gridId,
       inspector: assignment.workerName,
+      /*
+       * 현장에서 올린 사진·음성은 related_record_id 에 배정 ID 를 달고 있다.
+       * 확진목의 source_report_id 를 같은 값으로 맞춰 두면 확진목 타임라인이
+       * 그 자료를 그대로 묶어서 보여준다(MonitoringSection 이 이 값으로 찾는다).
+       * 무엇을 보고 확진했는지 확진목에 남는다.
+       */
+      sourceReportId: assignment.assignmentId,
       timeline: [
         {
           stage: "현장 예찰 완료",

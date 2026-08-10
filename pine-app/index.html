@@ -1,13 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!--
+      lang이 en으로 잘못 선언되어 있어 Chrome이 한국어 본문을 외국어로 보고
+      자동 번역을 실행했다. 번역기가 React가 관리하는 텍스트 노드를 교체하면
+      이후 React의 insertBefore / removeChild 가 실패해 화면이 죽는다.
+      실제로 "Failed to execute 'insertBefore' on 'Node'" 로 음성 화면이 멈췄다.
+      lang을 ko로 바로잡고, 번역 대상이 되지 않도록 명시한다.
+      (웹 대시보드도 같은 이유로 같은 처리를 해 두었다)
+    -->
+    <meta name="google" content="notranslate" />
+    <title>소나무재선충병 현장 예찰·방제 앱</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

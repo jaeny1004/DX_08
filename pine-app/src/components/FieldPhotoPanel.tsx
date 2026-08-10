@@ -143,6 +143,22 @@ export function FieldPhotoPanel({
                 videoRef.current
                     .play()
                     .catch(error => {
+                        /*
+                         * srcObject 를 넣자마자 play() 를 부르면 브라우저가
+                         * 아직 이전 로드를 정리하는 중이라 AbortError 가 난다.
+                         * ("play() request was interrupted by a new load request")
+                         * 재생 자체는 loadedmetadata 이후 자동으로 이어지므로
+                         * 이 경우는 오류로 다루지 않는다.
+                         */
+                        if (
+                            error instanceof
+                                DOMException &&
+                            error.name ===
+                                'AbortError'
+                        ) {
+                            return;
+                        }
+
                         console.error(
                             '현장 카메라 재생 실패:',
                             error

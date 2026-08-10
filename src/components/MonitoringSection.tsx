@@ -1167,13 +1167,18 @@ export default function MonitoringSection({
           return [];
         }
 
+        /*
+         * 전사(STT)가 실패해도 녹음 파일은 저장돼 있다. 예전에는 completed 만
+         * 보여줘서, 변환에 실패한 녹음은 확진목에서 아예 사라졌다.
+         * 재생은 가능하므로 목록에 남기고, 전사문이 없으면 화면에서 그렇게 표시한다.
+         */
         return fieldVoiceLogs.filter(
           log =>
             log.relatedRecordId ===
             selectedTree
               .sourceReportId &&
-            log.sttStatus ===
-            "completed"
+            log.sttStatus !==
+            "processing"
         );
       },
       [
