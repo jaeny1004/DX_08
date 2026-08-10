@@ -440,9 +440,8 @@ export default function AuthScreen({
           </div>
         </div>
 
-        <div className="relative z-10 flex items-center justify-between text-[11px] font-semibold text-slate-400">
+        <div className="relative z-10 flex items-center text-[11px] font-semibold text-slate-400">
           <span>PWD-ISCP · AI Decision Support</span>
-          <span>PR-AUC 0.3183</span>
         </div>
       </section>
 

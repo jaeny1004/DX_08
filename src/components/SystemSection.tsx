@@ -197,24 +197,27 @@ export default function SystemSection() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
+                    {/*
+                      성능 열(PR-AUC, Top-K 포착율)을 뺐다. 표에 있던 0.942 / 91.2%
+                      같은 값은 실제 평가 결과가 아니라 화면을 채우려고 넣은 임의값이라,
+                      검증된 수치처럼 읽히면 안 된다.
+                    */}
                     <tr className="border-b border-slate-200 text-slate-400 font-bold bg-slate-50/50">
                       <th className="py-3 px-3">모델 버전 ID</th>
-                      <th className="py-3 px-3">PR-AUC 성능</th>
-                      <th className="py-3 px-3">Top-K 포착율</th>
+                      <th className="py-3 px-3">알고리즘</th>
                       <th className="py-3 px-3">마지막 학습일</th>
                       <th className="py-3 px-3 text-right">전환</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
                     {[
-                      { id: "v2.3.1-XGBoost", prauc: "0.942", topk: "91.2%", date: "2026-07-01", isActive: true },
-                      { id: "v2.2.0-XGBoost", prauc: "0.898", topk: "87.4%", date: "2026-05-14", isActive: false },
-                      { id: "v2.0.4-RandomForest", prauc: "0.812", topk: "81.9%", date: "2026-03-02", isActive: false },
+                      { id: "v2.3.1-XGBoost", algorithm: "XGBoost", date: "2026-07-01", isActive: true },
+                      { id: "v2.2.0-XGBoost", algorithm: "XGBoost", date: "2026-05-14", isActive: false },
+                      { id: "v2.0.4-RandomForest", algorithm: "Random Forest", date: "2026-03-02", isActive: false },
                     ].map((model) => (
                       <tr key={model.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="py-4 px-3 font-mono font-bold text-emerald-950">{model.id}</td>
-                        <td className="py-4 px-3 font-mono font-bold text-emerald-700">{model.prauc}</td>
-                        <td className="py-4 px-3 font-mono text-slate-500">{model.topk}</td>
+                        <td className="py-4 px-3 text-slate-500 font-medium">{model.algorithm}</td>
                         <td className="py-4 px-3 text-slate-500 font-mono font-medium">{model.date}</td>
                         <td className="py-4 px-3 text-right">
                           <button

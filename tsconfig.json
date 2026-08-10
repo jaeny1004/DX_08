@@ -22,5 +22,12 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "//": "pine-app 은 자체 tsconfig 와 자체 lint 를 가진 별도 앱이다. 저장소 안으로 들어오면서 루트 tsc 가 그쪽 Deno 함수까지 검사해 오류가 났다. server.ts 는 AI Studio 템플릿 잔재로 현재 쓰지 않고 의존성(express, @google/genai)도 설치돼 있지 않다.",
+  "exclude": [
+    "node_modules",
+    "dist",
+    "pine-app",
+    "server.ts"
+  ]
 }

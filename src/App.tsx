@@ -2477,12 +2477,6 @@ export default function App() {
               )}
             </div>
 
-            {isSidebarOpen && (
-              <div className="mx-3 mt-2 rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-500">
-                PR-AUC 0.3183
-              </div>
-            )}
-
             <button
               type="button"
               onClick={() => {
