@@ -146,6 +146,12 @@ interface FieldSectionProps {
     report: CrowdReport
   ) => boolean | Promise<boolean>;
 
+  /**
+   * 제보에 요원을 배정했을 때 호출한다.
+   * 원본 제보를 처리됨으로 표시해 접수 목록에서 내리는 일은 App 이 맡는다.
+   */
+  onReportAssigned?: (reportId: string) => void;
+
   onAssignWorker?: (
     assignment: DispatchAssignment
   ) => void;
@@ -293,6 +299,7 @@ export default function FieldSection({
   reports,
   onConfirmInfection,
   onRejectReport,
+  onReportAssigned,
   onAssignWorker,
   onUpdateDispatchStatus,
   onCancelDispatch,
@@ -883,8 +890,17 @@ export default function FieldSection({
     });
 
     setAssignmentReportId(null);
+
+    /*
+     * 배정한 제보는 접수 목록에서 내린다.
+     * 남겨 두면 같은 제보에 여러 요원이 중복 배정된다.
+     * 진행 상황은 위 예찰 리스트에서 배정 건으로 본다.
+     */
+    onReportAssigned?.(reportId);
+
     setSurveyMessage(
-      `${worker.workerName} 요원을 시민 제보 ${reportId} 현장 확인에 배정했습니다.`,
+      `${worker.workerName} 요원을 시민 제보 ${reportId} 현장 확인에 배정했습니다. ` +
+        "예찰 리스트에서 진행 상황을 확인하세요.",
     );
   };
 

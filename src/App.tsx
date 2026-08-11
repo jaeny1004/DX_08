@@ -753,8 +753,14 @@ export default function App() {
       const { data, error } = await supabase
         .from("pine_records")
         .select("*")
+        /*
+         * 접수 대기 중인 것만 가져온다.
+         * confirmed = 확진목으로 전환됨, assigned = 요원이 배정됨.
+         * 둘 다 처리에 들어간 건이라 접수 목록에 두면 중복 처리된다.
+         */
         .or(
-          "dashboard_status.is.null,dashboard_status.neq.confirmed"
+          "dashboard_status.is.null," +
+            "and(dashboard_status.neq.confirmed,dashboard_status.neq.assigned)"
         )
         .order("created_at", {
           ascending: false,
@@ -1640,6 +1646,45 @@ export default function App() {
     );
 
     return true;
+  };
+
+  /**
+   * 제보에 요원을 배정했음을 원본에 기록하고 접수 목록에서 내린다.
+   *
+   * 배정하고 나면 그 제보는 처리에 들어간 것이라 "접수 대기" 목록에 남아 있으면
+   * 안 된다. 남겨 두면 같은 제보에 여러 요원이 중복 배정된다.
+   * 진행 상황은 예찰 리스트에서 배정 건으로 본다.
+   *
+   * 확진 전환('confirmed')과 구분해 'assigned' 로 남긴다. 둘은 다른 처리다.
+   */
+  const handleMarkReportAssigned = async (
+    reportId: string
+  ) => {
+    setReports((previous) =>
+      previous.filter(
+        (item) => item.id !== reportId
+      )
+    );
+
+    const { error } = await supabase
+      .from("pine_records")
+      .update({
+        dashboard_status: "assigned",
+      })
+      .eq("id", reportId);
+
+    if (error) {
+      console.error(
+        "시민 제보 배정 상태 저장 실패:",
+        error
+      );
+
+      // 화면에서만 사라지고 새로고침하면 되살아난다. 조용히 두면 혼란스럽다.
+      window.alert(
+        "요원은 배정됐지만 원본 제보의 처리 상태를 저장하지 못했습니다.\n" +
+        "새로고침하면 제보가 다시 목록에 나타날 수 있습니다."
+      );
+    }
   };
 
   const handleRejectReport = async (
@@ -2651,6 +2696,7 @@ export default function App() {
                       onUpdateWorkerStatus={handleUpdateWorkerStatus}
                       onConfirmInfection={handleConfirmInfection}
                       onRejectReport={handleRejectReport}
+                      onReportAssigned={handleMarkReportAssigned}
                       onAssignWorker={handleAssignWorker}
                       onAddTree={handleAddTree}
                       existingTreeIds={treeIds}
