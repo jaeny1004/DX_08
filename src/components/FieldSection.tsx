@@ -327,6 +327,9 @@ export default function FieldSection({
   const [convertedReportIds, setConvertedReportIds] =
     useState<Set<string>>(() => new Set());
 
+  /** 요원 선택 목록을 펼친 제보. 확진 전환과는 별개로 동작한다. */
+  const [assignmentReportId, setAssignmentReportId] =
+    useState<string | null>(null);
 
   const [processingReportId, setProcessingReportId] =
     useState<string | null>(null);
@@ -801,12 +804,88 @@ export default function FieldSection({
       });
 
       setSurveyMessage(
-        `시민 제보 ${reportId}을 확진목으로 전환했습니다. ` +
-          "예찰 요원 배정에서 담당자를 지정하세요.",
+        `시민 제보 ${reportId}을 확진목으로 전환했습니다.`,
       );
     } finally {
       setProcessingReportId(null);
     }
+  };
+
+  /**
+   * 제보에 예찰 요원을 배정한다. 확진 전환과는 별개 동작이다.
+   *
+   * 확진 여부를 아직 못 정한 제보에도 사람을 보내 확인시킬 수 있어야 한다.
+   * 오히려 그게 예찰의 본래 목적이라, 확진을 배정의 선행 조건으로 두지 않는다.
+   *
+   * 만들어진 배정은 위 예찰 리스트(surveyAssignments)에 바로 뜬다.
+   */
+  const handleAssignReportWorker = (
+    report: CrowdReport,
+    worker: SurveyWorkerCandidate,
+  ) => {
+    const reportId = String(report.id);
+
+    const latitude = toFiniteNumber(
+      getReportLatitude(report),
+      worker.baseLatitude,
+    );
+    const longitude = toFiniteNumber(
+      getReportLongitude(report),
+      worker.baseLongitude,
+    );
+
+    const regionParts = String(report.region ?? "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    onAssignWorker?.({
+      assignmentId: `REPORT-${reportId}-${Date.now()}`,
+      workerId: worker.workerId,
+      workerName: worker.workerName,
+      workerType: "현장요원",
+      taskType: "SURVEY",
+      workerCapabilities: [
+        {
+          taskType: "SURVEY",
+          skillLevel: worker.skillLevel,
+        },
+      ],
+      assignedSkillLevel: worker.skillLevel,
+      homeSidoName: worker.homeSidoName,
+      homeSigunguCode: worker.homeSigunguCode,
+      homeSigunguName: worker.homeSigunguName,
+      targetSidoName: regionParts[0] ?? "",
+      targetSigunguCode: "",
+      targetSigunguName: regionParts[1] ?? report.region ?? "",
+      targetEmdCode: "",
+      targetEmdName: regionParts.slice(2).join(" "),
+      gridId: `CIVIL-${reportId}`,
+      targetLatitude: latitude,
+      targetLongitude: longitude,
+      priorityGrade: "현장 확인",
+      riskGrade:
+        report.aiProbability >= 75
+          ? "매우 높음"
+          : report.aiProbability >= 45
+            ? "높음"
+            : "주의",
+      riskScore: report.aiProbability,
+      accessScore: 0,
+      distanceKm: null,
+      travelTimeHour: null,
+      batteryPercent: worker.batteryPercent,
+      remainingMinutesAtAssignment: worker.remainingMinutes,
+      recommendationReason: `시민 제보 ${reportId} 현장 확인 배정`,
+      assignmentType: "지역 내 배정",
+      status: "배정 대기",
+      assignedAt: new Date().toISOString(),
+    });
+
+    setAssignmentReportId(null);
+    setSurveyMessage(
+      `${worker.workerName} 요원을 시민 제보 ${reportId} 현장 확인에 배정했습니다.`,
+    );
   };
 
   /**
@@ -1479,12 +1558,16 @@ export default function FieldSection({
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2 pt-1">
-                              {/*
-                                확진 전환과 요원 배정을 분리했다.
-                                요원을 고르지 않으면 확진 전환도 안 되던 구조라
-                                제보가 계속 쌓였다. 배정은 아래 전용 패널에서 한다.
-                              */}
+                            {/*
+                              세 동작을 나란히 둔다.
+                              예전에는 확진 전환 버튼이 요원 목록을 열고, 요원을
+                              골라야 확진과 배정이 함께 처리됐다. 두 판단은 시점이
+                              다르다. 확진 여부는 제보를 보고 바로 정하지만 누구를
+                              보낼지는 인력 상황을 보고 정한다. 요원을 안 고르면
+                              확진 전환도 안 돼서 제보가 계속 쌓였다.
+                              이제 각각 독립으로 누를 수 있다.
+                            */}
+                            <div className="grid grid-cols-3 gap-2 pt-1">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1535,8 +1618,116 @@ export default function FieldSection({
                                   ? "삭제 중"
                                   : "반려"}
                               </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAssignmentReportId((previous) =>
+                                    previous === reportId ? null : reportId,
+                                  );
+                                }}
+                                disabled={rejectingReportId === reportId}
+                                className={
+                                  assignmentReportId === reportId
+                                    ? "flex w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-white py-2.5 text-xs font-bold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    : "flex w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 py-2.5 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                }
+                              >
+                                <Users size={14} />
+                                {assignmentReportId === reportId
+                                  ? "닫기"
+                                  : "요원 배정"}
+                              </button>
                             </div>
 
+                            {/*
+                              예찰 요원 선택.
+                              제보 위치를 기준으로 관내·가까운 순으로 정렬한다.
+                              좌표가 없으면 기준 지역(FALLBACK_SIGUNGU_NAME) 요원이
+                              먼저 온다. 배정하면 위 예찰 리스트에 바로 뜬다.
+                            */}
+                            {assignmentReportId === reportId && (
+                              <div className="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/50">
+                                <div className="border-b border-emerald-100 px-3 py-2.5">
+                                  <div className="text-xs font-black text-emerald-900">
+                                    예찰 요원 선택
+                                  </div>
+                                  <div className="mt-0.5 text-[10px] font-semibold text-emerald-700/70">
+                                    배정하면 예찰 리스트에 등록되고 현장 앱의
+                                    "내 작업"으로 전달됩니다.
+                                  </div>
+                                </div>
+
+                                <div className="custom-scrollbar max-h-56 space-y-2 overflow-y-auto p-2">
+                                  {workerLoadError && (
+                                    <div className="rounded-lg border border-rose-100 bg-white p-3 text-[11px] font-bold text-rose-600">
+                                      {workerLoadError}
+                                    </div>
+                                  )}
+
+                                  {!workerLoadError &&
+                                    reportWorkerOptions.length === 0 && (
+                                      <div className="rounded-lg border border-dashed border-emerald-200 bg-white p-4 text-center text-[11px] font-bold text-slate-400">
+                                        현재 배정 가능한 예찰 요원이 없습니다.
+                                      </div>
+                                    )}
+
+                                  {reportWorkerOptions.map(
+                                    ({ worker, distanceKm, localRegion }) => (
+                                      <div
+                                        key={worker.workerId}
+                                        className="flex items-center justify-between gap-3 rounded-lg border border-emerald-100 bg-white p-3"
+                                      >
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-2">
+                                            <span className="truncate text-xs font-black text-slate-800">
+                                              {worker.workerName}
+                                            </span>
+                                            {localRegion && (
+                                              <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-700">
+                                                관내
+                                              </span>
+                                            )}
+                                            <span className="font-mono text-[9px] font-bold text-slate-400">
+                                              {worker.workerId}
+                                            </span>
+                                          </div>
+                                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-500">
+                                            <span>
+                                              예찰 {worker.skillLevel}단계
+                                            </span>
+                                            <span>{worker.homeSigunguName}</span>
+                                            {distanceKm !== null && (
+                                              <span>
+                                                {distanceKm.toFixed(1)}km
+                                              </span>
+                                            )}
+                                            <span className="flex items-center gap-1">
+                                              <Battery size={11} />
+                                              {worker.batteryPercent ?? "-"}%
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            handleAssignReportWorker(
+                                              report,
+                                              worker,
+                                            );
+                                          }}
+                                          className="flex shrink-0 items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-black text-white transition hover:bg-emerald-800"
+                                        >
+                                          <UserCheck size={12} />
+                                          배정
+                                        </button>
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* 현장 이미지 */}
