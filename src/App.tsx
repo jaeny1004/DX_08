@@ -1427,6 +1427,18 @@ export default function App() {
     // 현장 모바일 앱이 "내 작업"으로 받아볼 수 있도록 DB에도 남긴다.
     // 실패해도 화면은 그대로 둔다(오프라인/마이그레이션 전 대비).
     void saveDispatchAssignment(assignment);
+
+    /*
+     * 배정한 건이 어디로 갔는지 바로 보여준다.
+     * 대시보드 지도에서 배정하면 화면이 그대로 있어서 배정이 됐는지,
+     * 어느 목록으로 갔는지 확인하려면 사이드바를 직접 눌러야 했다.
+     * 예찰·드론은 실시간 예찰 현황으로, 방제는 방제 작업 현황으로 옮긴다.
+     */
+    setActiveModule(
+      assignment.taskType === "CONTROL"
+        ? "control-status"
+        : "field"
+    );
   };
 
   const handleUpdateDispatchStatus = (

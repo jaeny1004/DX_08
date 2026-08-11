@@ -113,8 +113,14 @@ export function WorkerProvider({
       }
 
       /*
-       * 914명 전체를 받으면 무겁다. 배정 가능한 요원만,
-       * 이름순으로 상위 500명까지만 받는다.
+       * 배정 가능한 요원 전원을 받는다.
+       *
+       * 예전에는 500명으로 잘랐다. 이름순 정렬이라 뒤쪽 성씨가 통째로
+       * 사라져서 'ㅈ' 이후 요원은 검색에도 안 잡혔다. 검색을 클라이언트에서
+       * 하기 때문에 목록에 없으면 찾을 방법이 아예 없다.
+       *
+       * 914명 × 8개 필드라 200KB 남짓이고 로그인할 때 한 번만 받는다.
+       * PostgREST 기본 상한(1000행)에 걸리지 않도록 range 로 명시한다.
        */
       const { data, error } = await supabase
         .from('workforce_workers')
@@ -127,7 +133,7 @@ export function WorkerProvider({
         .order('worker_name', {
           ascending: true,
         })
-        .limit(500);
+        .range(0, 4999);
 
       if (cancelled) {
         return;
