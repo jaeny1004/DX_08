@@ -1409,13 +1409,26 @@ export default function App() {
       // 같은 요원이 같은 격자에서 예찰과 방제를 각각 맡을 수 있으므로
       // 업무 종류까지 봐야 한다. taskType을 빼면 예찰 완료 후 방제로 이관할 때
       // 중복으로 판정되어 조용히 버려진다.
+      //
+      // '복귀 완료'는 끝난 건이라 새 배정을 막지 않는다. 예전에는 이 조건이
+      // 없어서, 한 번 일을 마친 요원을 같은 격자에 다시 보내면 조용히
+      // 버려졌다. 대시보드는 자기 쪽 검사(복귀 완료 제외)를 통과시켜
+      // "배정했습니다"라고 알리는데 목록에는 아무것도 안 뜨는 상태가 됐다.
       (item) =>
         item.workerId === assignment.workerId &&
         item.gridId === assignment.gridId &&
-        item.taskType === assignment.taskType
+        item.taskType === assignment.taskType &&
+        item.status !== "복귀 완료"
     );
 
     if (duplicated) {
+      // 조용히 버리면 호출한 화면은 성공한 줄 안다. 최소한 흔적은 남긴다.
+      console.warn(
+        "이미 진행 중인 같은 배정이 있어 건너뜁니다:",
+        assignment.workerName,
+        assignment.gridId,
+        assignment.taskType
+      );
       return;
     }
 

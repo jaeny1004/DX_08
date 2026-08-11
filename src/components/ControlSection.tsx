@@ -127,7 +127,12 @@ function dispatchToControlOperation(
     .join(" ");
 
   return {
-    id: `CTR-${assignment.gridId}-${assignment.workerId}`,
+    /*
+     * 격자+요원으로만 만들면, 같은 요원을 같은 격자에 다시 배정했을 때
+     * 예전 건과 id 가 겹친다. 목록 key 가 충돌하고 진척률 덮어쓰기도
+     * 엉뚱한 건에 붙는다. 배정 ID 를 함께 넣어 건마다 다르게 만든다.
+     */
+    id: `CTR-${assignment.gridId}-${assignment.workerId}-${assignment.assignmentId}`,
     assignmentId: assignment.assignmentId,
     area: area || `GRID-${assignment.gridId}`,
     method: "훈증",
@@ -308,7 +313,11 @@ export default function ControlSection({
     for (const assignment of dispatchAssignments) {
       if (assignment.taskType !== "CONTROL") continue;
 
-      const operationId = `CTR-${assignment.gridId}-${assignment.workerId}`;
+      // dispatchToControlOperation 이 만드는 id 와 같은 형식이어야 한다.
+      // 어긋나면 덮어쓰기 해제가 엉뚱한 키를 보게 되어 동작하지 않는다.
+      const operationId =
+        `CTR-${assignment.gridId}-${assignment.workerId}` +
+        `-${assignment.assignmentId}`;
       const previous = lastDispatchStatusRef.current[operationId];
 
       if (previous !== undefined && previous !== assignment.status) {
