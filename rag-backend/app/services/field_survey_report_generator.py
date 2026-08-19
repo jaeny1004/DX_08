@@ -1,4 +1,5 @@
 """Supabase 사전계산 데이터를 사용하는 단일 현장 예찰 보고서 생성기."""
+
 from __future__ import annotations
 
 import io
@@ -8,6 +9,7 @@ import random
 import re
 import zipfile
 from dataclasses import asdict, dataclass
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,8 @@ from shapely.geometry import Point
 
 from app.services.prediction_report_generator import (
     BACKEND_ROOT,
+    DEFAULT_REPORT_TILE_ATTRIBUTION,
+    DEFAULT_REPORT_TILE_URL,
     DEFAULT_ZOOM,
     MAP_HEIGHT,
     MAP_WIDTH,
@@ -32,11 +36,13 @@ from app.services.prediction_report_generator import (
     ReportSourceData,
     _create_supabase_client,
     calculate_metrics,
+    create_fallback_map_background,
     geometry_to_image_rings,
     load_report_source_data,
     local_risk_grade,
     lonlat_to_world_pixel,
     request_vworld_map,
+    request_xyz_tile_map,
 )
 
 GRID_SIZE_M = 500
@@ -72,9 +78,7 @@ def apply_field_candidate_metrics(
         value = candidate.get(key)
         if value is not None:
             linked[key] = (
-                float(value)
-                if key in {"risk_score", "priority_score"}
-                else str(value)
+                float(value) if key in {"risk_score", "priority_score"} else str(value)
             )
     return linked
 
@@ -127,32 +131,83 @@ class FieldSurveyData:
     sample_count: int
     suspicious_count: int
 
+
 def sanitize_filename(value: str) -> str:
     return re.sub(r'[\\/:*?"<>|]+', "_", value).strip()
 
-def find_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+
+def find_font(
+    size: int, bold: bool = False
+) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     candidates = [
-        "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf" if bold else "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
-        "/usr/share/fonts/truetype/nanum/NanumSquareRoundB.ttf" if bold else "/usr/share/fonts/truetype/nanum/NanumSquareRoundR.ttf",
-        "/usr/share/fonts/truetype/unfonts-core/UnDotumBold.ttf" if bold else "/usr/share/fonts/truetype/unfonts-core/UnDotum.ttf",
+        (
+            "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"
+            if bold
+            else "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"
+        ),
+        (
+            "/usr/share/fonts/truetype/nanum/NanumSquareRoundB.ttf"
+            if bold
+            else "/usr/share/fonts/truetype/nanum/NanumSquareRoundR.ttf"
+        ),
+        (
+            "/usr/share/fonts/truetype/unfonts-core/UnDotumBold.ttf"
+            if bold
+            else "/usr/share/fonts/truetype/unfonts-core/UnDotum.ttf"
+        ),
     ]
     for path in candidates:
         if Path(path).exists():
             return ImageFont.truetype(path, size=size)
     return ImageFont.load_default()
 
+
 def deterministic_rng(record: ReportRecord) -> random.Random:
     return random.Random(record.center_grid_id * 10000 + record.year)
+
 
 def add_days_text(year: int, month: int, day: int, offset: int) -> str:
     # 12월 날짜만 사용하며 28일을 넘지 않도록 순환
     adjusted = ((day - 1 + offset) % 28) + 1
     return f"{year}. {month:02d}. {adjusted:02d}."
 
+
+def normalize_report_period(
+    year: int,
+    start_date: str | None,
+    end_date: str | None,
+) -> tuple[str, str]:
+    start_text = str(start_date or "").strip()
+    end_text = str(end_date or "").strip()
+
+    if bool(start_text) != bool(end_text):
+        raise ValueError("시작일과 종료일을 모두 입력해야 합니다.")
+
+    # 기존 배치 생성 호출과의 호환용 기본값. 웹 초안 생성에서는 서비스가
+    # 두 날짜를 필수로 확인한 뒤 명시적으로 전달한다.
+    if not start_text:
+        return f"{year}-01-01", f"{year}-12-31"
+
+    try:
+        start_value = date.fromisoformat(start_text)
+        end_value = date.fromisoformat(end_text)
+    except ValueError as exc:
+        raise ValueError(
+            "시작일과 종료일은 YYYY-MM-DD 형식이어야 합니다."
+        ) from exc
+
+    if end_value < start_value:
+        raise ValueError("종료일은 시작일보다 빠를 수 없습니다.")
+
+    return start_value.isoformat(), end_value.isoformat()
+
+
 def create_field_survey_data(
     record: ReportRecord,
     metrics: dict[str, Any],
     center_cell: TerrainCell,
+    start_date: str,
+    end_date: str,
 ) -> FieldSurveyData:
     rng = deterministic_rng(record)
     transformer = Transformer.from_crs("EPSG:5186", "EPSG:4326", always_xy=True)
@@ -167,34 +222,44 @@ def create_field_survey_data(
     if risk >= 85:
         suspicious = rng.randint(5, 9)
         route_type = "현장 정밀예찰 및 드론 보조 촬영"
-        discoloration = rng.choice([
-            "수관 상부 황화와 부분 갈변이 함께 관찰되는 중기 단계",
-            "가지 끝부터 갈변이 확산된 중기~후기 단계",
-        ])
-        vector_trace = rng.choice([
-            "일부 수간에서 소형 천공 흔적이 관찰되어 추가 확인 필요",
-            "수피 표면에 천공 의심 흔적이 확인되어 정밀 관찰 실시",
-        ])
+        discoloration = rng.choice(
+            [
+                "수관 상부 황화와 부분 갈변이 함께 관찰되는 중기 단계",
+                "가지 끝부터 갈변이 확산된 중기~후기 단계",
+            ]
+        )
+        vector_trace = rng.choice(
+            [
+                "일부 수간에서 소형 천공 흔적이 관찰되어 추가 확인 필요",
+                "수피 표면에 천공 의심 흔적이 확인되어 정밀 관찰 실시",
+            ]
+        )
         sample_count = rng.randint(3, 5)
     elif risk >= 70:
         suspicious = rng.randint(2, 6)
         route_type = "드론 선행예찰 후 현장 확인"
-        discoloration = rng.choice([
-            "수관 일부 황화가 확인되는 초기~중기 단계",
-            "부분 갈변 및 잎 처짐이 관찰되는 초기 단계",
-        ])
-        vector_trace = rng.choice([
-            "뚜렷한 탈출공은 미확인되었으나 일부 천공 의심 흔적 관찰",
-            "수피 틈과 가지 분지부를 중심으로 추가 확인 필요",
-        ])
+        discoloration = rng.choice(
+            [
+                "수관 일부 황화가 확인되는 초기~중기 단계",
+                "부분 갈변 및 잎 처짐이 관찰되는 초기 단계",
+            ]
+        )
+        vector_trace = rng.choice(
+            [
+                "뚜렷한 탈출공은 미확인되었으나 일부 천공 의심 흔적 관찰",
+                "수피 틈과 가지 분지부를 중심으로 추가 확인 필요",
+            ]
+        )
         sample_count = rng.randint(2, 4)
     elif risk >= 55:
         suspicious = rng.randint(1, 3)
         route_type = "드론 우선예찰 및 표본 현장점검"
-        discoloration = rng.choice([
-            "경미한 잎 변색이 확인되는 초기 단계",
-            "부분적인 황화가 있으나 계절성 변화 여부 추가 확인 필요",
-        ])
+        discoloration = rng.choice(
+            [
+                "경미한 잎 변색이 확인되는 초기 단계",
+                "부분적인 황화가 있으나 계절성 변화 여부 추가 확인 필요",
+            ]
+        )
         vector_trace = "뚜렷한 매개충 흔적은 확인되지 않음"
         sample_count = rng.randint(1, 2)
     else:
@@ -225,17 +290,19 @@ def create_field_survey_data(
     ]
     organization, surveyors = team_names[record.report_no % len(team_names)]
 
-    route = (
-        f"AI 우선 예찰 검토지역 지정 후 {route_type} 방식으로 중심 격자와 주변 8개 격자를 순차 확인"
+    route = f"AI 우선 예찰 검토지역 지정 후 {route_type} 방식으로 중심 격자와 주변 8개 격자를 순차 확인"
+    compartment = (
+        f"{(record.center_grid_id % 90) + 10}임반-{(record.center_grid_id % 9) + 1}소반"
     )
-    compartment = f"{(record.center_grid_id % 90) + 10}임반-{(record.center_grid_id % 9) + 1}소반"
 
     if suspicious > 0:
-        bark_obs = rng.choice([
-            "의심 개체의 수피 일부 건조와 목질부 수분 저하가 관찰됨",
-            "수피 박리부 주변에서 갈변이 확인되어 시료 채취 실시",
-            "가지 절단면 일부에서 변색이 관찰되어 목편 시료 확보",
-        ])
+        bark_obs = rng.choice(
+            [
+                "의심 개체의 수피 일부 건조와 목질부 수분 저하가 관찰됨",
+                "수피 박리부 주변에서 갈변이 확인되어 시료 채취 실시",
+                "가지 절단면 일부에서 변색이 관찰되어 목편 시료 확보",
+            ]
+        )
         opinion = (
             f"중심 격자를 포함한 3×3 권역에서 변색 또는 고사 의심 개체 {suspicious}본을 확인했습니다. "
             f"현장만으로 감염 여부를 판단하기 어려워 시료를 채취했으며, 인접 격자까지 추가 모니터링이 필요합니다."
@@ -250,7 +317,9 @@ def create_field_survey_data(
     qr_code = f"FS-{record.year}-{record.center_grid_id}-{record.report_no:02d}"
     if sample_count > 0:
         sample_desc = f"목편 {sample_count}점, 가지 시료 {max(1, sample_count - 1)}점"
-        system_result = f"현장 예찰 시스템에 사진·좌표·시료정보 등록 완료, QR코드 {qr_code} 연동"
+        system_result = (
+            f"현장 예찰 시스템에 사진·좌표·시료정보 등록 완료, QR코드 {qr_code} 연동"
+        )
         agency_status = "관할 산림환경연구기관 검경 의뢰 접수, 결과 대기"
         followup_plan = (
             "검경 결과 확인 전까지 대상 3×3 권역을 우선 예찰 검토지역으로 유지하고, "
@@ -265,9 +334,11 @@ def create_field_survey_data(
             "새로운 의심 징후 확인 시 즉시 시료 채취와 검경 의뢰를 시행한다."
         )
 
-    survey_day = 8 + (record.report_no % 18)
-    survey_datetime = f"{record.year}. 12. {survey_day:02d}. 09:30~14:30"
-    followup_date = add_days_text(record.year, 12, survey_day, 7)
+    survey_date = date.fromisoformat(start_date)
+    report_end_date = date.fromisoformat(end_date)
+    followup = min(survey_date + timedelta(days=7), report_end_date)
+    survey_datetime = f"{survey_date:%Y. %m. %d.} 09:30~14:30"
+    followup_date = f"{followup:%Y. %m. %d.}"
 
     detail = f"정상 관찰 {normal_count}본, 변색 의심 {yellow_count}본, 고사 의심 {dead_count}본"
     ai_result = (
@@ -312,6 +383,7 @@ def create_field_survey_data(
         sample_count=sample_count,
         suspicious_count=suspicious,
     )
+
 
 def draw_text_fit(
     draw: ImageDraw.ImageDraw,
@@ -371,7 +443,9 @@ def draw_text_fit(
     for line in chosen_lines:
         bbox = draw.textbbox((0, 0), line or "가", font=chosen_font)
         line_metrics.append((bbox[2] - bbox[0], max(1, bbox[3] - bbox[1])))
-    total_h = sum(h for _, h in line_metrics) + line_spacing * max(0, len(chosen_lines) - 1)
+    total_h = sum(h for _, h in line_metrics) + line_spacing * max(
+        0, len(chosen_lines) - 1
+    )
     y = y1 + max(0, (height - total_h) / 2) + 2
 
     for line, (line_w, line_h) in zip(chosen_lines, line_metrics):
@@ -384,6 +458,7 @@ def draw_text_fit(
         draw.text((x, y), line, font=chosen_font, fill=fill)
         y += line_h + line_spacing
 
+
 def extract_template_media(template_path: Path, media_name: str) -> Image.Image:
     """DOCX 템플릿의 word/media 이미지를 읽는다."""
     internal = f"word/media/{media_name}"
@@ -392,6 +467,7 @@ def extract_template_media(template_path: Path, media_name: str) -> Image.Image:
             raise RuntimeError(f"템플릿에서 별지 이미지를 찾지 못했습니다: {internal}")
         raw = archive.read(internal)
     return Image.open(io.BytesIO(raw)).convert("RGB")
+
 
 def build_air_survey_plan_appendix(
     template_path: Path,
@@ -431,20 +507,27 @@ def build_air_survey_plan_appendix(
     area_ha = 9 * (GRID_SIZE_M * GRID_SIZE_M) / 10_000
     primary_name = survey.surveyors.split(",")[0].strip()
     org_name = "산림보호과"
-    risk_note = (
-        f"중심 격자 {record.center_grid_id}\n"
-        f"주변 8개 포함"
-    )
+    risk_note = f"중심 격자 {record.center_grid_id}\n" f"주변 8개 포함"
 
-    draw_text_fit(draw, boxes["sigungu"], record.sigungu_name, max_size=18, min_size=12, bold=True)
+    draw_text_fit(
+        draw, boxes["sigungu"], record.sigungu_name, max_size=18, min_size=12, bold=True
+    )
     draw_text_fit(draw, boxes["region"], risk_note, max_size=15, min_size=10)
     draw_text_fit(draw, boxes["area"], f"{area_ha:.0f}", max_size=18, min_size=12)
     draw_text_fit(draw, boxes["date"], survey_date, max_size=15, min_size=10)
-    draw_text_fit(draw, boxes["landing"], f"{record.sigungu_name}\n임시착륙장", max_size=14, min_size=10)
+    draw_text_fit(
+        draw,
+        boxes["landing"],
+        f"{record.sigungu_name}\n임시착륙장",
+        max_size=14,
+        min_size=10,
+    )
     draw_text_fit(draw, boxes["org"], org_name, max_size=14, min_size=10)
     draw_text_fit(draw, boxes["rank"], "주무관", max_size=16, min_size=11)
     draw_text_fit(draw, boxes["name"], primary_name, max_size=16, min_size=11)
-    draw_text_fit(draw, boxes["helicopter"], "산림청\n중형헬기", max_size=14, min_size=10)
+    draw_text_fit(
+        draw, boxes["helicopter"], "산림청\n중형헬기", max_size=14, min_size=10
+    )
     draw_text_fit(
         draw,
         boxes["attachment"],
@@ -459,6 +542,7 @@ def build_air_survey_plan_appendix(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path, format="PNG")
+
 
 def build_air_survey_result_appendix(
     template_path: Path,
@@ -520,7 +604,9 @@ def build_air_survey_result_appendix(
     }
     area_ha = 9 * (GRID_SIZE_M * GRID_SIZE_M) / 10_000
     detected = int(survey.suspicious_count)
-    draw_text_fit(draw, boxes["sigungu"], record.sigungu_name, max_size=18, min_size=12, bold=True)
+    draw_text_fit(
+        draw, boxes["sigungu"], record.sigungu_name, max_size=18, min_size=12, bold=True
+    )
     draw_text_fit(
         draw,
         boxes["region"],
@@ -529,7 +615,9 @@ def build_air_survey_result_appendix(
         min_size=10,
     )
     draw_text_fit(draw, boxes["area"], f"{area_ha:.0f}", max_size=18, min_size=12)
-    draw_text_fit(draw, boxes["total"], str(detected), max_size=20, min_size=13, bold=True)
+    draw_text_fit(
+        draw, boxes["total"], str(detected), max_size=20, min_size=13, bold=True
+    )
     draw_text_fit(draw, boxes["pine"], str(detected), max_size=20, min_size=13)
     draw_text_fit(draw, boxes["oak"], "0", max_size=20, min_size=13)
     note = (
@@ -541,6 +629,7 @@ def build_air_survey_result_appendix(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path, format="PNG")
+
 
 def replace_docx_media(docx_path: Path, replacements: dict[str, Path]) -> None:
     """DOCX ZIP 안의 지정 media 파일을 새 PNG로 안전하게 교체한다."""
@@ -556,7 +645,8 @@ def replace_docx_media(docx_path: Path, replacements: dict[str, Path]) -> None:
         missing = set(internal_replacements) - names
         if missing:
             raise RuntimeError(
-                "DOCX에서 교체 대상 이미지를 찾지 못했습니다: " + ", ".join(sorted(missing))
+                "DOCX에서 교체 대상 이미지를 찾지 못했습니다: "
+                + ", ".join(sorted(missing))
             )
         for item in src.infolist():
             if item.filename in internal_replacements:
@@ -567,6 +657,7 @@ def replace_docx_media(docx_path: Path, replacements: dict[str, Path]) -> None:
     if not temp_path.exists() or temp_path.stat().st_size == 0:
         raise RuntimeError("별지 이미지 교체 후 DOCX 생성에 실패했습니다.")
     temp_path.replace(docx_path)
+
 
 def replace_in_paragraph(paragraph: Any, replacements: dict[str, str]) -> None:
     full = "".join(run.text for run in paragraph.runs)
@@ -618,6 +709,7 @@ def insert_paragraph_after(paragraph: Paragraph) -> Paragraph:
     paragraph._p.addnext(new_p)
     return Paragraph(new_p, paragraph._parent)
 
+
 def insert_map_after_prefix(doc: Document, prefix: str, map_path: Path) -> None:
     for paragraph in doc.paragraphs:
         if paragraph.text.strip().startswith(prefix):
@@ -631,6 +723,7 @@ def insert_map_after_prefix(doc: Document, prefix: str, map_path: Path) -> None:
             return
     raise RuntimeError(f"지도 삽입 기준 문단을 찾지 못했습니다: {prefix}")
 
+
 def create_docx(
     template_path: Path,
     output_path: Path,
@@ -641,13 +734,15 @@ def create_docx(
     cells: list[TerrainCell],
     metrics: dict[str, Any],
     survey: FieldSurveyData,
+    start_date: str,
+    end_date: str,
 ) -> None:
     doc = Document(template_path)
     region = f"{record.sido_name} {record.sigungu_name}"
 
     replacements = {
-        "[작성일]": f"{record.year}. 12. {10 + (record.report_no % 18):02d}.",
-        "-지역, 기간-": f"-{region}, {record.year}년-",
+        "[작성일]": f"{date.fromisoformat(end_date):%Y. %m. %d.}",
+        "-지역, 기간-": f"-{region}, {start_date} ~ {end_date}-",
         "[일시]": survey.survey_datetime,
         "[날씨]": survey.weather,
         "기온 [ ]℃": f"기온 {survey.temperature_c:.1f}℃",
@@ -681,7 +776,11 @@ def create_docx(
     # 동일한 [관찰 내용] placeholder가 2개라 명시적으로 다시 설정
     set_paragraph(doc, "❍ (변색 단계)", f"❍ (변색 단계) {survey.discoloration_stage}")
     set_paragraph(doc, "❍ (매개충 흔적)", f"❍ (매개충 흔적) {survey.vector_trace}")
-    set_paragraph(doc, "❍ (수피·목질부 관찰)", f"❍ (수피·목질부 관찰) {survey.bark_wood_observation}")
+    set_paragraph(
+        doc,
+        "❍ (수피·목질부 관찰)",
+        f"❍ (수피·목질부 관찰) {survey.bark_wood_observation}",
+    )
 
     # 기존 양식의 GPS 문단 바로 뒤에 지도 삽입
     insert_map_after_prefix(doc, "― 세부 좌표:", map_path)
@@ -708,15 +807,12 @@ def verify_appendix_image_changed(
     original = extract_template_media(template_path, media_name)
     filled = Image.open(output_path).convert("RGB")
     if original.size != filled.size:
-        raise RuntimeError(
-            f"별지 이미지 크기가 바뀌었습니다: {media_name}"
-        )
+        raise RuntimeError(f"별지 이미지 크기가 바뀌었습니다: {media_name}")
     difference = ImageChops.difference(original, filled)
     mean_difference = sum(ImageStat.Stat(difference).mean) / 3.0
     if mean_difference < 0.15:
         raise RuntimeError(
-            f"별지 이미지에 입력 내용이 충분히 그려지지 않았습니다: "
-            f"{output_path}"
+            f"별지 이미지에 입력 내용이 충분히 그려지지 않았습니다: " f"{output_path}"
         )
 
 
@@ -802,6 +898,8 @@ def render_field_survey_overlay(
     source: ReportSourceData,
     survey: FieldSurveyData,
     zoom: int,
+    *,
+    background_source: str = "VWorld",
 ) -> tuple[Image.Image, dict[str, Any]]:
     static = source.static
     center_4326 = static["center_point_4326"]["coordinates"]
@@ -817,9 +915,7 @@ def render_field_survey_overlay(
     overlay = Image.new("RGBA", background.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay, "RGBA")
     annual_column = (
-        f"infection_count_{record.year}"
-        if 2016 <= record.year <= 2021
-        else None
+        f"infection_count_{record.year}" if 2016 <= record.year <= 2021 else None
     )
 
     infection_rings: dict[str, list[list[tuple[float, float]]]] = {}
@@ -837,8 +933,7 @@ def render_field_survey_overlay(
             zoom,
         )
         visible = any(
-            -100 <= x <= MAP_WIDTH + 100
-            and -100 <= y <= MAP_HEIGHT + 100
+            -100 <= x <= MAP_WIDTH + 100 and -100 <= y <= MAP_HEIGHT + 100
             for ring in rings
             for x, y in ring
         )
@@ -864,11 +959,7 @@ def render_field_survey_overlay(
             center_lat,
             zoom,
             fill=(255, 65, 65, 75) if is_center else None,
-            outline=(
-                (170, 0, 0, 255)
-                if is_center
-                else (20, 82, 190, 240)
-            ),
+            outline=((170, 0, 0, 255) if is_center else (20, 82, 190, 240)),
             width=5 if is_center else 4,
         )
     outer_rings = _draw_geojson(
@@ -1064,7 +1155,7 @@ def render_field_survey_overlay(
             font=small_font,
             fill=(20, 20, 20, 255),
         )
-    source_text = "배경지도: VWorld | 예찰권역: 중심 격자 포함 3×3"
+    source_text = f"배경지도: {background_source} | " "예찰권역: 중심 격자 포함 3×3"
     source_box = draw.textbbox((0, 0), source_text, font=small_font)
     source_width = source_box[2] - source_box[0]
     draw.rounded_rectangle(
@@ -1089,12 +1180,8 @@ def render_field_survey_overlay(
     ).convert("RGB")
     return result, {
         "route_points_5186": [(point.x, point.y) for point in route_points],
-        "observation_points_5186": [
-            (point.x, point.y) for point in observation_points
-        ],
-        "sample_points_5186": [
-            (point.x, point.y) for point in sample_points
-        ],
+        "observation_points_5186": [(point.x, point.y) for point in observation_points],
+        "sample_points_5186": [(point.x, point.y) for point in sample_points],
         "route_pixels": route_pixels,
         "observation_pixels": observation_pixels,
         "sample_pixels": sample_pixels,
@@ -1116,23 +1203,103 @@ def build_field_survey_map(
     basemap: str,
 ) -> dict[str, Any]:
     center = source.static["center_point_4326"]["coordinates"]
-    background = request_vworld_map(
-        api_key=api_key,
-        domain=domain,
-        center_lon=float(center[0]),
-        center_lat=float(center[1]),
-        zoom=zoom,
-        basemap=basemap,
-        width=MAP_WIDTH,
-        height=MAP_HEIGHT,
-    )
+    center_lon = float(center[0])
+    center_lat = float(center[1])
+    background: Image.Image | None = None
+    background_source = "제공된 배경지도"
+    errors: list[str] = []
+
+    # Vercel에서는 외부 VWorld 정적 이미지 API 장애가 보고서 전체
+    # 생성을 막지 않도록 기본적으로 원격 VWorld 호출을 생략한다.
+    # 필요할 때만 VWORLD_REMOTE_ENABLED=true로 명시적으로 활성화한다.
+    remote_default = "false" if os.getenv("VERCEL") else "true"
+    vworld_enabled = os.getenv(
+        "VWORLD_REMOTE_ENABLED",
+        remote_default,
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+    # 1순위: VWorld WMTS 실제 지도
+    if vworld_enabled and api_key:
+        try:
+            background = request_xyz_tile_map(
+                center_lon,
+                center_lat,
+                zoom,
+                tile_url=(
+                    "https://api.vworld.kr/req/wmts/1.0.0/"
+                    f"{api_key}/Base/{{z}}/{{y}}/{{x}}.png"
+                ),
+                referer=domain or None,
+            )
+            background_source = "© VWorld"
+        except Exception as exc:
+            errors.append(f"VWorld WMTS: {type(exc).__name__}: {exc}")
+
+    # 2순위: 대시보드의 VWorld 미설정 시와 같은 OSM 실제 지도
+    if background is None:
+        tile_url = (
+            os.getenv(
+                "REPORT_MAP_TILE_URL",
+                DEFAULT_REPORT_TILE_URL,
+            ).strip()
+            or DEFAULT_REPORT_TILE_URL
+        )
+        tile_attribution = (
+            os.getenv(
+                "REPORT_MAP_TILE_ATTRIBUTION",
+                DEFAULT_REPORT_TILE_ATTRIBUTION,
+            ).strip()
+            or DEFAULT_REPORT_TILE_ATTRIBUTION
+        )
+        try:
+            background = request_xyz_tile_map(
+                center_lon,
+                center_lat,
+                zoom,
+                tile_url=tile_url,
+            )
+            background_source = tile_attribution
+        except Exception as exc:
+            errors.append(f"XYZ 실제 지도: {type(exc).__name__}: {exc}")
+
+    # 3순위: VWorld 기존 정적 지도 API
+    if background is None and vworld_enabled and api_key and domain:
+        try:
+            background = request_vworld_map(
+                api_key=api_key,
+                domain=domain,
+                center_lon=center_lon,
+                center_lat=center_lat,
+                zoom=zoom,
+                basemap=basemap,
+                width=MAP_WIDTH,
+                height=MAP_HEIGHT,
+            )
+            background_source = "© VWorld"
+        except Exception as exc:
+            errors.append(f"VWorld 정적 지도: {type(exc).__name__}: {exc}")
+
+    # 최종 안전장치: 모든 지도 서비스가 실패해도 문서 생성은 계속한다.
+    if background is None:
+        print(
+            "[field-survey-report] 모든 실제 배경지도 요청 실패. "
+            "로컬 대체 배경을 사용합니다: " + " | ".join(errors)
+        )
+        background = create_fallback_map_background(
+            center_lon=center_lon,
+            center_lat=center_lat,
+        )
+        background_source = "로컬 대체 배경"
+
     result, trace = render_field_survey_overlay(
         background,
         record,
         source,
         survey,
         zoom,
+        background_source=background_source,
     )
+    trace["background_source"] = background_source
     output_path.parent.mkdir(parents=True, exist_ok=True)
     result.save(output_path, quality=95)
     return trace
@@ -1144,6 +1311,8 @@ def build_field_survey_render_payload(
     metrics: dict[str, Any],
     survey: FieldSurveyData,
     map_path: Path,
+    start_date: str,
+    end_date: str,
 ) -> dict[str, Any]:
     center_grid = {
         "grid_id": record.center_grid_id,
@@ -1166,15 +1335,11 @@ def build_field_survey_render_payload(
     return {
         "report_type": "field_survey",
         "document_no": record.report_no,
-        "field_report_id": (
-            f"RPT-FIELD-{record.year}-{record.report_no:03d}"
-        ),
+        "field_report_id": (f"RPT-FIELD-{record.year}-{record.report_no:03d}"),
         "year": record.year,
-        "title": (
-            f"{record.year}년 {record.sigungu_name} 현장 예찰 보고서"
-        ),
-        "start_date": f"{record.year}-12-{8 + record.report_no % 18:02d}",
-        "end_date": f"{record.year}-12-{8 + record.report_no % 18:02d}",
+        "title": (f"{record.year}년 {record.sigungu_name} 현장 예찰 보고서"),
+        "start_date": start_date,
+        "end_date": end_date,
         "sido_name": record.sido_name,
         "sigungu_name": record.sigungu_name,
         "center_grid_id": record.center_grid_id,
@@ -1202,16 +1367,23 @@ def generate_single_field_survey_report(
     zoom: int | None = None,
     candidate_metrics: dict[str, Any] | None = None,
     client: Any | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict[str, Any]:
     if year < 2016 or year > 2100:
         raise ValueError("보고서 연도는 2016~2100 범위여야 합니다.")
+    normalized_start_date, normalized_end_date = normalize_report_period(
+        year,
+        start_date,
+        end_date,
+    )
     load_dotenv(BACKEND_ROOT / ".env")
     load_dotenv(PROJECT_ROOT / ".env")
     api_key = os.getenv("VWORLD_API_KEY", "").strip()
     domain = os.getenv("VWORLD_API_DOMAIN", "").strip()
     basemap = os.getenv("VWORLD_BASEMAP", "GRAPHIC").strip() or "GRAPHIC"
-    if not api_key or not domain:
-        raise RuntimeError("VWORLD_API_KEY와 VWORLD_API_DOMAIN이 필요합니다.")
+    # 지도 키가 없거나 VWorld가 일시적으로 장애여도 OSM/로컬 배경으로
+    # 보고서를 생성할 수 있으므로 여기서는 필수 환경변수로 막지 않는다.
 
     source = load_field_survey_source_data(
         int(center_grid_id),
@@ -1223,9 +1395,7 @@ def generate_single_field_survey_report(
         report_no=int(report_no),
         year=int(year),
         center_grid_id=int(center_grid_id),
-        annual_count=(
-            int(source.stats["center_annual_count"]) if historical else 0
-        ),
+        annual_count=(int(source.stats["center_annual_count"]) if historical else 0),
         cumulative_count=int(source.stats["center_cumulative_count"]),
         sido_name=str(source.static["sido_name"]),
         sigungu_name=str(source.static["sigungu_name"]),
@@ -1242,17 +1412,20 @@ def generate_single_field_survey_report(
         elev_mean=metrics["elevation_mean"],
         slope_mean=metrics["slope_mean"],
     )
-    survey = create_field_survey_data(record, metrics, center_cell)
+    survey = create_field_survey_data(
+        record,
+        metrics,
+        center_cell,
+        normalized_start_date,
+        normalized_end_date,
+    )
 
     root = (
         output_root.resolve()
         if output_root is not None
         else DEFAULT_OUTPUT_ROOT.resolve()
     )
-    directories = {
-        name: root / name
-        for name in ("docx", "pdf", "maps", "appendices")
-    }
+    directories = {name: root / name for name in ("docx", "pdf", "maps", "appendices")}
     for directory in [root, *directories.values()]:
         directory.mkdir(parents=True, exist_ok=True)
     base_name = sanitize_filename(
@@ -1264,15 +1437,11 @@ def generate_single_field_survey_report(
     map_path = directories["maps"] / f"{base_name}.png"
     docx_path = directories["docx"] / f"{base_name}.docx"
     pdf_path = directories["pdf"] / f"{base_name}.pdf"
-    plan_appendix = (
-        directories["appendices"] / f"{base_name}_07_유인항공예찰계획.png"
-    )
+    plan_appendix = directories["appendices"] / f"{base_name}_07_유인항공예찰계획.png"
     result_appendix = (
         directories["appendices"] / f"{base_name}_08_유인항공예찰조사결과.png"
     )
-    selected_zoom = zoom or int(
-        os.getenv("VWORLD_ZOOM", str(DEFAULT_ZOOM))
-    )
+    selected_zoom = zoom or int(os.getenv("VWORLD_ZOOM", str(DEFAULT_ZOOM)))
     build_field_survey_map(
         output_path=map_path,
         record=record,
@@ -1317,12 +1486,16 @@ def generate_single_field_survey_report(
         [center_cell],
         metrics,
         survey,
+        normalized_start_date,
+        normalized_end_date,
     )
     payload = build_field_survey_render_payload(
         record=record,
         metrics=metrics,
         survey=survey,
         map_path=map_path,
+        start_date=normalized_start_date,
+        end_date=normalized_end_date,
     )
     from app.services.report_render.renderer import render_report_pdf
 
@@ -1337,6 +1510,8 @@ def generate_single_field_survey_report(
     return {
         "center_grid_id": record.center_grid_id,
         "year": record.year,
+        "start_date": normalized_start_date,
+        "end_date": normalized_end_date,
         "sido_name": record.sido_name,
         "sigungu_name": record.sigungu_name,
         "risk_score": round(float(metrics["risk_score"]), 2),

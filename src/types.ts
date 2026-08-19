@@ -32,12 +32,38 @@ export interface GridCell {
   historyCount: number;
 }
 
+/**
+ * 예찰·방제 업무에서 공통으로 사용하는 6단계 진행 상태입니다.
+ * 확진목 목록은 이 상태만 선택지로 노출합니다.
+ */
+export type TreeWorkflowStatus =
+  | "배정 대기"
+  | "배정 수락"
+  | "출동"
+  | "현장 도착"
+  | "작업 중"
+  | "작업 완료";
+
+/**
+ * 기존 DB 행과 이전 분석 컴포넌트의 호환을 위한 상태입니다.
+ * 화면에 표시할 때는 TreeWorkflowStatus로 정규화합니다.
+ */
+export type LegacyTreeStatus =
+  | "예찰의심"
+  | "현장확인"
+  | "시료검사"
+  | "확진완료"
+  | "방제대기"
+  | "방제중"
+  | "방제완료"
+  | "사후관리";
+
 export interface TreeRecord {
   id: string;
   region: string;
   species: "소나무" | "해송" | "잣나무";
   confirmedDate: string;
-  status: "예찰의심" | "현장확인" | "시료검사" | "확진완료" | "방제대기" | "방제중" | "방제완료" | "사후관리";
+  status: TreeWorkflowStatus | LegacyTreeStatus;
   severity: "경" | "중" | "심";
   x: number;
   y: number;

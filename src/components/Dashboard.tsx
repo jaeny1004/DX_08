@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "motion/react";
 import {
   ShieldAlert,
@@ -20,8 +20,10 @@ import {
 
 import { AuthUser } from "../types/auth";
 
-import DashboardRiskMapCard from "./DashboardRiskMapCard";
-import SectionTitle from "./SectionTitle";
+import DashboardRiskMapCard, {
+  type DashboardMapKpiSummary,
+} from "./DashboardRiskMapCard";
+//import SectionTitle from "./SectionTitle";
 
 interface DashboardLiveAlert {
   id: string;
@@ -31,7 +33,7 @@ interface DashboardLiveAlert {
 }
 
 interface DashboardProps {
-  title: string;
+  //title: string;
   grids: GridCell[];
   trees: TreeRecord[];
   workers: WorkerStatus[];
@@ -44,10 +46,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({
-  title,
-  grids,
   trees,
-  workers,
   reports,
   dispatchAssignments,
   onAssignWorker,
@@ -56,6 +55,12 @@ export default function Dashboard({
   liveAlerts,
 }: DashboardProps) {
   const [now, setNow] = useState(() => new Date());
+  const [mapKpiSummary, setMapKpiSummary] =
+    useState<DashboardMapKpiSummary>({
+      veryHighRiskCount: 0,
+      surveyWorkerCount: 0,
+      controlWorkerCount: 0,
+    });
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -74,18 +79,12 @@ export default function Dashboard({
       : tone === "warning"
         ? "text-amber-600"
         : "text-sky-600";
-  const activeWorkers = workers.filter(
-    (worker) => worker.status !== "대기",
-  ).length;
-
-  const fieldReadyWorkers = workers.filter(
-    (worker) => worker.status === "대기",
-  ).length;
-
   const reportCount = reports.length;
 
   const completedTreeCount = trees.filter(
-    (tree) => tree.status === "방제완료",
+    (tree) =>
+      tree.status === "작업 완료" ||
+      tree.status === "방제완료",
   ).length;
 
   const controlRate =
@@ -93,15 +92,28 @@ export default function Dashboard({
       ? (completedTreeCount / trees.length) * 100
       : 0;
 
-  const highRiskGridCount = grids.filter(
-    (grid) => grid.riskScore >= 0.7,
-  ).length;
+  const activeWorkerCount =
+    mapKpiSummary.surveyWorkerCount +
+    mapKpiSummary.controlWorkerCount;
+
+  const handleMapKpiSummaryChange = useCallback(
+    (summary: DashboardMapKpiSummary) => {
+      setMapKpiSummary((previous) =>
+        previous.veryHighRiskCount === summary.veryHighRiskCount &&
+        previous.surveyWorkerCount === summary.surveyWorkerCount &&
+        previous.controlWorkerCount === summary.controlWorkerCount
+          ? previous
+          : summary,
+      );
+    },
+    [],
+  );
 
   const kpis = [
     {
       id: "risk",
       label: "고위험 위험 지역",
-      value: `${highRiskGridCount.toLocaleString("ko-KR")}개소`,
+      value: `${mapKpiSummary.veryHighRiskCount.toLocaleString("ko-KR")}개소`,
       caption: "신규 확산위험 후보",
       icon: ShieldAlert,
       iconClass: "bg-rose-500",
@@ -111,8 +123,10 @@ export default function Dashboard({
     {
       id: "worker",
       label: "현장 요원 출동 현황",
-      value: `${activeWorkers.toLocaleString("ko-KR")}명`,
-      caption: `대기 ${fieldReadyWorkers.toLocaleString("ko-KR")}명`,
+      value: `${activeWorkerCount.toLocaleString("ko-KR")}명`,
+      caption:
+        `예찰 ${mapKpiSummary.surveyWorkerCount.toLocaleString("ko-KR")}명` +
+        ` · 방제 ${mapKpiSummary.controlWorkerCount.toLocaleString("ko-KR")}명`,
       icon: MapPin,
       iconClass: "bg-amber-500",
       accentClass: "bg-amber-50",
@@ -142,7 +156,7 @@ export default function Dashboard({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <SectionTitle title={title} />
+      
 
       <div
         className="grid min-h-0 flex-1 gap-3"
@@ -214,6 +228,7 @@ export default function Dashboard({
           dispatchAssignments={dispatchAssignments}
           onAssignWorker={onAssignWorker}
           onGridSelect={onGridSelect}
+          onKpiSummaryChange={handleMapKpiSummaryChange}
           initialSigunguCode={authUser.sigunguCode}
           initialSigunguName={authUser.sigunguName}
         />

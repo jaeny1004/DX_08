@@ -182,10 +182,47 @@ def load_linked_field_survey(
     }
 
 
-def build_control_plan_values(record: ControlReportRecord) -> dict[str, Any]:
+def parse_requested_period_date(
+    value: str,
+    *,
+    field_name: str,
+) -> datetime:
+    text = str(value or "").strip()
+
+    try:
+        return datetime.strptime(text, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError(
+            f"{field_name}은 YYYY-MM-DD 형식이어야 합니다: {text or '(빈 값)'}"
+        ) from exc
+
+
+def build_control_plan_values(
+    record: ControlReportRecord,
+    *,
+    requested_start_date: str | None = None,
+    requested_end_date: str | None = None,
+) -> dict[str, Any]:
     survey_date = parse_control_date(record.survey_datetime, record.year)
-    start_date = survey_date + timedelta(days=7)
-    end_date = start_date + timedelta(days=2)
+
+    if requested_start_date and requested_end_date:
+        start_date = parse_requested_period_date(
+            requested_start_date,
+            field_name="시작일",
+        )
+        end_date = parse_requested_period_date(
+            requested_end_date,
+            field_name="종료일",
+        )
+    elif requested_start_date or requested_end_date:
+        raise ValueError("시작일과 종료일을 모두 입력해야 합니다.")
+    else:
+        # 기존 배치 스크립트 등 날짜 인자를 전달하지 않는 호출과의 호환용 기본값
+        start_date = survey_date + timedelta(days=7)
+        end_date = start_date + timedelta(days=2)
+
+    if end_date < start_date:
+        raise ValueError("종료일은 시작일보다 빠를 수 없습니다.")
 
     suspicious = max(0, record.suspicious_count)
     planned = suspicious
@@ -888,6 +925,8 @@ def generate_single_control_report(
     report_no: int = 1,
     candidate_metrics: dict[str, Any] | None = None,
     client: Any | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict[str, Any]:
     if year < 2016 or year > 2100:
         raise ValueError("보고서 연도는 2016~2100 범위여야 합니다.")
@@ -936,7 +975,11 @@ def generate_single_control_report(
         pine_ratio_pct=pine_fields["pine_ratio_pct"],
         field_survey_linked=field_summary["linked"],
     )
-    values = build_control_plan_values(record)
+    values = build_control_plan_values(
+        record,
+        requested_start_date=start_date,
+        requested_end_date=end_date,
+    )
 
     root = (
         output_root.resolve()
@@ -996,6 +1039,8 @@ def generate_single_control_report(
         "pine_area_ha": record.pine_area_ha,
         "pine_ratio_pct": record.pine_ratio_pct,
         "field_survey_linked": field_summary["linked"],
+        "start_date": values["start_date"].strftime("%Y-%m-%d"),
+        "end_date": values["end_date"].strftime("%Y-%m-%d"),
         "docx_path": str(docx_path),
         "pdf_path": str(pdf_path),
     }

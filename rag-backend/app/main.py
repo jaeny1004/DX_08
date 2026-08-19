@@ -20,7 +20,14 @@ DEFAULT_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://101.79.24.212",
+    "https://dx-08.vercel.app",
 ]
+
+# dx-08 Vercel Preview 배포 주소도 허용한다.
+# 예: https://dx-08-git-dev-pine-disease.vercel.app
+DEFAULT_ORIGIN_REGEX = (
+    r"^https://dx-08(?:-[a-z0-9-]+)?\.vercel\.app$"
+)
 
 
 def _allowed_origins() -> list[str]:
@@ -36,6 +43,14 @@ def _allowed_origins() -> list[str]:
     ]
 
 
+def _allowed_origin_regex() -> str:
+    configured = os.environ.get(
+        "FRONTEND_ORIGIN_REGEX",
+        "",
+    ).strip()
+    return configured or DEFAULT_ORIGIN_REGEX
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="소나무재선충병 통합 예찰·방제지원 API",
@@ -44,14 +59,6 @@ def create_app() -> FastAPI:
             "백서 RAG 질의응답, SQLite 기반 인증, "
             "예측·현장예찰·방제 보고서 조회·미리보기·다운로드 API"
         ),
-    )
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_allowed_origins(),
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
     )
 
     # -----------------------------
@@ -164,4 +171,14 @@ def create_app() -> FastAPI:
     return app
 
 
-app = create_app()
+# CORSMiddleware가 FastAPI 전체를 감싸도록 구성한다.
+# 이렇게 해야 라우터 내부에서 처리되지 않은 500 오류가 발생해도
+# CORS 헤더가 포함되어 브라우저에서 실제 오류 응답을 확인할 수 있다.
+app = CORSMiddleware(
+    app=create_app(),
+    allow_origins=_allowed_origins(),
+    allow_origin_regex=_allowed_origin_regex(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

@@ -2,8 +2,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 
 const ROBOFLOW_API_KEY = process.env.ROBOFLOW_API_KEY;
-const ROBOFLOW_MODEL_ID =
-  process.env.ROBOFLOW_MODEL_ID ||
+const ROBOFLOW_CLASSIFICATION_MODEL_ID =
+  process.env.ROBOFLOW_CLASSIFICATION_MODEL_ID ||
   "pine-disease-classification-qmgil/1";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -159,7 +159,7 @@ export default async function handler(
     const base64Image = imageBuffer.toString("base64");
 
     const roboflowResponse = await fetch(
-      `https://serverless.roboflow.com/${ROBOFLOW_MODEL_ID}?api_key=${ROBOFLOW_API_KEY}`,
+      `https://serverless.roboflow.com/${ROBOFLOW_CLASSIFICATION_MODEL_ID}?api_key=${ROBOFLOW_API_KEY}`,
       {
         method: "POST",
         headers: {

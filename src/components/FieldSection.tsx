@@ -13,6 +13,7 @@ import {
 
 import {
   CrowdReport,
+  FieldPhotoRecord,
   WorkerStatus,
 } from "../types";
 
@@ -43,6 +44,9 @@ type SurveyWorkerCandidate = {
 interface FieldSectionProps {
   reports: CrowdReport[];
 
+  fieldPhotos?: FieldPhotoRecord[];
+  fieldPhotoUrls?: Record<string, string>;
+
   /*
    * 현재 App.tsx 호출부와의 호환성을 위해 유지합니다.
    * 이 화면에서는 시민 제보 관련 기능만 사용합니다.
@@ -66,6 +70,11 @@ interface FieldSectionProps {
 
   onConfirmInfection?: (
     report: CrowdReport
+  ) => boolean | Promise<boolean>;
+
+
+  onConfirmAssignmentInfection?: (
+    assignment: DispatchAssignment
   ) => boolean | Promise<boolean>;
 
   onRejectReport?: (
@@ -211,9 +220,13 @@ function getReportStatusClass(
 
 export default function FieldSection({
   reports,
+  fieldPhotos = [],
+  fieldPhotoUrls = {},
   onConfirmInfection,
+  onConfirmAssignmentInfection,
   onRejectReport,
   onAssignWorker,
+  onCancelDispatch,
   dispatchAssignments = [],
 }: FieldSectionProps) {
   const [selectedReportId, setSelectedReportId] =
@@ -234,7 +247,15 @@ export default function FieldSection({
   const [processingReportId, setProcessingReportId] =
     useState<string | null>(null);
 
+  const [
+    processingAssignmentId,
+    setProcessingAssignmentId,
+  ] = useState<string | null>(null);
+
   const [rejectingReportId, setRejectingReportId] =
+    useState<string | null>(null);
+
+  const [confirmingAssignmentId, setConfirmingAssignmentId] =
     useState<string | null>(null);
 
   const [surveyWorkerCandidates, setSurveyWorkerCandidates] =
@@ -587,6 +608,72 @@ export default function FieldSection({
     }
   };
 
+  const handleConfirmAssignment = async (
+    assignment: DispatchAssignment
+  ) => {
+    if (
+      confirmingAssignmentId ===
+      assignment.assignmentId
+    ) {
+      return;
+    }
+
+    if (
+      !onConfirmAssignmentInfection
+    ) {
+      console.error(
+        "확진목 전환 콜백이 연결되지 않았습니다."
+      );
+
+      window.alert(
+        "확진목 전환 기능이 연결되지 않았습니다."
+      );
+
+      return;
+    }
+
+    setConfirmingAssignmentId(
+      assignment.assignmentId
+    );
+
+    try {
+      const confirmed =
+        await onConfirmAssignmentInfection(
+          assignment
+        );
+
+      if (confirmed) {
+        setSelectedAssignmentId(null);
+      }
+    } catch (error) {
+      console.error(
+        "예찰 배정 확진목 전환 실패:",
+        error
+      );
+
+      window.alert(
+        "확진목 전환 중 오류가 발생했습니다."
+      );
+    } finally {
+      setConfirmingAssignmentId(null);
+    }
+  };
+
+  const handleRejectAssignment = (
+    assignment: DispatchAssignment
+  ) => {
+    const confirmed = window.confirm(
+      `GRID-${assignment.gridId} 예찰 배정을 반려하고 목록에서 삭제하시겠습니까?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    onCancelDispatch?.(assignment.assignmentId);
+    setSelectedAssignmentId(null);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -595,608 +682,763 @@ export default function FieldSection({
       className="h-full min-h-0 w-full min-w-0"
     >
       <div className="grid h-full min-h-0 grid-cols-1 items-stretch gap-5 xl:grid-cols-12">
-      {/* 왼쪽: 목록과 선택 항목 상세를 하나의 패널에 통합 */}
-      <section className="min-h-0 min-w-0 xl:col-span-6">
-        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <header className="border-b border-slate-200 px-5 py-4">
-            <div className="flex items-center gap-2">
-              <ListCheckIcon
-                size={18}
-                className="shrink-0 text-emerald-700"
-              />
+        {/* 왼쪽: 목록과 선택 항목 상세를 하나의 패널에 통합 */}
+        <section className="min-h-0 min-w-0 xl:col-span-6">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <header className="border-b border-slate-200 px-5 py-4">
+              <div className="flex items-center gap-2">
+                <ListCheckIcon
+                  size={18}
+                  className="shrink-0 text-emerald-700"
+                />
 
-              <h2 className="text-base font-black text-slate-950">
-                감염 의심목 예찰 리스트
-              </h2>
-            </div>
-
-            <p className="mt-1 text-[10px] font-semibold text-slate-400">
-              항목을 선택하면 현장 이미지와 처리 정보를 확인할 수 있습니다.
-            </p>
-          </header>
-
-          <div className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-4 pr-3">
-            {reports.length === 0 && surveyAssignments.length === 0 && (
-              <div className="flex h-full min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-xs font-bold text-slate-400">
-                등록된 시민 제보 또는 예찰 배정이 없습니다.
+                <h2 className="text-base font-black text-slate-950">
+                  감염 의심목 예찰 리스트
+                </h2>
               </div>
-            )}
 
-            {surveyAssignments.map((assignment) => {
-              const isSelected =
-                selectedAssignmentId ===
-                assignment.assignmentId;
-              const latitude =
-                assignment.targetLatitude;
-              const longitude =
-                assignment.targetLongitude;
+              <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                항목을 선택하면 현장 이미지와 처리 정보를 확인할 수 있습니다.
+              </p>
+            </header>
 
-              return (
-                <article
-                  key={assignment.assignmentId}
-                  className={`overflow-hidden rounded-2xl border transition-all ${
-                    isSelected
+            <div className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-4 pr-3">
+              {reports.length === 0 && surveyAssignments.length === 0 && (
+                <div className="flex h-full min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-xs font-bold text-slate-400">
+                  등록된 시민 제보 또는 예찰 배정이 없습니다.
+                </div>
+              )}
+
+              {surveyAssignments.map((assignment) => {
+                const isSelected =
+                  selectedAssignmentId ===
+                  assignment.assignmentId;
+                const latitude =
+                  assignment.targetLatitude;
+                const longitude =
+                  assignment.targetLongitude;
+                const riskScore =
+                  Number(assignment.riskScore);
+                const hasRiskScore =
+                  Number.isFinite(riskScore);
+                const relatedFieldPhoto =
+                  [...fieldPhotos]
+                    .filter((photo) => {
+                      if (
+                        photo.workMode !==
+                        "surveillance"
+                      ) {
+                        return false;
+                      }
+
+                      const relatedId =
+                        String(
+                          photo.relatedRecordId
+                        );
+
+                      return (
+                        relatedId ===
+                        assignment.assignmentId ||
+                        relatedId ===
+                        assignment.gridId ||
+                        relatedId ===
+                        `GRID-${assignment.gridId}`
+                      );
+                    })
+                    .sort(
+                      (left, right) =>
+                        new Date(
+                          right.capturedAt
+                        ).getTime() -
+                        new Date(
+                          left.capturedAt
+                        ).getTime()
+                    )[0];
+                const relatedFieldPhotoUrl =
+                  relatedFieldPhoto
+                    ? fieldPhotoUrls[
+                    relatedFieldPhoto.storagePath
+                    ] || ""
+                    : "";
+
+                return (
+                  <article
+                    key={assignment.assignmentId}
+                    className={`overflow-hidden rounded-2xl border transition-all ${isSelected
                       ? "border-emerald-300 shadow-sm"
                       : "border-emerald-100"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedAssignmentId(
-                        assignment.assignmentId
-                      );
-                      setSelectedReportId(null);
-                      setSelectedWorkerId(null);
-                    }}
-                    className={`w-full p-4 text-left transition ${
-                      isSelected
+                      }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAssignmentId(
+                          assignment.assignmentId
+                        );
+                        setSelectedReportId(null);
+                        setSelectedWorkerId(null);
+                      }}
+                      className={`w-full p-4 text-left transition ${isSelected
                         ? "bg-emerald-50"
                         : "bg-emerald-50/40 hover:bg-emerald-50"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex min-w-0 gap-3">
-                        <span className="mt-1.5 h-3 w-3 shrink-0 rounded-full bg-emerald-600" />
+                        }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex min-w-0 gap-3">
+                          <span className="mt-1.5 h-3 w-3 shrink-0 rounded-full bg-emerald-600" />
 
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-bold text-slate-400">
-                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-black text-emerald-700">
-                              격자 예찰 배정
-                            </span>
-                            <span>
-                              {new Date(
-                                assignment.assignedAt
-                              ).toLocaleDateString("ko-KR")}
-                            </span>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-bold text-slate-400">
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-black text-emerald-700">
+                                격자 예찰 배정
+                              </span>
+                              <span>
+                                {new Date(
+                                  assignment.assignedAt
+                                ).toLocaleDateString("ko-KR")}
+                              </span>
+                            </div>
+
+                            <h3 className="mt-1 truncate text-sm font-bold text-slate-800">
+                              GRID-{assignment.gridId} 예찰 작업
+                            </h3>
+
+                            <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                              위도 {formatCoordinate(latitude)}, 경도 {formatCoordinate(longitude)}
+                            </p>
                           </div>
+                        </div>
 
-                          <h3 className="mt-1 truncate text-sm font-bold text-slate-800">
-                            GRID-{assignment.gridId} 예찰 작업
-                          </h3>
-
-                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                            위도 {formatCoordinate(latitude)}, 경도 {formatCoordinate(longitude)}
-                          </p>
+                        <div className="shrink-0 text-right">
+                          <div className="text-[10px] font-bold text-slate-400">
+                            담당 요원
+                          </div>
+                          <div className="mt-0.5 text-sm font-black text-emerald-700">
+                            {assignment.workerName}
+                          </div>
                         </div>
                       </div>
+                    </button>
 
-                      <div className="shrink-0 text-right">
-                        <div className="text-[10px] font-bold text-slate-400">
-                          담당 요원
-                        </div>
-                        <div className="mt-0.5 text-sm font-black text-emerald-700">
-                          {assignment.workerName}
-                        </div>
-                        <span className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black text-emerald-700">
-                          {assignment.status}
-                        </span>
-                      </div>
-                    </div>
-                  </button>
-                </article>
-              );
-            })}
+                    <AnimatePresence initial={false}>
+                      {isSelected && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.24 }}
+                          className="overflow-hidden border-t border-emerald-200 bg-white"
+                        >
+                          <div className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-2">
+                            <div className="space-y-3">
+                              <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                                <div className="text-[10px] font-bold text-slate-400">
+                                  예찰 작업 상세
+                                </div>
+                                <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">
+                                  GRID-{assignment.gridId} 격자에 배정된 {assignment.workerName} 요원의 현장 예찰 작업입니다.
+                                </p>
+                              </div>
 
-            {reports.map((report) => {
-              const reportId = String(report.id);
-              const isSelected =
-                selectedReportId === reportId;
-              const imageUrl =
-                getReportImageUrl(report);
-              const latitude =
-                getReportLatitude(report);
-              const longitude =
-                getReportLongitude(report);
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                  <div className="text-[10px] font-bold text-slate-400">
+                                    위치
+                                  </div>
+                                  <div className="mt-1 break-all font-mono text-[11px] font-black leading-5 text-slate-800">
+                                    위도 {formatCoordinate(latitude)}
+                                    <br />
+                                    경도 {formatCoordinate(longitude)}
+                                  </div>
+                                </div>
 
-              return (
-                <article
-                  key={reportId}
-                  className={`overflow-hidden rounded-2xl border transition-all ${
-                    isSelected
+                                <div className="rounded-xl border border-rose-100 bg-rose-50 p-3">
+                                  <div className="text-[10px] font-bold text-rose-400">
+                                    AI 감염 매핑지수
+                                  </div>
+                                  <div className="mt-1 text-lg font-black text-rose-600">
+                                    {hasRiskScore
+                                      ? `${riskScore.toFixed(1)}%`
+                                      : "—"}
+                                  </div>
+                                  <div className="text-[9px] font-bold text-rose-400">
+                                    {hasRiskScore
+                                      ? "격자 AI 위험도 반영"
+                                      : "위험도 정보 없음"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void handleConfirmAssignment(
+                                      assignment
+                                    );
+                                  }}
+                                  disabled={
+                                    confirmingAssignmentId ===
+                                    assignment.assignmentId
+                                  }
+                                  className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-800 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-emerald-200"
+                                >
+                                  {confirmingAssignmentId ===
+                                    assignment.assignmentId ? (
+                                    <LoaderCircle
+                                      size={14}
+                                      className="animate-spin"
+                                    />
+                                  ) : (
+                                    <UserCheck size={14} />
+                                  )}
+                                  {confirmingAssignmentId ===
+                                    assignment.assignmentId
+                                    ? "전환 중"
+                                    : "확진목 전환"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleRejectAssignment(assignment)}
+                                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 py-2.5 text-xs font-bold text-rose-600 transition hover:bg-rose-100"
+                                >
+                                  <CircleX size={14} />
+                                  반려
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-3">
+                              <div className="flex min-h-[280px] items-center justify-center overflow-hidden rounded-xl bg-slate-950 text-slate-400">
+                                {relatedFieldPhotoUrl ? (
+                                  <img
+                                    src={relatedFieldPhotoUrl}
+                                    alt={`GRID-${assignment.gridId} 예찰 현장`}
+                                    className="h-full min-h-[280px] w-full object-contain"
+                                  />
+                                ) : (
+                                  <div className="text-center">
+                                    <ImageIcon
+                                      size={38}
+                                      className="mx-auto text-slate-500"
+                                    />
+                                    <div className="mt-3 text-xs font-black text-slate-300">
+                                      추후 이미지 삽입
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                                  <MapPin size={12} />
+                                  예찰 위치 좌표
+                                </div>
+                                <div className="mt-1 break-all font-mono text-[10px] font-black text-slate-600">
+                                  latitude: {formatCoordinate(latitude)} / longitude: {formatCoordinate(longitude)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </article>
+                );
+              })}
+
+              {reports.map((report) => {
+                const reportId = String(report.id);
+                const isSelected =
+                  selectedReportId === reportId;
+                const imageUrl =
+                  getReportImageUrl(report);
+                const latitude =
+                  getReportLatitude(report);
+                const longitude =
+                  getReportLongitude(report);
+
+                return (
+                  <article
+                    key={reportId}
+                    className={`overflow-hidden rounded-2xl border transition-all ${isSelected
                       ? "border-emerald-300 shadow-sm"
                       : "border-slate-100"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleToggleReport(reportId)
-                    }
-                    className={`w-full p-4 text-left transition ${
-                      isSelected
+                      }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleToggleReport(reportId)
+                      }
+                      className={`w-full p-4 text-left transition ${isSelected
                         ? "bg-emerald-50"
                         : "bg-slate-50/60 hover:bg-slate-50"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex min-w-0 gap-3">
-                        <span
-                          className={`mt-1.5 h-3 w-3 shrink-0 rounded-full ${
-                            report.aiProbability >= 75
+                        }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex min-w-0 gap-3">
+                          <span
+                            className={`mt-1.5 h-3 w-3 shrink-0 rounded-full ${report.aiProbability >= 75
                               ? "bg-rose-500"
                               : report.aiProbability >= 45
                                 ? "bg-amber-500"
                                 : "bg-emerald-500"
-                          }`}
-                        />
+                              }`}
+                          />
 
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-bold text-slate-400">
-                            <span className="font-mono">
-                              {reportId}
-                            </span>
-                            <span>{report.date}</span>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-bold text-slate-400">
+                              <span className="font-mono">
+                                {reportId}
+                              </span>
+                              <span>{report.date}</span>
+                            </div>
+
+                            <h3 className="mt-1 truncate text-sm font-bold text-slate-800">
+                              {report.title}
+                            </h3>
+
+                            <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                              위도 {formatCoordinate(latitude)}, 경도 {formatCoordinate(longitude)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 text-right">
+                          <div className="text-[10px] font-bold text-slate-400">
+                            AI 감염 가능성
                           </div>
 
-                          <h3 className="mt-1 truncate text-sm font-bold text-slate-800">
-                            {report.title}
-                          </h3>
-
-                          <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                            위도 {formatCoordinate(latitude)}, 경도 {formatCoordinate(longitude)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 text-right">
-                        <div className="text-[10px] font-bold text-slate-400">
-                          AI 감염 가능성
-                        </div>
-
-                        <div
-                          className={`text-lg font-black ${
-                            report.aiProbability >= 75
+                          <div
+                            className={`text-lg font-black ${report.aiProbability >= 75
                               ? "text-rose-600"
                               : report.aiProbability >= 45
                                 ? "text-amber-600"
                                 : "text-emerald-600"
-                          }`}
-                        >
-                          {report.aiProbability}%
+                              }`}
+                          >
+                            {report.aiProbability}%
+                          </div>
+
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${getReportStatusClass(
+                              report.status
+                            )}`}
+                          >
+                            {getReportStatusLabel(report.status)}
+                          </span>
                         </div>
-
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${getReportStatusClass(
-                            report.status
-                          )}`}
-                        >
-                          {getReportStatusLabel(report.status)}
-                        </span>
                       </div>
-                    </div>
-                  </button>
+                    </button>
 
-                  <AnimatePresence initial={false}>
-                    {isSelected && (
-                      <motion.div
-                        initial={{
-                          height: 0,
-                          opacity: 0,
-                        }}
-                        animate={{
-                          height: "auto",
-                          opacity: 1,
-                        }}
-                        exit={{
-                          height: 0,
-                          opacity: 0,
-                        }}
-                        transition={{ duration: 0.24 }}
-                        className="overflow-hidden border-t border-emerald-200 bg-white"
-                      >
-                        <div className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-2">
-                          {/* 상세 정보 */}
-                          <div className="space-y-3">
-                            <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                              <div className="text-[10px] font-bold text-slate-400">
-                                제보 상세 내용
-                              </div>
-
-                              <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">
-                                {report.description ||
-                                  "등록된 상세 설명이 없습니다."}
-                              </p>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                    <AnimatePresence initial={false}>
+                      {isSelected && (
+                        <motion.div
+                          initial={{
+                            height: 0,
+                            opacity: 0,
+                          }}
+                          animate={{
+                            height: "auto",
+                            opacity: 1,
+                          }}
+                          exit={{
+                            height: 0,
+                            opacity: 0,
+                          }}
+                          transition={{ duration: 0.24 }}
+                          className="overflow-hidden border-t border-emerald-200 bg-white"
+                        >
+                          <div className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-2">
+                            {/* 상세 정보 */}
+                            <div className="space-y-3">
+                              <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
                                 <div className="text-[10px] font-bold text-slate-400">
-                                  위치
+                                  제보 상세 내용
                                 </div>
 
-                                <div className="mt-1 break-all font-mono text-[11px] font-black leading-5 text-slate-800">
-                                  위도 {formatCoordinate(latitude)}
-                                  <br />
-                                  경도 {formatCoordinate(longitude)}
-                                </div>
+                                <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">
+                                  {report.description ||
+                                    "등록된 상세 설명이 없습니다."}
+                                </p>
                               </div>
 
-                              <div className="rounded-xl border border-rose-100 bg-rose-50 p-3">
-                                <div className="text-[10px] font-bold text-rose-400">
-                                  AI 감염 매핑지수
-                                </div>
-
-                                <div className="mt-1 text-lg font-black text-rose-600">
-                                  {report.aiProbability}%
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2 pt-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAssignmentReportId((previous) =>
-                                    previous === reportId
-                                      ? null
-                                      : reportId
-                                  );
-                                }}
-                                disabled={
-                                  convertedReportIds.has(reportId) ||
-                                  processingReportId === reportId ||
-                                  rejectingReportId === reportId
-                                }
-                                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-800 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-emerald-100 disabled:text-emerald-700"
-                              >
-                                <UserCheck size={14} />
-                                {convertedReportIds.has(reportId)
-                                  ? "확진목 전환 완료"
-                                  : "확진목 전환"}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void handleRejectReport(report);
-                                }}
-                                disabled={
-                                  processingReportId === reportId ||
-                                  rejectingReportId === reportId
-                                }
-                                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 py-2.5 text-xs font-bold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {rejectingReportId === reportId ? (
-                                  <LoaderCircle
-                                    size={14}
-                                    className="animate-spin"
-                                  />
-                                ) : (
-                                  <CircleX size={14} />
-                                )}
-                                {rejectingReportId === reportId
-                                  ? "삭제 중"
-                                  : "반려"}
-                              </button>
-                            </div>
-
-                            {assignmentReportId === reportId && (
-                              <div className="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/50">
-                                <div className="border-b border-emerald-100 px-3 py-2.5">
-                                  <div className="text-xs font-black text-emerald-900">
-                                    예찰 요원 선택
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                  <div className="text-[10px] font-bold text-slate-400">
+                                    위치
                                   </div>
-                                  <div className="mt-0.5 text-[10px] font-semibold text-emerald-700/70">
-                                    배정하면 확진목 전환과 현장 출동이 함께 처리됩니다.
+
+                                  <div className="mt-1 break-all font-mono text-[11px] font-black leading-5 text-slate-800">
+                                    위도 {formatCoordinate(latitude)}
+                                    <br />
+                                    경도 {formatCoordinate(longitude)}
                                   </div>
                                 </div>
 
-                                <div className="custom-scrollbar max-h-56 space-y-2 overflow-y-auto p-2">
-                                  {workerLoadError && (
-                                    <div className="rounded-lg border border-rose-100 bg-white p-3 text-[11px] font-bold text-rose-600">
-                                      {workerLoadError}
-                                    </div>
+                                <div className="rounded-xl border border-rose-100 bg-rose-50 p-3">
+                                  <div className="text-[10px] font-bold text-rose-400">
+                                    AI 감염 매핑지수
+                                  </div>
+
+                                  <div className="mt-1 text-lg font-black text-rose-600">
+                                    {report.aiProbability}%
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAssignmentReportId((previous) =>
+                                      previous === reportId
+                                        ? null
+                                        : reportId
+                                    );
+                                  }}
+                                  disabled={
+                                    convertedReportIds.has(reportId) ||
+                                    processingReportId === reportId ||
+                                    rejectingReportId === reportId
+                                  }
+                                  className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-800 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-emerald-100 disabled:text-emerald-700"
+                                >
+                                  <UserCheck size={14} />
+                                  {convertedReportIds.has(reportId)
+                                    ? "확진목 전환 완료"
+                                    : "확진목 전환"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void handleRejectReport(report);
+                                  }}
+                                  disabled={
+                                    processingReportId === reportId ||
+                                    rejectingReportId === reportId
+                                  }
+                                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 py-2.5 text-xs font-bold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {rejectingReportId === reportId ? (
+                                    <LoaderCircle
+                                      size={14}
+                                      className="animate-spin"
+                                    />
+                                  ) : (
+                                    <CircleX size={14} />
                                   )}
+                                  {rejectingReportId === reportId
+                                    ? "삭제 중"
+                                    : "반려"}
+                                </button>
+                              </div>
 
-                                  {!workerLoadError &&
-                                    availableSurveyWorkers.length === 0 && (
-                                      <div className="rounded-lg border border-dashed border-emerald-200 bg-white p-4 text-center text-[11px] font-bold text-slate-400">
-                                        현재 배정 가능한 예찰 요원이 없습니다.
+                              {assignmentReportId === reportId && (
+                                <div className="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/50">
+                                  <div className="border-b border-emerald-100 px-3 py-2.5">
+                                    <div className="text-xs font-black text-emerald-900">
+                                      예찰 요원 선택
+                                    </div>
+                                    <div className="mt-0.5 text-[10px] font-semibold text-emerald-700/70">
+                                      배정하면 확진목 전환과 현장 출동이 함께 처리됩니다.
+                                    </div>
+                                  </div>
+
+                                  <div className="custom-scrollbar max-h-56 space-y-2 overflow-y-auto p-2">
+                                    {workerLoadError && (
+                                      <div className="rounded-lg border border-rose-100 bg-white p-3 text-[11px] font-bold text-rose-600">
+                                        {workerLoadError}
                                       </div>
                                     )}
 
-                                  {availableSurveyWorkers.map((worker) => (
-                                    <div
-                                      key={worker.workerId}
-                                      className="flex items-center justify-between gap-3 rounded-lg border border-emerald-100 bg-white p-3"
-                                    >
-                                      <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                          <span className="truncate text-xs font-black text-slate-800">
-                                            {worker.workerName}
-                                          </span>
-                                          <span className="font-mono text-[9px] font-bold text-slate-400">
-                                            {worker.workerId}
-                                          </span>
+                                    {!workerLoadError &&
+                                      availableSurveyWorkers.length === 0 && (
+                                        <div className="rounded-lg border border-dashed border-emerald-200 bg-white p-4 text-center text-[11px] font-bold text-slate-400">
+                                          현재 배정 가능한 예찰 요원이 없습니다.
                                         </div>
-                                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-500">
-                                          <span>예찰 {worker.skillLevel}단계</span>
-                                          <span>{worker.homeSigunguName}</span>
-                                          <span className="flex items-center gap-1">
-                                            <Battery size={11} />
-                                            {worker.batteryPercent ?? "-"}%
-                                          </span>
-                                        </div>
-                                      </div>
+                                      )}
 
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          void handleAssignAndConfirm(
-                                            report,
-                                            worker
-                                          );
-                                        }}
-                                        disabled={processingReportId === reportId}
-                                        className="flex shrink-0 items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-black text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                    {availableSurveyWorkers.map((worker) => (
+                                      <div
+                                        key={worker.workerId}
+                                        className="flex items-center justify-between gap-3 rounded-lg border border-emerald-100 bg-white p-3"
                                       >
-                                        {processingReportId === reportId ? (
-                                          <LoaderCircle
-                                            size={12}
-                                            className="animate-spin"
-                                          />
-                                        ) : (
-                                          <UserCheck size={12} />
-                                        )}
-                                        배정
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-2">
+                                            <span className="truncate text-xs font-black text-slate-800">
+                                              {worker.workerName}
+                                            </span>
+                                            <span className="font-mono text-[9px] font-bold text-slate-400">
+                                              {worker.workerId}
+                                            </span>
+                                          </div>
+                                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-500">
+                                            <span>예찰 {worker.skillLevel}단계</span>
+                                            <span>{worker.homeSigunguName}</span>
+                                            <span className="flex items-center gap-1">
+                                              <Battery size={11} />
+                                              {worker.batteryPercent ?? "-"}%
+                                            </span>
+                                          </div>
+                                        </div>
 
-                          {/* 현장 이미지 */}
-                          <div className="space-y-3">
-                            <div className="relative flex min-h-[280px] items-center justify-center overflow-hidden rounded-xl bg-slate-950">
-                              {imageUrl ? (
-                                <img
-                                  src={imageUrl}
-                                  alt="시민 제보 현장 이미지"
-                                  className="max-h-[360px] w-full object-contain"
-                                  onError={(event) => {
-                                    event.currentTarget.style.display =
-                                      "none";
-                                  }}
-                                />
-                              ) : (
-                                <div className="p-6 text-center text-slate-400">
-                                  <ImageIcon
-                                    size={36}
-                                    className="mx-auto mb-3 opacity-60"
-                                  />
-
-                                  <p className="text-xs font-bold">
-                                    등록된 제보 이미지가 없습니다.
-                                  </p>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            void handleAssignAndConfirm(
+                                              report,
+                                              worker
+                                            );
+                                          }}
+                                          disabled={processingReportId === reportId}
+                                          className="flex shrink-0 items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-black text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                          {processingReportId === reportId ? (
+                                            <LoaderCircle
+                                              size={12}
+                                              className="animate-spin"
+                                            />
+                                          ) : (
+                                            <UserCheck size={12} />
+                                          )}
+                                          배정
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               )}
                             </div>
 
-                            <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
-                                <MapPin size={13} />
-                                제보 위치 좌표
+                            {/* 현장 이미지 */}
+                            <div className="space-y-3">
+                              <div className="relative flex min-h-[280px] items-center justify-center overflow-hidden rounded-xl bg-slate-950">
+                                {imageUrl ? (
+                                  <img
+                                    src={imageUrl}
+                                    alt="시민 제보 현장 이미지"
+                                    className="max-h-[360px] w-full object-contain"
+                                    onError={(event) => {
+                                      event.currentTarget.style.display =
+                                        "none";
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="p-6 text-center text-slate-400">
+                                    <ImageIcon
+                                      size={36}
+                                      className="mx-auto mb-3 opacity-60"
+                                    />
+
+                                    <p className="text-xs font-bold">
+                                      등록된 제보 이미지가 없습니다.
+                                    </p>
+                                  </div>
+                                )}
                               </div>
 
-                              <p className="mt-1 break-all font-mono text-[11px] font-bold text-slate-700">
-                                latitude: {formatCoordinate(latitude)} / longitude: {formatCoordinate(longitude)}
-                              </p>
+                              <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                                  <MapPin size={13} />
+                                  제보 위치 좌표
+                                </div>
+
+                                <p className="mt-1 break-all font-mono text-[11px] font-bold text-slate-700">
+                                  latitude: {formatCoordinate(latitude)} / longitude: {formatCoordinate(longitude)}
+                                </p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </article>
-              );
-            })}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </article>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* 오른쪽: 위치 지도 */}
-      <section className="min-h-0 min-w-0 xl:col-span-6">
-        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <header className="border-b border-slate-200 px-5 py-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <MapPin
-                    size={18}
-                    className="shrink-0 text-rose-500"
-                  />
+        {/* 오른쪽: 위치 지도 */}
+        <section className="min-h-0 min-w-0 xl:col-span-6">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <header className="border-b border-slate-200 px-5 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <MapPin
+                      size={18}
+                      className="shrink-0 text-rose-500"
+                    />
 
-                  <h2 className="text-base font-black text-slate-950">
-                    시민 제보 및 현장 예찰 요원 지도
-                  </h2>
+                    <h2 className="text-base font-black text-slate-950">
+                      시민 제보 및 현장 예찰 요원 지도
+                    </h2>
+                  </div>
+
+                  <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                    제보 마커와 현장 예찰 요원의 현재 위치를 함께 확인합니다.
+                  </p>
                 </div>
 
-                <p className="mt-1 text-[10px] font-semibold text-slate-400">
-                  제보 마커와 현장 예찰 요원의 현재 위치를 함께 확인합니다.
-                </p>
+                <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">
+                  <Users size={12} /> 요원 {surveyAssignments.length}명
+                </span>
               </div>
+            </header>
 
-              <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">
-                <Users size={12} /> 요원 {surveyAssignments.length}명
-              </span>
+            <div className="h-[360px] w-full min-w-0">
+              <LeafletMap
+                records={reports}
+                selectedRecordId={
+                  selectedReport?.id
+                }
+                onMarkerClick={(
+                  record: CrowdReport
+                ) => {
+                  setSelectedWorkerId(null);
+                  setSelectedAssignmentId(null);
+                  setSelectedReportId(
+                    String(record.id)
+                  );
+                }}
+                workers={FIELD_WORKERS}
+                assignments={surveyAssignments}
+                selectedAssignmentId={selectedAssignmentId}
+                onAssignmentClick={(assignment: DispatchAssignment) => {
+                  setSelectedReportId(null);
+                  setSelectedWorkerId(null);
+                  setSelectedAssignmentId(
+                    assignment.assignmentId
+                  );
+                }}
+                selectedWorkerId={selectedWorkerId}
+                onWorkerClick={(worker: FieldWorkerMarker) => {
+                  setSelectedReportId(null);
+                  setSelectedAssignmentId(null);
+                  setSelectedWorkerId(worker.id);
+                }}
+              />
             </div>
-          </header>
 
-          <div className="h-[360px] w-full min-w-0">
-            <LeafletMap
-              records={reports}
-              selectedRecordId={
-                selectedReport?.id
-              }
-              onMarkerClick={(
-                record: CrowdReport
-              ) => {
-                setSelectedWorkerId(null);
-                setSelectedAssignmentId(null);
-                setSelectedReportId(
-                  String(record.id)
-                );
-              }}
-              workers={FIELD_WORKERS}
-              assignments={surveyAssignments}
-              selectedAssignmentId={selectedAssignmentId}
-              onAssignmentClick={(assignment: DispatchAssignment) => {
-                setSelectedReportId(null);
-                setSelectedWorkerId(null);
-                setSelectedAssignmentId(
-                  assignment.assignmentId
-                );
-              }}
-              selectedWorkerId={selectedWorkerId}
-              onWorkerClick={(worker: FieldWorkerMarker) => {
-                setSelectedReportId(null);
-                setSelectedAssignmentId(null);
-                setSelectedWorkerId(worker.id);
-              }}
-            />
-          </div>
+            <div className="grid grid-cols-2 gap-3 border-t border-slate-100 p-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-[10px] font-black uppercase text-slate-400">
+                  위도
+                </div>
 
-          <div className="grid grid-cols-2 gap-3 border-t border-slate-100 p-4">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] font-black uppercase text-slate-400">
-                위도
-              </div>
-
-              <div className="mt-1 break-all font-mono text-xs font-bold text-slate-800">
-                {selectedReport
-                  ? formatCoordinate(
+                <div className="mt-1 break-all font-mono text-xs font-bold text-slate-800">
+                  {selectedReport
+                    ? formatCoordinate(
                       getReportLatitude(
                         selectedReport
                       )
                     )
-                  : selectedAssignment &&
+                    : selectedAssignment &&
                       typeof selectedAssignment.targetLatitude === "number"
-                    ? selectedAssignment.targetLatitude.toFixed(7)
-                  : selectedWorker
-                    ? selectedWorker.latitude.toFixed(7)
-                    : "마커를 선택하세요"}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="text-[10px] font-black uppercase text-slate-400">
-                경도
+                      ? selectedAssignment.targetLatitude.toFixed(7)
+                      : selectedWorker
+                        ? selectedWorker.latitude.toFixed(7)
+                        : "마커를 선택하세요"}
+                </div>
               </div>
 
-              <div className="mt-1 break-all font-mono text-xs font-bold text-slate-800">
-                {selectedReport
-                  ? formatCoordinate(
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-[10px] font-black uppercase text-slate-400">
+                  경도
+                </div>
+
+                <div className="mt-1 break-all font-mono text-xs font-bold text-slate-800">
+                  {selectedReport
+                    ? formatCoordinate(
                       getReportLongitude(
                         selectedReport
                       )
                     )
-                  : selectedAssignment &&
+                    : selectedAssignment &&
                       typeof selectedAssignment.targetLongitude === "number"
-                    ? selectedAssignment.targetLongitude.toFixed(7)
-                  : selectedWorker
-                    ? selectedWorker.longitude.toFixed(7)
-                    : "마커를 선택하세요"}
+                      ? selectedAssignment.targetLongitude.toFixed(7)
+                      : selectedWorker
+                        ? selectedWorker.longitude.toFixed(7)
+                        : "마커를 선택하세요"}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex min-h-0 flex-1 flex-col border-t border-slate-200 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Users size={15} className="text-emerald-700" />
-                  <h3 className="text-sm font-black text-slate-900">
-                    출동 중인 예찰 요원
-                  </h3>
+            <div className="flex min-h-0 flex-1 flex-col border-t border-slate-200 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Users size={15} className="text-emerald-700" />
+                    <h3 className="text-sm font-black text-slate-900">
+                      출동 중인 예찰 요원
+                    </h3>
+                  </div>
+                  <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                    현재 배정된 요원의 위치와 작업 상태입니다.
+                  </p>
                 </div>
-                <p className="mt-1 text-[10px] font-semibold text-slate-400">
-                  현재 배정된 요원의 위치와 작업 상태입니다.
-                </p>
+
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">
+                  {surveyAssignments.length}명
+                </span>
               </div>
 
-              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">
-                {surveyAssignments.length}명
-              </span>
-            </div>
+              <div className="custom-scrollbar mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                {surveyAssignments.length === 0 && (
+                  <div className="flex h-full min-h-24 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400">
+                    현재 출동 중인 예찰 요원이 없습니다.
+                  </div>
+                )}
 
-            <div className="custom-scrollbar mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-              {surveyAssignments.length === 0 && (
-                <div className="flex h-full min-h-24 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-400">
-                  현재 출동 중인 예찰 요원이 없습니다.
-                </div>
-              )}
-
-              {surveyAssignments.map((assignment) => (
-                <button
-                  key={assignment.assignmentId}
-                  type="button"
-                  onClick={() => {
-                    setSelectedReportId(null);
-                    setSelectedWorkerId(null);
-                    setSelectedAssignmentId(
-                      assignment.assignmentId
-                    );
-                  }}
-                  className={`grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border p-3 text-left transition ${
-                    selectedAssignmentId === assignment.assignmentId
+                {surveyAssignments.map((assignment) => (
+                  <button
+                    key={assignment.assignmentId}
+                    type="button"
+                    onClick={() => {
+                      setSelectedReportId(null);
+                      setSelectedWorkerId(null);
+                      setSelectedAssignmentId(
+                        assignment.assignmentId
+                      );
+                    }}
+                    className={`grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border p-3 text-left transition ${selectedAssignmentId === assignment.assignmentId
                       ? "border-emerald-300 bg-emerald-50"
                       : "border-slate-100 bg-slate-50/70 hover:border-emerald-200 hover:bg-emerald-50/40"
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-xs font-black text-slate-800">
-                        {assignment.workerName}
-                      </span>
-                      <span className="font-mono text-[9px] font-bold text-slate-400">
-                        {assignment.workerId}
-                      </span>
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black text-emerald-700">
-                        {assignment.status}
-                      </span>
+                      }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-xs font-black text-slate-800">
+                          {assignment.workerName}
+                        </span>
+                        <span className="font-mono text-[9px] font-bold text-slate-400">
+                          {assignment.workerId}
+                        </span>
+                      </div>
+
+                      <div className="mt-1.5 grid gap-1 text-[10px] font-semibold text-slate-500 sm:grid-cols-2">
+                        <span>작업 ID: {assignment.assignmentId}</span>
+                        <span>
+                          위치: {formatCoordinate(assignment.targetLatitude)}, {formatCoordinate(assignment.targetLongitude)}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="mt-1.5 grid gap-1 text-[10px] font-semibold text-slate-500 sm:grid-cols-2">
-                      <span>작업 ID: {assignment.assignmentId}</span>
-                      <span>
-                        위치: {formatCoordinate(assignment.targetLatitude)}, {formatCoordinate(assignment.targetLongitude)}
-                      </span>
+                    <div className="flex items-center gap-1 rounded-lg bg-white px-2 py-1.5 text-[10px] font-black text-slate-600 shadow-sm">
+                      <Battery size={12} className="text-emerald-600" />
+                      {assignment.batteryPercent ?? "-"}%
                     </div>
-                  </div>
-
-                  <div className="flex items-center gap-1 rounded-lg bg-white px-2 py-1.5 text-[10px] font-black text-slate-600 shadow-sm">
-                    <Battery size={12} className="text-emerald-600" />
-                    {assignment.batteryPercent ?? "-"}%
-                  </div>
-                </button>
-              ))}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
       </div>
     </motion.div>
   );

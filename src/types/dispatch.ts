@@ -19,6 +19,19 @@ export type DispatchStatus =
   | "복귀"
   | "복귀 완료";
 
+/**
+ * 앱과 대시보드가 공통으로 사용하는 현장 작업 6단계입니다.
+ * 복귀 단계는 기존 방제 화면과의 호환을 위해 DispatchStatus에만 남겨 둡니다.
+ */
+export const FIELD_DISPATCH_STATUSES = [
+  "배정 대기",
+  "배정 수락",
+  "출동",
+  "현장 도착",
+  "작업 중",
+  "작업 완료",
+] as const;
+
 export type DispatchCapability = {
   taskType: DispatchTaskType;
   skillLevel: number;
@@ -73,4 +86,17 @@ export type DispatchAssignment = {
 
   status: DispatchStatus;
   assignedAt: string;
+
+  acceptedAt?: string | null;
+  departedAt?: string | null;
+  arrivedAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  fieldLatitude?: number;
+  fieldLongitude?: number;
+  gpsMarkedAt?: string | null;
+  sampleQrCode?: string | null;
+  sampleQrScannedAt?: string | null;
+  chemicalQrCode?: string | null;
+  chemicalQrScannedAt?: string | null;
 };

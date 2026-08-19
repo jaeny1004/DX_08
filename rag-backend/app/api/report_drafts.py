@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+
+import traceback
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
@@ -78,7 +80,11 @@ class DraftUpdateRequest(BaseModel):
 
 @router.get("/types")
 def get_types() -> dict:
-    return {"items": [{"value": key, "label": label} for key, label in REPORT_LABELS.items()]}
+    return {
+        "items": [
+            {"value": key, "label": label} for key, label in REPORT_LABELS.items()
+        ]
+    }
 
 
 @router.post("")
@@ -87,17 +93,43 @@ def create_new_draft(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     try:
-        draft = create_draft(request.model_dump(), created_by=current_user.email)
-        template_output = _apply_template(request.report_type, draft["draft_id"])
+        draft = create_draft(
+            request.model_dump(),
+            created_by=current_user.email,
+        )
+        template_output = _apply_template(
+            request.report_type,
+            draft["draft_id"],
+        )
         draft = load_draft(draft["draft_id"])
         draft["template_output"] = template_output
         return draft
+
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        ) from exc
+
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
+
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"{type(exc).__name__}: {exc}",
+        ) from exc
 
 
 @router.get("/{draft_id}")
@@ -117,14 +149,18 @@ def save_draft_changes(
     try:
         payload = request.model_dump()
         if payload.get("sections") is not None:
-            payload["sections"] = [section.model_dump() for section in request.sections or []]
+            payload["sections"] = [
+                section.model_dump() for section in request.sections or []
+            ]
         return update_draft(draft_id, payload)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/{draft_id}/apply-template")
-def apply_template(draft_id: str, current_user: User = Depends(get_current_user)) -> dict:
+def apply_template(
+    draft_id: str, current_user: User = Depends(get_current_user)
+) -> dict:
     try:
         output = _apply_template(load_draft(draft_id)["report_type"], draft_id)
         return {"draft_id": draft_id, "status": "generated", "template_output": output}
@@ -155,10 +191,16 @@ def preview_template_pdf(
 
 
 @router.post("/{draft_id}/register")
-def register_draft(draft_id: str, current_user: User = Depends(get_current_user)) -> dict:
+def register_draft(
+    draft_id: str, current_user: User = Depends(get_current_user)
+) -> dict:
     try:
         registered = register_report(draft_id)
-        return {"draft_id": draft_id, "status": "registered", "registered_report": registered}
+        return {
+            "draft_id": draft_id,
+            "status": "registered",
+            "registered_report": registered,
+        }
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -181,8 +223,7 @@ def export_draft(
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 headers={
                     "Content-Disposition": (
-                        "attachment; "
-                        f"filename*=UTF-8''{quote(filename)}"
+                        "attachment; " f"filename*=UTF-8''{quote(filename)}"
                     )
                 },
             )
@@ -208,4 +249,7 @@ def export_draft(
             detail=f"{file_format.upper()} Storage 객체를 찾을 수 없습니다.",
         ) from exc
 
-    return RedirectResponse(signed_url)
+    return RedirectResponse(
+    url=signed_url,
+    status_code=303,
+)

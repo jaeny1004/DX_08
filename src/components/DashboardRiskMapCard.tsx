@@ -114,6 +114,7 @@ const DATA_BOUNDS = L.latLngBounds(
   L.latLng(38.186753, 129.585322),
 );
 const GRID_RENDERER = L.canvas({ padding: 0.25, tolerance: 4 });
+const ADMIN_BOUNDARY_PANE = "admin-boundary-pane";
 
 const priorityColors: Record<string, string> = {
   "최우선 예찰": "#ff2b57",
@@ -165,8 +166,8 @@ function calculateDistanceKm(
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
   return radiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -581,12 +582,11 @@ function createGridPopupHtml(
         <tr><td style="padding:5px 0;color:#64748b">예찰 우선순위</td><td style="text-align:right;font-weight:700">${formatNumber(props.field_priority_score_v3, 2)}점 / ${escapeHtml(priorityGrade)}</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">감염 발생 이력</td><td style="text-align:right;font-weight:800;color:${hasInfectionHistory ? INFECTION_HISTORY_COLOR : "#64748b"}">${hasInfectionHistory ? "있음" : "없음"}</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">누적 발생 건수</td><td style="text-align:right;font-weight:700">${formatNumber(infectionCount, 0)}건</td></tr>
-        ${
-          hasInfectionHistory
-            ? `<tr><td style="padding:5px 0;color:#64748b">최초 발생 이력 연도</td><td style="text-align:right;font-weight:700">${formatNumber(infectionHistory?.infection_first_year, 0)}년</td></tr>
+        ${hasInfectionHistory
+      ? `<tr><td style="padding:5px 0;color:#64748b">최초 발생 이력 연도</td><td style="text-align:right;font-weight:700">${formatNumber(infectionHistory?.infection_first_year, 0)}년</td></tr>
                <tr><td style="padding:5px 0;color:#64748b">최근 발생 이력 연도</td><td style="text-align:right;font-weight:700">${formatNumber(infectionHistory?.infection_last_year, 0)}년</td></tr>`
-            : ""
-        }
+      : ""
+    }
         <tr><td style="padding:5px 0;color:#64748b">소나무류 비율</td><td style="text-align:right;font-weight:700">${formatNumber(safeNumber(props.pine_ratio) * 100, 1)}%</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">주변 발생 이력 기반 확산압력</td><td style="text-align:right;font-weight:700">${formatNumber(props.recent_pressure_score ?? props.infection_pressure, 1)}점</td></tr>
         <tr><td style="padding:5px 0;color:#64748b">접근성</td><td style="text-align:right;font-weight:700">${formatNumber(props.access_score_v3, 1)}점</td></tr>
@@ -601,14 +601,22 @@ interface DashboardRiskMapCardProps {
   dispatchAssignments: DispatchAssignment[];
   onAssignWorker: (assignment: DispatchAssignment) => void;
   onGridSelect?: (grid: any) => void;
+  onKpiSummaryChange?: (summary: DashboardMapKpiSummary) => void;
   initialSigunguCode?: string;
   initialSigunguName?: string;
+}
+
+export interface DashboardMapKpiSummary {
+  veryHighRiskCount: number;
+  surveyWorkerCount: number;
+  controlWorkerCount: number;
 }
 
 export default function DashboardRiskMapCard({
   dispatchAssignments,
   onAssignWorker,
   onGridSelect,
+  onKpiSummaryChange,
   initialSigunguCode,
   initialSigunguName,
 }: DashboardRiskMapCardProps) {
@@ -972,13 +980,13 @@ export default function DashboardRiskMapCard({
           ) ??
           (worker.home_sigungu_code === selectedSigunguCode
             ? {
-                sidoCode: worker.home_sido_code,
-                sigunguCode: worker.home_sigungu_code,
-                sigunguName: worker.home_sigungu_name,
-                assignmentPriority: 1,
-                supportType: "PRIMARY" as const,
-                maxTravelKm: 35,
-              }
+              sidoCode: worker.home_sido_code,
+              sigunguCode: worker.home_sigungu_code,
+              sigunguName: worker.home_sigungu_name,
+              assignmentPriority: 1,
+              supportType: "PRIMARY" as const,
+              maxTravelKm: 35,
+            }
             : undefined);
 
         const assignmentType: Recommendation["assignmentType"] =
@@ -991,11 +999,11 @@ export default function DashboardRiskMapCard({
         const distanceKm =
           targetLat !== null && targetLon !== null
             ? calculateDistanceKm(
-                worker.base_lat,
-                worker.base_lon,
-                targetLat,
-                targetLon,
-              )
+              worker.base_lat,
+              worker.base_lon,
+              targetLat,
+              targetLon,
+            )
             : null;
 
         let recommendationScore =
@@ -1180,6 +1188,13 @@ export default function DashboardRiskMapCard({
       preferCanvas: true,
       attributionControl: true,
     });
+
+    // 행정구역 경계를 격자 Canvas와 별도 pane에 두어
+    // 지역을 선택한 후에도 격자 위에 선명하게 남겨 둔다.
+    const adminBoundaryPane = map.createPane(ADMIN_BOUNDARY_PANE);
+    adminBoundaryPane.style.zIndex = "460";
+    adminBoundaryPane.style.pointerEvents = "auto";
+
     const baseLayer = L.tileLayer(MAP_TILE_CONFIG.base.url, {
       attribution: MAP_TILE_CONFIG.base.attribution,
       minZoom: 6,
@@ -1207,16 +1222,16 @@ export default function DashboardRiskMapCard({
     );
     const hybridLayer = MAP_TILE_CONFIG.hybrid
       ? L.tileLayer(MAP_TILE_CONFIG.hybrid.url, {
-          attribution: MAP_TILE_CONFIG.hybrid.attribution,
-          minZoom: 6,
-          maxZoom: 19,
-          bounds: KOREA_BOUNDS,
-          noWrap: true,
-          updateWhenIdle: true,
-          updateWhenZooming: false,
-          keepBuffer: 1,
-          crossOrigin: true,
-        })
+        attribution: MAP_TILE_CONFIG.hybrid.attribution,
+        minZoom: 6,
+        maxZoom: 19,
+        bounds: KOREA_BOUNDS,
+        noWrap: true,
+        updateWhenIdle: true,
+        updateWhenZooming: false,
+        keepBuffer: 1,
+        crossOrigin: true,
+      })
       : null;
     const handleTileLoad = () => {
       if (HAS_VWORLD_KEY) {
@@ -1304,34 +1319,54 @@ export default function DashboardRiskMapCard({
     if (!map || !sigunguBoundary) return;
     sigunguLayerRef.current?.removeFrom(map);
     sigunguLayerRef.current = null;
-    if (selectedSigunguCode) return;
+
+    const adminBoundaryPane = map.getPane(ADMIN_BOUNDARY_PANE);
+    if (adminBoundaryPane) {
+      // 지역 선택 후에는 경계선은 보이되 격자 클릭을 가로채지 않게 한다.
+      adminBoundaryPane.style.pointerEvents = selectedSigunguCode
+        ? "none"
+        : "auto";
+    }
 
     const layer = L.geoJSON(sigunguBoundary, {
-      renderer: GRID_RENDERER,
-      style: {
-        color: "transparent",
-        weight: 0,
-        fillColor: "transparent",
-        fillOpacity: 0.001,
-        interactive: true,
+      pane: ADMIN_BOUNDARY_PANE,
+      interactive: !selectedSigunguCode,
+      style: (feature) => {
+        const boundaryCode = normalizeCode(
+          feature?.properties?.sigungu_code,
+        );
+        const isSelected = boundaryCode === selectedSigunguCode;
+
+        return {
+          color: isSelected ? "#5b21b6" : "#6d28d9",
+          weight: isSelected ? 3.25 : 2.25,
+          opacity: 0.95,
+          fill: false,
+        };
       },
       onEachFeature: (feature, featureLayer) => {
         const path = featureLayer as L.Path;
         const props = feature?.properties ?? {};
         const code = normalizeCode(props.sigungu_code);
-        path.bindTooltip(`${props.sido_name ?? ""} ${props.sigungu_name ?? ""}`, {
-          sticky: true,
-          direction: "top",
-        });
-        path.on("click", (event: L.LeafletMouseEvent) => {
-          if (!code) return;
-          setSelectedSigunguCode(code);
-          setSelectedEmdCode("");
-          setSelected(null);
-          setAssignmentMessage("");
-          onGridSelectRef.current?.(null);
-          map.panTo(event.latlng, { animate: false });
-        });
+
+        if (!selectedSigunguCode) {
+          path.bindTooltip(
+            `${props.sido_name ?? ""} ${props.sigungu_name ?? ""}`,
+            {
+              sticky: true,
+              direction: "top",
+            },
+          );
+          path.on("click", (event: L.LeafletMouseEvent) => {
+            if (!code) return;
+            setSelectedSigunguCode(code);
+            setSelectedEmdCode("");
+            setSelected(null);
+            setAssignmentMessage("");
+            onGridSelectRef.current?.(null);
+            map.panTo(event.latlng, { animate: false });
+          });
+        }
       },
     }).addTo(map);
     sigunguLayerRef.current = layer;
@@ -1430,8 +1465,17 @@ export default function DashboardRiskMapCard({
     }).addTo(map);
     gridLayerRef.current = layer;
     layer.bringToFront();
+    sigunguLayerRef.current?.bringToFront();
 
-    const bounds = layer.getBounds();
+    const gridBounds = layer.getBounds();
+    const selectedBoundaryBounds =
+      selectedSigunguBoundaryFeature && !selectedEmdCode
+        ? L.geoJSON(selectedSigunguBoundaryFeature).getBounds()
+        : null;
+    const bounds =
+      selectedBoundaryBounds?.isValid()
+        ? selectedBoundaryBounds
+        : gridBounds;
     if (bounds.isValid()) {
       map.fitBounds(bounds, {
         padding: [28, 28],
@@ -1461,7 +1505,13 @@ export default function DashboardRiskMapCard({
       layer.removeFrom(map);
       if (gridLayerRef.current === layer) gridLayerRef.current = null;
     };
-  }, [selectedDisplayFeatures, selectedAdminFeatures, selectedAdminSummary, selectedEmdCode]);
+  }, [
+    selectedDisplayFeatures,
+    selectedAdminFeatures,
+    selectedAdminSummary,
+    selectedEmdCode,
+    selectedSigunguBoundaryFeature,
+  ]);
 
   useEffect(() => {
     const map = leafletMapRef.current;
@@ -1633,12 +1683,12 @@ export default function DashboardRiskMapCard({
 
   const regionName = selectedAdminSummary
     ? [
-        selectedAdminSummary.sidoName,
-        selectedAdminSummary.sigunguName,
-        selectedAdminSummary.emdName,
-      ]
-        .filter(Boolean)
-        .join(" ")
+      selectedAdminSummary.sidoName,
+      selectedAdminSummary.sigunguName,
+      selectedAdminSummary.emdName,
+    ]
+      .filter(Boolean)
+      .join(" ")
     : "전국";
 
   const controlRows = useMemo(() => {
@@ -1678,6 +1728,21 @@ export default function DashboardRiskMapCard({
     ];
   }, [selectedAdminFeatures, features]);
 
+  const dashboardKpiSummary = useMemo<DashboardMapKpiSummary>(
+    () => ({
+      veryHighRiskCount: controlRows[0]?.candidate ?? 0,
+      surveyWorkerCount:
+        selectedRegionCapacity?.survey_available_count ?? 0,
+      controlWorkerCount:
+        selectedRegionCapacity?.control_available_count ?? 0,
+    }),
+    [controlRows, selectedRegionCapacity],
+  );
+
+  useEffect(() => {
+    onKpiSummaryChange?.(dashboardKpiSummary);
+  }, [dashboardKpiSummary, onKpiSummaryChange]);
+
   const selectedGridId = selected
     ? String(selected.grid_id ?? selected.id ?? "-")
     : "";
@@ -1685,17 +1750,17 @@ export default function DashboardRiskMapCard({
   const mapLegendItems =
     mapDisplayMode === "priority"
       ? [
-          { color: priorityColors["최우선 예찰"], label: "최우선 예찰" },
-          { color: priorityColors["우선 예찰"], label: "우선 예찰" },
-          { color: priorityColors["집중 관찰"], label: "집중 관찰" },
-          { color: priorityColors["정기 관찰"], label: "정기 관찰" },
-        ]
+        { color: priorityColors["최우선 예찰"], label: "최우선 예찰" },
+        { color: priorityColors["우선 예찰"], label: "우선 예찰" },
+        { color: priorityColors["집중 관찰"], label: "집중 관찰" },
+        { color: priorityColors["정기 관찰"], label: "정기 관찰" },
+      ]
       : [
-          { color: riskColors["매우 높음"], label: "매우 높음" },
-          { color: riskColors["높음"], label: "높음" },
-          { color: riskColors["주의"], label: "주의" },
-          { color: riskColors["관찰"], label: "관찰" },
-        ];
+        { color: riskColors["매우 높음"], label: "매우 높음" },
+        { color: riskColors["높음"], label: "높음" },
+        { color: riskColors["주의"], label: "주의" },
+        { color: riskColors["관찰"], label: "관찰" },
+      ];
 
   return (
     <div className="h-full min-h-0">
@@ -1738,7 +1803,7 @@ export default function DashboardRiskMapCard({
               className="h-full w-full bg-[#EEF7F3]"
             />
 
-            <div className="absolute left-3 top-20 z-[1000] flex flex-wrap items-center gap-2">
+            <div className="absolute left-24 top-3 z-[1000] flex flex-wrap items-center gap-2">
               <select
                 value={selectedSigunguCode}
                 onChange={(event) => {
@@ -1865,7 +1930,7 @@ export default function DashboardRiskMapCard({
                   infectionHistoryLoading
                     ? "감염 발생 이력 데이터를 불러오는 중입니다."
                     : infectionHistoryError ||
-                      "감염 발생 이력 레이어를 켜거나 끕니다."
+                    "감염 발생 이력 레이어를 켜거나 끕니다."
                 }
               >
                 {infectionHistoryLoading

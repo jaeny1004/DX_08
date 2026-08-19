@@ -30,6 +30,13 @@ def apply_field_survey_template(
 
     center_grid_id = read_single_grid_id(draft)
     year = int(draft.get("year") or 2026)
+    start_date = str(draft.get("start_date") or "").strip()
+    end_date = str(draft.get("end_date") or "").strip()
+
+    if not start_date or not end_date:
+        raise ValueError(
+            "현장 예찰 보고서의 시작일과 종료일이 없습니다."
+        )
 
     data_summary = draft.get("data_summary")
     center_metrics = (
@@ -55,6 +62,8 @@ def apply_field_survey_template(
             output_root=output_directory,
             report_no=1,
             candidate_metrics=candidate_metrics,
+            start_date=start_date,
+            end_date=end_date,
         )
 
         docx_path = Path(result["docx_path"]).resolve()
@@ -88,6 +97,8 @@ def apply_field_survey_template(
         "status": "generated",
         "center_grid_id": center_grid_id,
         "year": year,
+        "start_date": result.get("start_date"),
+        "end_date": result.get("end_date"),
         "sido_name": result.get("sido_name"),
         "sigungu_name": result.get("sigungu_name"),
         "risk_score": result.get("risk_score"),

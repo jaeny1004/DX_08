@@ -2,16 +2,25 @@ import React, { useMemo, useState } from "react";
 import {
   Activity,
   Battery,
+  Camera,
+  FileAudio,
+  ImageIcon,
   ListCheckIcon,
   MapPin,
   Minus,
   Navigation,
   Plus,
+  QrCode,
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
-import type { ControlTask, GridCell } from "../types";
+import type {
+  ControlTask,
+  FieldPhotoRecord,
+  FieldVoiceLogRecord,
+  GridCell,
+} from "../types";
 import type {
   DispatchAssignment,
   DispatchStatus,
@@ -29,6 +38,9 @@ interface ControlSectionProps {
   tasks: ControlTask[];
   grids: GridCell[];
   dispatchAssignments?: DispatchAssignment[];
+  fieldPhotos?: FieldPhotoRecord[];
+  fieldPhotoUrls?: Record<string, string>;
+  fieldVoiceLogs?: FieldVoiceLogRecord[];
   onAddTask: (task: ControlTask) => void;
   onUpdateTaskProgress: (id: string, progress: number) => void;
   onUpdateDispatchStatus?: (
@@ -143,6 +155,9 @@ export default function ControlSection({
   tasks,
   grids,
   dispatchAssignments = [],
+  fieldPhotos = [],
+  fieldPhotoUrls = {},
+  fieldVoiceLogs = [],
   onAddTask,
   onUpdateTaskProgress,
   onUpdateDispatchStatus,
@@ -195,6 +210,51 @@ export default function ControlSection({
     operations.find((operation) => operation.id === selectedOperationId) ??
     operations[0] ??
     null;
+
+  const selectedAssignment = selectedOperation?.assignmentId
+    ? dispatchAssignments.find(
+        assignment =>
+          assignment.assignmentId === selectedOperation.assignmentId,
+      ) ?? null
+    : null;
+
+  const selectedControlPhotos = useMemo(() => {
+    if (!selectedAssignment) return [];
+
+    return fieldPhotos
+      .filter(
+        photo =>
+          photo.workMode === "control" &&
+          photo.relatedRecordId === selectedAssignment.assignmentId,
+      )
+      .sort(
+        (left, right) =>
+          new Date(right.capturedAt).getTime() -
+          new Date(left.capturedAt).getTime(),
+      );
+  }, [fieldPhotos, selectedAssignment]);
+
+  const selectedControlVoiceLogs = useMemo(() => {
+    if (!selectedAssignment) return [];
+
+    return fieldVoiceLogs
+      .filter(
+        log =>
+          log.workMode === "control" &&
+          log.relatedRecordId === selectedAssignment.assignmentId,
+      )
+      .sort(
+        (left, right) =>
+          new Date(right.capturedAt).getTime() -
+          new Date(left.capturedAt).getTime(),
+      );
+  }, [fieldVoiceLogs, selectedAssignment]);
+
+  const latestControlPhoto = selectedControlPhotos[0] ?? null;
+  const latestControlPhotoUrl = latestControlPhoto
+    ? fieldPhotoUrls[latestControlPhoto.storagePath]
+    : undefined;
+  const latestControlVoiceLog = selectedControlVoiceLogs[0] ?? null;
 
   const activeOperations = useMemo(
     () =>
@@ -446,10 +506,10 @@ export default function ControlSection({
                 <div>
                   <div className="flex items-center gap-2">
                     <Navigation size={18} className="text-emerald-700" />
-                    <h2 className="text-base font-black text-slate-950">현장 출동 요원 위치</h2>
+                    <h2 className="text-base font-black text-slate-950">현장 방제 요원 지도</h2>
                   </div>
                   <p className="mt-1 text-[10px] font-semibold text-slate-400">
-                    목록을 선택하면 해당 작업과 담당 요원의 위치로 이동합니다.
+                    현장 방제 요원의 현재 위치를 확인합니다.
                   </p>
                 </div>
                 <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600">
@@ -491,6 +551,72 @@ export default function ControlSection({
                     </div>
                   </div>
                 </div>
+
+                {selectedAssignment && (
+                  <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 lg:grid-cols-[180px_minmax(0,1fr)]">
+                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-950">
+                      {latestControlPhotoUrl ? (
+                        <img
+                          src={latestControlPhotoUrl}
+                          alt="방제 현장 촬영 이미지"
+                          className="h-36 w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-36 flex-col items-center justify-center gap-2 text-slate-400">
+                          {latestControlPhoto ? (
+                            <>
+                              <ImageIcon size={22} />
+                              <span className="text-[10px] font-bold">
+                                현장사진을 불러오는 중
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <Camera size={22} />
+                              <span className="text-[10px] font-bold">
+                                등록된 현장사진 없음
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+                      <div className="rounded-xl bg-slate-50 p-3 sm:col-span-2">
+                        <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-500">
+                          <FileAudio size={13} className="text-emerald-700" />
+                          작업일지 STT
+                        </div>
+                        <p className="mt-2 line-clamp-3 text-[11px] font-semibold leading-5 text-slate-700">
+                          {latestControlVoiceLog?.transcript ||
+                            (latestControlVoiceLog?.sttStatus === "processing"
+                              ? "음성 작업일지를 변환하고 있습니다."
+                              : "등록된 음성 작업일지가 없습니다.")}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-500">
+                          <QrCode size={13} className="text-emerald-700" />
+                          자재·약제 QR
+                        </div>
+                        <p className="mt-2 break-all font-mono text-[10px] font-bold text-slate-700">
+                          {selectedAssignment.chemicalQrCode || "인증 전"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <div className="text-[10px] font-black text-slate-500">
+                          현장 기록
+                        </div>
+                        <p className="mt-2 text-[10px] font-bold text-slate-700">
+                          사진 {selectedControlPhotos.length}건 · 음성 {selectedControlVoiceLogs.length}건
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

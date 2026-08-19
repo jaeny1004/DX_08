@@ -30,6 +30,13 @@ def apply_control_template(
 
     center_grid_id = read_single_grid_id(draft)
     year = int(draft.get("year") or 2026)
+    start_date = str(draft.get("start_date") or "").strip()
+    end_date = str(draft.get("end_date") or "").strip()
+
+    if not start_date or not end_date:
+        raise ValueError(
+            "방제 보고서의 시작일과 종료일이 없습니다."
+        )
 
     data_summary = draft.get("data_summary")
     center_metrics = (
@@ -53,6 +60,8 @@ def apply_control_template(
             output_root=output_directory,
             report_no=1,
             candidate_metrics=candidate_metrics,
+            start_date=start_date,
+            end_date=end_date,
         )
 
         docx_path = Path(result["docx_path"]).resolve()
@@ -89,6 +98,8 @@ def apply_control_template(
         "suspicious_count": result.get("suspicious_count"),
         "sample_count": result.get("sample_count"),
         "field_survey_linked": result.get("field_survey_linked"),
+        "start_date": result.get("start_date"),
+        "end_date": result.get("end_date"),
         "docx_storage_key": docx_storage_key,
         "pdf_storage_key": pdf_storage_key,
         "docx_filename": docx_path.name,

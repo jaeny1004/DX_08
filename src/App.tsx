@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+
 import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL =
@@ -68,7 +69,8 @@ import FieldSection from "./components/FieldSection";
 import ThermalAnalysisSection from "./components/ThermalAnalysisSection";
 import DroneVisionAnalysisSection from "./components/DroneVisionAnalysisSection";
 import ControlSection from "./components/ControlSection";
-import SimulationSection from "./components/SimulationSection";
+import SpreadSimulationCA from "./components/SpreadSimulationCA";
+//import SimulationSection from "./components/SimulationSection";
 import AdminSection from "./components/AdminSection";
 import Chatbot from "./components/Chatbot";
 import AuthScreen from "./components/auth/AuthScreen";
@@ -89,6 +91,7 @@ import {
   FieldPhotoRecord,
   FieldVoiceLogRecord,
   TreeRecord,
+  TreeWorkflowStatus,
   WorkerStatus,
   CrowdReport,
   ControlTask,
@@ -98,6 +101,23 @@ import {
   DispatchAssignment,
   DispatchStatus,
 } from "./types/dispatch";
+
+const FIELD_DISPATCH_STATUS_SET = new Set<TreeWorkflowStatus>([
+  "배정 대기",
+  "배정 수락",
+  "출동",
+  "현장 도착",
+  "작업 중",
+  "작업 완료",
+]);
+
+function isTreeWorkflowStatus(
+  status: DispatchStatus,
+): status is TreeWorkflowStatus {
+  return FIELD_DISPATCH_STATUS_SET.has(
+    status as TreeWorkflowStatus,
+  );
+}
 type PineRecordRow = {
   id: string | number;
   created_at?: string | null;
@@ -225,6 +245,161 @@ type FieldVoiceLogRow = {
   note?:
   string | null;
 };
+
+type DispatchAssignmentRow = {
+  assignment_id: string;
+  worker_id: string;
+  worker_name: string;
+  worker_type: DispatchAssignment["workerType"];
+  task_type: DispatchAssignment["taskType"];
+  worker_capabilities: DispatchAssignment["workerCapabilities"] | null;
+  assigned_skill_level: number;
+  home_sido_name: string;
+  home_sigungu_code: string;
+  home_sigungu_name: string;
+  target_sido_name: string;
+  target_sigungu_code: string;
+  target_sigungu_name: string;
+  target_emd_code: string;
+  target_emd_name: string;
+  grid_id: string;
+  target_latitude: number | null;
+  target_longitude: number | null;
+  priority_grade: string;
+  risk_grade: string;
+  risk_score: number;
+  access_score: number;
+  distance_km: number | null;
+  travel_time_hour: number | null;
+  battery_percent: number | null;
+  remaining_minutes_at_assignment: number;
+  recommendation_reason: string;
+  assignment_type: DispatchAssignment["assignmentType"];
+  status: DispatchStatus;
+  assigned_at: string;
+  accepted_at: string | null;
+  departed_at: string | null;
+  arrived_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  field_latitude: number | null;
+  field_longitude: number | null;
+  gps_marked_at: string | null;
+  sample_qr_code: string | null;
+  sample_qr_scanned_at: string | null;
+  chemical_qr_code: string | null;
+  chemical_qr_scanned_at: string | null;
+};
+
+function mapDispatchRow(
+  row: DispatchAssignmentRow
+): DispatchAssignment {
+  return {
+    assignmentId: row.assignment_id,
+    workerId: row.worker_id,
+    workerName: row.worker_name,
+    workerType: row.worker_type,
+    taskType: row.task_type,
+    workerCapabilities: Array.isArray(row.worker_capabilities)
+      ? row.worker_capabilities
+      : [],
+    assignedSkillLevel: Number(row.assigned_skill_level ?? 0),
+    homeSidoName: row.home_sido_name ?? "",
+    homeSigunguCode: row.home_sigungu_code ?? "",
+    homeSigunguName: row.home_sigungu_name ?? "",
+    targetSidoName: row.target_sido_name ?? "",
+    targetSigunguCode: row.target_sigungu_code ?? "",
+    targetSigunguName: row.target_sigungu_name ?? "",
+    targetEmdCode: row.target_emd_code ?? "",
+    targetEmdName: row.target_emd_name ?? "",
+    gridId: row.grid_id,
+    targetLatitude:
+      row.target_latitude === null ? undefined : Number(row.target_latitude),
+    targetLongitude:
+      row.target_longitude === null ? undefined : Number(row.target_longitude),
+    priorityGrade: row.priority_grade ?? "",
+    riskGrade: row.risk_grade ?? "",
+    riskScore: Number(row.risk_score ?? 0),
+    accessScore: Number(row.access_score ?? 0),
+    distanceKm:
+      row.distance_km === null ? null : Number(row.distance_km),
+    travelTimeHour:
+      row.travel_time_hour === null ? null : Number(row.travel_time_hour),
+    batteryPercent:
+      row.battery_percent === null ? null : Number(row.battery_percent),
+    remainingMinutesAtAssignment: Number(
+      row.remaining_minutes_at_assignment ?? 0
+    ),
+    recommendationReason: row.recommendation_reason ?? "",
+    assignmentType: row.assignment_type,
+    status: row.status,
+    assignedAt: row.assigned_at,
+    acceptedAt: row.accepted_at,
+    departedAt: row.departed_at,
+    arrivedAt: row.arrived_at,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    fieldLatitude:
+      row.field_latitude === null ? undefined : Number(row.field_latitude),
+    fieldLongitude:
+      row.field_longitude === null ? undefined : Number(row.field_longitude),
+    gpsMarkedAt: row.gps_marked_at,
+    sampleQrCode: row.sample_qr_code,
+    sampleQrScannedAt: row.sample_qr_scanned_at,
+    chemicalQrCode: row.chemical_qr_code,
+    chemicalQrScannedAt: row.chemical_qr_scanned_at,
+  };
+}
+
+function mapDispatchAssignment(
+  assignment: DispatchAssignment
+) {
+  return {
+    assignment_id: assignment.assignmentId,
+    worker_id: assignment.workerId,
+    worker_name: assignment.workerName,
+    worker_type: assignment.workerType,
+    task_type: assignment.taskType,
+    worker_capabilities: assignment.workerCapabilities,
+    assigned_skill_level: assignment.assignedSkillLevel,
+    home_sido_name: assignment.homeSidoName,
+    home_sigungu_code: assignment.homeSigunguCode,
+    home_sigungu_name: assignment.homeSigunguName,
+    target_sido_name: assignment.targetSidoName,
+    target_sigungu_code: assignment.targetSigunguCode,
+    target_sigungu_name: assignment.targetSigunguName,
+    target_emd_code: assignment.targetEmdCode,
+    target_emd_name: assignment.targetEmdName,
+    grid_id: assignment.gridId,
+    target_latitude: assignment.targetLatitude ?? null,
+    target_longitude: assignment.targetLongitude ?? null,
+    priority_grade: assignment.priorityGrade,
+    risk_grade: assignment.riskGrade,
+    risk_score: assignment.riskScore,
+    access_score: assignment.accessScore,
+    distance_km: assignment.distanceKm,
+    travel_time_hour: assignment.travelTimeHour,
+    battery_percent: assignment.batteryPercent,
+    remaining_minutes_at_assignment:
+      assignment.remainingMinutesAtAssignment,
+    recommendation_reason: assignment.recommendationReason,
+    assignment_type: assignment.assignmentType,
+    status: assignment.status,
+    assigned_at: assignment.assignedAt,
+    accepted_at: assignment.acceptedAt ?? null,
+    departed_at: assignment.departedAt ?? null,
+    arrived_at: assignment.arrivedAt ?? null,
+    started_at: assignment.startedAt ?? null,
+    completed_at: assignment.completedAt ?? null,
+    field_latitude: assignment.fieldLatitude ?? null,
+    field_longitude: assignment.fieldLongitude ?? null,
+    gps_marked_at: assignment.gpsMarkedAt ?? null,
+    sample_qr_code: assignment.sampleQrCode ?? null,
+    sample_qr_scanned_at: assignment.sampleQrScannedAt ?? null,
+    chemical_qr_code: assignment.chemicalQrCode ?? null,
+    chemical_qr_scanned_at: assignment.chemicalQrScannedAt ?? null,
+  };
+}
 
 function mapConfirmedTreeRowToTreeRecord(
   row: ConfirmedTreeRow
@@ -460,7 +635,7 @@ function mapPineRecordToCrowdReport(
     region:
       latitude !== undefined &&
         longitude !== undefined
-        ? `위도 ${latitude.toFixed(5)}, 경도 ${longitude.toFixed(5)}`
+        ? `위도 ${latitude.toFixed(6)}, 경도 ${longitude.toFixed(6)}`
         : "위치 정보 미확인",
 
     description:
@@ -500,9 +675,188 @@ type ModuleId =
   | "admin-report"
   | "admin-species";
 
+const LIVE_ALERT_GROUPS = [
+  [
+    {
+      id: "ALERT-G1-01",
+      time: "9:12",
+      title: "신규 시민 의심목 신고 접수",
+      description:
+        "시민 신고를 통해 신규 감염 의심목 사진과 위치 정보가 접수됐습니다.",
+      tone: "danger" as const,
+      icon: Radio,
+    },
+    {
+      id: "ALERT-G1-02",
+      time: "10:35",
+      title: "AI 위험도 분석 완료",
+      description:
+        "접수된 의심목 이미지와 대상 격자의 AI 위험도 분석이 완료됐습니다.",
+      tone: "info" as const,
+      icon: Bot,
+    },
+    {
+      id: "ALERT-G1-03",
+      time: "11:47",
+      title: "고위험 후보 격자 위험도 상승",
+      description:
+        "신규 확산위험 후보지역의 위험도가 상승해 우선 예찰 검토가 필요합니다.",
+      tone: "danger" as const,
+      icon: AlertTriangle,
+    },
+    {
+      id: "ALERT-G1-04",
+      time: "13:20",
+      title: "현장 확인 결과 입력 대기",
+      description:
+        "현장 예찰을 마친 대상의 확인 결과와 활동보고서 입력을 기다리고 있습니다.",
+      tone: "info" as const,
+      icon: Clock3,
+    },
+    {
+      id: "ALERT-G1-05",
+      time: "14:56",
+      title: "접근 취약지역 드론 예찰 검토",
+      description:
+        "도로 접근성이 낮은 후보지역에 대한 드론 사전 예찰 검토가 요청됐습니다.",
+      tone: "warning" as const,
+      icon: MapPinned,
+    },
+    {
+      id: "ALERT-G1-06",
+      time: "16:18",
+      title: "방제 작업 결과 업로드 완료",
+      description:
+        "현장 방제 작업 결과와 증빙 자료가 통합 관제 시스템에 등록됐습니다.",
+      tone: "info" as const,
+      icon: FileUpIcon,
+    },
+  ],
+  [
+    {
+      id: "ALERT-G2-01",
+      time: "8:54",
+      title: "예찰 일정 자동 생성 완료",
+      description:
+        "위험도와 현장 접근성을 반영한 당일 예찰 일정이 자동 생성됐습니다.",
+      tone: "info" as const,
+      icon: CalendarDays,
+    },
+    {
+      id: "ALERT-G2-02",
+      time: "10:12",
+      title: "드론 촬영 데이터 업로드 완료",
+      description:
+        "예찰 대상지역의 드론 촬영 원본 데이터가 분석 저장소에 업로드됐습니다.",
+      tone: "info" as const,
+      icon: Camera,
+    },
+    {
+      id: "ALERT-G2-03",
+      time: "11:39",
+      title: "감염 의심목 AI 분석 요청",
+      description:
+        "신규 드론 이미지에서 확인된 감염 의심목에 대한 AI 분석이 요청됐습니다.",
+      tone: "danger" as const,
+      icon: Bot,
+    },
+    {
+      id: "ALERT-G2-04",
+      time: "13:58",
+      title: "현장 작업자 위치 동기화 완료",
+      description:
+        "출동 중인 현장 작업자의 최근 위치와 작업 상태가 동기화됐습니다.",
+      tone: "info" as const,
+      icon: MapPinned,
+    },
+    {
+      id: "ALERT-G2-05",
+      time: "15:21",
+      title: "방제 이력 DB 업데이트 완료",
+      description:
+        "확진목별 방제 작업 이력과 처리 상태가 데이터베이스에 반영됐습니다.",
+      tone: "warning" as const,
+      icon: MemoryStickIcon,
+    },
+    {
+      id: "ALERT-G2-06",
+      time: "17:03",
+      title: "행정 보고서 초안 자동 생성",
+      description:
+        "예찰·분석·방제 결과를 반영한 행정 보고서 초안이 자동 생성됐습니다.",
+      tone: "info" as const,
+      icon: FileText,
+    },
+  ],
+  [
+    {
+      id: "ALERT-G3-01",
+      time: "9:43",
+      title: "수종 전환 후보지 분석 시작",
+      description:
+        "피해지의 기후·토양·고도 조건을 반영한 수종 전환 후보지 분석을 시작했습니다.",
+      tone: "warning" as const,
+      icon: TreesIcon,
+    },
+    {
+      id: "ALERT-G3-02",
+      time: "11:08",
+      title: "수종 전환 적합 수종 추천 완료",
+      description:
+        "대상 격자의 입지 조건과 지역 분포를 반영한 적합 수종 추천이 완료됐습니다.",
+      tone: "info" as const,
+      icon: TreePine,
+    },
+    {
+      id: "ALERT-G3-03",
+      time: "13:46",
+      title: "사업 계획 초안 생성 완료",
+      description:
+        "선정 지역의 수종 전환 방향과 개략 예산을 포함한 사업 계획 초안이 생성됐습니다.",
+      tone: "info" as const,
+      icon: ClipboardCheck,
+    },
+    {
+      id: "ALERT-G3-04",
+      time: "15:14",
+      title: "RAG 기반 행정 질의 응답 처리",
+      description:
+        "등록된 산림 행정 문서와 지침을 근거로 행정 질의 응답을 처리했습니다.",
+      tone: "info" as const,
+      icon: MessageSquare,
+    },
+    {
+      id: "ALERT-G3-05",
+      time: "16:37",
+      title: "확진목 추가 등록 및 타임라인 갱신",
+      description:
+        "신규 확진목이 등록되고 판독·전환 이력이 상세 타임라인에 반영됐습니다.",
+      tone: "danger" as const,
+      icon: TreePine,
+    },
+    {
+      id: "ALERT-G3-06",
+      time: "18:02",
+      title: "산림행정기관 검토 요청 전송",
+      description:
+        "생성된 분석 결과와 행정 자료에 대한 담당 기관 검토 요청을 전송했습니다.",
+      tone: "warning" as const,
+      icon: FileUpIcon,
+    },
+  ],
+];
+
 export default function App() {
   const [activeModule, setActiveModule] =
     useState<ModuleId>("dashboard");
+
+  const [liveAlerts] = useState(() => {
+    const randomGroupIndex = Math.floor(
+      Math.random() * LIVE_ALERT_GROUPS.length
+    );
+
+    return LIVE_ALERT_GROUPS[randomGroupIndex];
+  });
 
   const [grids] =
     useState<GridCell[]>(initialGrids);
@@ -601,6 +955,9 @@ export default function App() {
     setFieldPhotos,
   ] = useState<FieldPhotoRecord[]>([]);
 
+  const [fieldPhotoUrls, setFieldPhotoUrls] =
+    useState<Record<string, string>>({});
+
   const [
     fieldVoiceLogs,
     setFieldVoiceLogs,
@@ -611,16 +968,246 @@ export default function App() {
   const [selectedGrid, setSelectedGrid] =
     useState<any>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (fieldPhotos.length === 0) {
+      setFieldPhotoUrls({});
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const loadSignedUrls = async () => {
+      const entries = await Promise.all(
+        fieldPhotos.map(async photo => {
+          const { data, error } = await supabase.storage
+            .from("field-photos")
+            .createSignedUrl(photo.storagePath, 60 * 60);
+
+          if (error || !data?.signedUrl) {
+            console.warn(
+              "예찰 현장사진 Signed URL 생성 실패:",
+              photo.storagePath,
+              error
+            );
+            return null;
+          }
+
+          return [photo.storagePath, data.signedUrl] as const;
+        })
+      );
+
+      if (cancelled) return;
+
+      setFieldPhotoUrls(
+        Object.fromEntries(
+          entries.filter(
+            (entry): entry is readonly [string, string] => entry !== null
+          )
+        )
+      );
+    };
+
+    void loadSignedUrls();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fieldPhotos]);
+
   const [
     dispatchAssignments,
     setDispatchAssignments,
   ] = useState<DispatchAssignment[]>([]);
 
+  useEffect(() => {
+    let active = true;
+
+    const fetchDispatchAssignments = async () => {
+      const { data, error } = await supabase
+        .from("dispatch_assignments")
+        .select("*")
+        .order("assigned_at", { ascending: false });
+
+      if (error) {
+        console.error("현장 업무 배정 목록 조회 실패:", error);
+        return;
+      }
+
+      if (active) {
+        setDispatchAssignments(
+          ((data ?? []) as DispatchAssignmentRow[]).map(mapDispatchRow)
+        );
+      }
+    };
+
+    void fetchDispatchAssignments();
+
+    const channel = supabase
+      .channel("dashboard-dispatch-assignments")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "dispatch_assignments",
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const deletedId = String(
+              (payload.old as { assignment_id?: string }).assignment_id ?? ""
+            );
+            setDispatchAssignments((previous) =>
+              previous.filter((item) => item.assignmentId !== deletedId)
+            );
+            return;
+          }
+
+          const changed = mapDispatchRow(
+            payload.new as DispatchAssignmentRow
+          );
+
+          setDispatchAssignments((previous) => {
+            const exists = previous.some(
+              (item) => item.assignmentId === changed.assignmentId
+            );
+
+            return exists
+              ? previous.map((item) =>
+                item.assignmentId === changed.assignmentId
+                  ? changed
+                  : item
+              )
+              : [changed, ...previous];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, []);
+
+  /*
+   * 모바일 앱은 dispatch_assignments의 진행 상태를 변경합니다.
+   * 확진목 목록은 confirmed_trees.status를 표시하므로, 방제(CONTROL)
+   * 배정의 최신 상태를 확진목 상태와 타임라인에도 동기화합니다.
+   *
+   * Realtime 이벤트를 놓쳤더라도 다음 목록 조회 시 다시 맞춰집니다.
+   */
+  useEffect(() => {
+    const latestControlByTreeId = new Map<
+      string,
+      DispatchAssignment & {
+        status: TreeWorkflowStatus;
+      }
+    >();
+
+    dispatchAssignments.forEach((assignment) => {
+      if (
+        assignment.taskType !== "CONTROL" ||
+        !isTreeWorkflowStatus(assignment.status) ||
+        latestControlByTreeId.has(assignment.gridId)
+      ) {
+        return;
+      }
+
+      latestControlByTreeId.set(
+        assignment.gridId,
+        assignment as DispatchAssignment & {
+          status: TreeWorkflowStatus;
+        },
+      );
+    });
+
+    const changes = trees.flatMap((tree) => {
+      const assignment = latestControlByTreeId.get(tree.id);
+
+      if (!assignment || tree.status === assignment.status) {
+        return [];
+      }
+
+      const timeline = [
+        ...tree.timeline,
+        {
+          stage: `상태 변경: ${assignment.status}`,
+          date: new Date().toLocaleString("ko-KR"),
+          note:
+            `${assignment.workerName} 요원이 모바일 현장 앱에서 ` +
+            `업무 상태를 [${assignment.status}](으)로 변경했습니다.`,
+          actor: assignment.workerName,
+        },
+      ];
+
+      return [{
+        id: tree.id,
+        status: assignment.status,
+        timeline,
+      }];
+    });
+
+    if (changes.length === 0) {
+      return;
+    }
+
+    const changesById = new Map(
+      changes.map((change) => [change.id, change]),
+    );
+
+    setTrees((previous) =>
+      previous.map((tree) => {
+        const change = changesById.get(tree.id);
+
+        return change
+          ? {
+            ...tree,
+            status: change.status,
+            timeline: change.timeline,
+          }
+          : tree;
+      }),
+    );
+
+    void Promise.all(
+      changes.map(async (change) => {
+        const { error } = await supabase
+          .from("confirmed_trees")
+          .update({
+            status: change.status,
+            timeline: change.timeline,
+          })
+          .eq("id", change.id);
+
+        if (error) {
+          console.error(
+            "모바일 방제 상태의 확진목 동기화 실패:",
+            change.id,
+            error,
+          );
+        }
+      }),
+    );
+  }, [dispatchAssignments, trees]);
+
   const [isChatOpen, setIsChatOpen] =
     useState(false);
 
-  const [isSidebarOpen, setIsSidebarOpen] =
-    useState(false);
+  const [
+    isSidebarPinnedOpen,
+    setIsSidebarPinnedOpen,
+  ] = useState(false);
+
+  const [
+    isSidebarHovered,
+    setIsSidebarHovered,
+  ] = useState(false);
+
+  const isSidebarOpen =
+    isSidebarPinnedOpen ||
+    isSidebarHovered;
 
   const [isAlertPanelOpen, setIsAlertPanelOpen] =
     useState(false);
@@ -1311,61 +1898,158 @@ export default function App() {
     );
   };
 
-  const handleAssignWorker = (
+  const handleAssignWorker = async (
     assignment: DispatchAssignment
-  ) => {
-    setDispatchAssignments((previous) => {
-      const duplicated = previous.some(
-        (item) =>
-          item.workerId === assignment.workerId &&
-          item.gridId === assignment.gridId
+  ): Promise<boolean> => {
+    const duplicated = dispatchAssignments.some(
+      (item) =>
+        item.workerId === assignment.workerId &&
+        item.gridId === assignment.gridId &&
+        item.status !== "복귀 완료"
+    );
+
+    if (duplicated) {
+      return false;
+    }
+
+    setDispatchAssignments((previous) => [
+      assignment,
+      ...previous.filter(
+        (item) => item.assignmentId !== assignment.assignmentId
+      ),
+    ]);
+
+    const { error } = await supabase
+      .from("dispatch_assignments")
+      .upsert(mapDispatchAssignment(assignment), {
+        onConflict: "assignment_id",
+      });
+
+    if (error) {
+      console.error("현장 업무 배정 저장 실패:", error);
+      setDispatchAssignments((previous) =>
+        previous.filter(
+          (item) => item.assignmentId !== assignment.assignmentId
+        )
       );
+      window.alert(
+        "업무 배정을 저장하지 못했습니다. dispatch_assignments 테이블과 RLS 정책을 확인해 주세요."
+      );
+      return false;
+    }
 
-      if (duplicated) {
-        return previous;
-      }
-
-      return [assignment, ...previous];
-    });
+    return true;
   };
 
-  const handleUpdateDispatchStatus = (
+  const handleUpdateDispatchStatus = async (
     assignmentId: string,
     status: DispatchStatus
   ) => {
+    const previousAssignment = dispatchAssignments.find(
+      (assignment) => assignment.assignmentId === assignmentId
+    );
+    const changedAt = new Date().toISOString();
+    const timestampPatch =
+      status === "배정 수락"
+        ? { acceptedAt: changedAt }
+        : status === "출동"
+          ? { departedAt: changedAt }
+          : status === "현장 도착"
+            ? { arrivedAt: changedAt }
+            : status === "작업 중"
+              ? { startedAt: changedAt }
+              : status === "작업 완료"
+                ? { completedAt: changedAt }
+                : {};
+
     setDispatchAssignments((previous) =>
       previous.map((assignment) =>
         assignment.assignmentId === assignmentId
           ? {
             ...assignment,
             status,
+            ...timestampPatch,
           }
           : assignment
       )
     );
+
+    const databasePatch: Record<string, string> = { status };
+    if (status === "배정 수락") databasePatch.accepted_at = changedAt;
+    if (status === "출동") databasePatch.departed_at = changedAt;
+    if (status === "현장 도착") databasePatch.arrived_at = changedAt;
+    if (status === "작업 중") databasePatch.started_at = changedAt;
+    if (status === "작업 완료") databasePatch.completed_at = changedAt;
+
+    const { error } = await supabase
+      .from("dispatch_assignments")
+      .update(databasePatch)
+      .eq("assignment_id", assignmentId);
+
+    if (error) {
+      console.error("현장 업무 상태 변경 실패:", error);
+      if (previousAssignment) {
+        setDispatchAssignments((previous) =>
+          previous.map((assignment) =>
+            assignment.assignmentId === assignmentId
+              ? previousAssignment
+              : assignment
+          )
+        );
+      }
+    }
   };
 
-  const handleCancelDispatch = (
+  const handleCancelDispatch = async (
     assignmentId: string
   ) => {
+    const previousAssignment = dispatchAssignments.find(
+      (assignment) => assignment.assignmentId === assignmentId
+    );
+
     setDispatchAssignments((previous) =>
       previous.filter(
         (assignment) =>
           assignment.assignmentId !== assignmentId
       )
     );
+
+    const { error } = await supabase
+      .from("dispatch_assignments")
+      .delete()
+      .eq("assignment_id", assignmentId);
+
+    if (error) {
+      console.error("현장 업무 배정 취소 실패:", error);
+      if (previousAssignment) {
+        setDispatchAssignments((previous) => [
+          previousAssignment,
+          ...previous.filter(
+            (item) => item.assignmentId !== assignmentId
+          ),
+        ]);
+      }
+    }
   };
 
   const handleConfirmInfection = async (
     report: CrowdReport
   ) => {
+    const confirmedTreeRegion =
+      typeof report.latitude === "number" &&
+        Number.isFinite(report.latitude) &&
+        typeof report.longitude === "number" &&
+        Number.isFinite(report.longitude)
+        ? `위도 ${report.latitude.toFixed(6)}, 경도 ${report.longitude.toFixed(6)}`
+        : "위치 정보 미확인";
+
     const newTree: TreeRecord = {
       id:
         `PT-${new Date().getFullYear()}-` +
         `${Math.floor(
           1000 + Math.random() * 9000
         )}`,
-      region: report.region,
+      region: confirmedTreeRegion,
       species: "소나무",
       confirmedDate:
         new Date()
@@ -1498,6 +2182,282 @@ export default function App() {
     setActiveModule(
       "monitoring"
     );
+
+    return true;
+  };
+
+  const handleConfirmAssignmentInfection = async (
+    assignment: DispatchAssignment
+  ): Promise<boolean> => {
+    /*
+     * 이미 같은 예찰 배정으로 생성된 확진목이 있는지 확인합니다.
+     * 이전 클릭에서 DB 저장만 성공한 경우에도 중복 등록하지 않습니다.
+     */
+    const {
+      data: existingRows,
+      error: lookupError,
+    } = await supabase
+      .from("confirmed_trees")
+      .select("*")
+      .eq(
+        "source_report_id",
+        assignment.assignmentId
+      )
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(1);
+
+    if (lookupError) {
+      console.error(
+        "기존 확진목 조회 실패:",
+        lookupError
+      );
+
+      window.alert(
+        `확진목 전환 상태를 확인하지 못했습니다.\n${lookupError.message}`
+      );
+
+      return false;
+    }
+
+    const existingRow =
+      existingRows?.[0] as
+      | ConfirmedTreeRow
+      | undefined;
+
+    /*
+     * 이미 DB에 저장된 확진목이면
+     * 새로 insert하지 않고 화면 상태만 복구합니다.
+     */
+    if (existingRow) {
+      const existingTree =
+        mapConfirmedTreeRowToTreeRecord(
+          existingRow
+        );
+
+      setTrees((previous) => [
+        existingTree,
+        ...previous.filter(
+          (tree) =>
+            tree.id !== existingTree.id
+        ),
+      ]);
+
+      /*
+       * 복귀 완료 상태는 FieldSection의
+       * surveyAssignments 필터에서 제외됩니다.
+       */
+      await handleUpdateDispatchStatus(
+        assignment.assignmentId,
+        "복귀 완료"
+      );
+
+      setActiveModule("monitoring");
+
+      return true;
+    }
+
+    const latitude =
+      assignment.fieldLatitude ??
+      assignment.targetLatitude;
+
+    const longitude =
+      assignment.fieldLongitude ??
+      assignment.targetLongitude;
+
+    const probability =
+      Number.isFinite(
+        Number(assignment.riskScore)
+      )
+        ? Number(assignment.riskScore)
+        : 0;
+
+    const confirmedTreeRegion =
+  Number.isFinite(Number(latitude)) &&
+  Number.isFinite(Number(longitude))
+    ? `위도 ${Number(latitude).toFixed(6)}, 경도 ${Number(longitude).toFixed(6)}`
+    : "위치 정보 미확인";
+
+    /*
+     * 해당 예찰 배정에서 가장 최근에 촬영한 사진을 찾습니다.
+     */
+    const relatedPhoto = [...fieldPhotos]
+      .filter((photo) => {
+        if (
+          photo.workMode !==
+          "surveillance"
+        ) {
+          return false;
+        }
+
+        const relatedId = String(
+          photo.relatedRecordId
+        );
+
+        return (
+          relatedId ===
+          assignment.assignmentId ||
+          relatedId === assignment.gridId ||
+          relatedId ===
+          `GRID-${assignment.gridId}`
+        );
+      })
+      .sort(
+        (left, right) =>
+          new Date(
+            right.capturedAt
+          ).getTime() -
+          new Date(
+            left.capturedAt
+          ).getTime()
+      )[0];
+
+    const imageUrl = relatedPhoto
+      ? fieldPhotoUrls[
+      relatedPhoto.storagePath
+      ] || null
+      : null;
+
+    const year =
+      new Date().getFullYear();
+
+    const treeId =
+      `PT-${year}-` +
+      String(
+        Math.floor(
+          Math.random() * 10000
+        )
+      ).padStart(4, "0");
+
+    const timeline = [
+      {
+        stage: "현장 예찰 확진목 전환",
+        date:
+          new Date().toLocaleString(
+            "ko-KR"
+          ),
+        note:
+          `GRID-${assignment.gridId} ` +
+          `${assignment.workerName} 요원의 ` +
+          `현장 예찰 결과를 확진목으로 전환했습니다.`,
+        actor: assignment.workerName,
+      },
+    ];
+
+    const {
+      data: insertedRow,
+      error: insertError,
+    } = await supabase
+      .from("confirmed_trees")
+      .insert({
+        id: treeId,
+        region: confirmedTreeRegion,
+        species: "소나무",
+        confirmed_date:
+          new Date()
+            .toISOString()
+            .split("T")[0],
+        status: "확진완료",
+        severity:
+          probability >= 75
+            ? "심"
+            : probability >= 45
+              ? "중"
+              : "경",
+        x:
+          362947 +
+          Math.floor(
+            Math.random() * 400
+          ),
+        y:
+          289014 +
+          Math.floor(
+            Math.random() * 400
+          ),
+        inspector:
+          assignment.workerName,
+        timeline,
+
+        source_report_id:
+          assignment.assignmentId,
+
+        ai_probability:
+          probability,
+
+        latitude:
+          latitude ?? null,
+
+        longitude:
+          longitude ?? null,
+
+        image_url:
+          imageUrl,
+
+        image_source:
+          relatedPhoto
+            ? "manual"
+            : null,
+
+        image_bucket:
+          relatedPhoto
+            ? "field-photos"
+            : null,
+
+        image_path:
+          relatedPhoto?.storagePath ??
+          null,
+
+        analysis_result: null,
+      })
+      .select("*")
+      .single();
+
+    if (
+      insertError ||
+      !insertedRow
+    ) {
+      console.error(
+        "예찰 배정 확진목 저장 실패:",
+        insertError
+      );
+
+      window.alert(
+        `확진목을 저장하지 못했습니다.\n${insertError?.message ??
+        "저장 결과가 없습니다."
+        }`
+      );
+
+      return false;
+    }
+
+    const savedTree =
+      mapConfirmedTreeRowToTreeRecord(
+        insertedRow as ConfirmedTreeRow
+      );
+
+    /*
+     * Realtime 수신을 기다리지 않고
+     * 화면에 즉시 추가합니다.
+     */
+    setTrees((previous) => [
+      savedTree,
+      ...previous.filter(
+        (tree) =>
+          tree.id !== savedTree.id
+      ),
+    ]);
+
+    /*
+     * 복귀 완료로 바꾸면 예찰 목록에서는 제거되지만
+     * dispatch_assignments 이력은 DB에 보존됩니다.
+     */
+    await handleUpdateDispatchStatus(
+      assignment.assignmentId,
+      "복귀 완료"
+    );
+
+    setActiveModule("monitoring");
 
     return true;
   };
@@ -1650,48 +2610,45 @@ export default function App() {
     );
   }
 
-  const liveAlerts = [
-    {
-      id: "ALERT-001",
-      time: "14:28",
-      title: "고위험 후보 격자 위험도 상승",
-      description:
-        "신규 확산위험 후보지역의 위험도가 상승해 우선 예찰 검토가 필요합니다.",
-      tone: "danger" as const,
-      icon: Radio,
-    },
-    {
-      id: "ALERT-002",
-      time: "14:15",
-      title: "접근 취약지역 드론 예찰 검토",
-      description:
-        "도로 접근성이 낮은 후보지역에 대한 드론 사전 예찰 검토가 요청됐습니다.",
-      tone: "warning" as const,
-      icon: MapPinned,
-    },
-    {
-      id: "ALERT-003",
-      time: "13:30",
-      title: "현장 확인 결과 입력 대기",
-      description:
-        "현장 예찰 완료 격자의 활동보고서 입력 상태를 확인해야 합니다.",
-      tone: "info" as const,
-      icon: Clock3,
-    },
-  ];
-
   return (
     <div className="h-screen overflow-hidden bg-[#F5F7FA] font-sans text-slate-800">
       <div
-        className="grid h-full transition-[grid-template-columns] duration-300 ease-out"
+        className="grid h-full"
         style={{
-          gridTemplateColumns: isSidebarOpen
-            ? "240px minmax(0, 1fr)"
-            : "50px minmax(0, 1fr)",
+          gridTemplateColumns:
+            "50px minmax(0, 1fr)",
         }}
       >
-        <aside className="relative flex h-full min-w-0 flex-col border-r border-slate-200 bg-white py-4 shadow-sm">
+        <aside
+          onMouseMove={(event) => {
+            const target =
+              event.target as HTMLElement;
+
+            // 실시간 알림 영역에서는
+            // 마우스 호버로 사이드바를 열지 않음
+            if (
+              target.closest(
+                "[data-sidebar-alert-trigger]"
+              )
+            ) {
+              setIsSidebarHovered(false);
+              return;
+            }
+
+            setIsSidebarHovered(true);
+          }}
+          onMouseLeave={() => {
+            setIsSidebarHovered(false);
+          }}
+          style={{
+            width: isSidebarOpen
+              ? "240px"
+              : "50px",
+          }}
+          className="relative z-[30000] flex h-full min-w-0 flex-col overflow-visible border-r border-slate-200 bg-white py-4 shadow-xl transition-[width] duration-300 ease-out"
+        >
           <div
+            data-sidebar-alert-trigger
             className={
               isSidebarOpen
                 ? "flex w-full items-center gap-3 px-4"
@@ -1700,9 +2657,14 @@ export default function App() {
           >
             <button
               type="button"
-              onClick={() =>
-                setIsAlertPanelOpen((previous) => !previous)
-              }
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsSidebarHovered(false);
+
+                setIsAlertPanelOpen(
+                  previous => !previous
+                );
+              }}
               className={
                 isAlertPanelOpen
                   ? "relative flex h-10 w-10 shrink-0 items-center justify-center text-rose-700 transition hover:text-rose-900"
@@ -1719,9 +2681,14 @@ export default function App() {
             {isSidebarOpen && (
               <button
                 type="button"
-                onClick={() =>
-                  setIsAlertPanelOpen((previous) => !previous)
-                }
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsSidebarHovered(false);
+
+                  setIsAlertPanelOpen(
+                    previous => !previous
+                  );
+                }}
                 className="min-w-0 text-left"
               >
                 <div className="truncate text-lg font-black text-slate-950">
@@ -1737,22 +2704,28 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() =>
-              setIsSidebarOpen((previous) => !previous)
-            }
+            onClick={() => {
+              if (isSidebarPinnedOpen) {
+                setIsSidebarPinnedOpen(false);
+                setIsSidebarHovered(false);
+                return;
+              }
+
+              setIsSidebarPinnedOpen(true);
+            }}
             className="absolute -right-4 top-1/2 z-30 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md transition hover:text-emerald-700"
             aria-label={
-              isSidebarOpen
+              isSidebarPinnedOpen
                 ? "사이드바 닫기"
-                : "사이드바 열기"
+                : "사이드바 열린 상태 고정"
             }
             title={
-              isSidebarOpen
+              isSidebarPinnedOpen
                 ? "사이드바 닫기"
-                : "사이드바 열기"
+                : "사이드바 열린 상태 고정"
             }
           >
-            {isSidebarOpen ? (
+            {isSidebarPinnedOpen ? (
               <PanelLeftClose size={17} />
             ) : (
               <PanelLeftOpen size={17} />
@@ -1952,7 +2925,8 @@ export default function App() {
                         </span>
                       </button>
 
-                      {/* 실사 드론 사진 감염도 확인 */}
+                      {/*  드론 실사 감염도 확인
+ */}
                       <button
                         type="button"
                         onClick={() =>
@@ -1962,7 +2936,7 @@ export default function App() {
                         }
                         className={
                           activeModule ===
-                          "drone-vision-analysis"
+                            "drone-vision-analysis"
                             ? "flex h-9 w-full items-center gap-3 rounded-lg bg-emerald-100 px-3 text-left text-emerald-900"
                             : "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                         }
@@ -1973,7 +2947,7 @@ export default function App() {
                         />
 
                         <span className="truncate text-xs font-extrabold">
-                          실사 드론 사진 감염도 확인
+                          드론 실사 감염도 확인
                         </span>
                       </button>
 
@@ -2039,7 +3013,7 @@ export default function App() {
                         }
                         className={
                           activeModule ===
-                          "drone-vision-analysis"
+                            "drone-vision-analysis"
                             ? "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800"
                             : "group/submenu relative flex h-10 w-12 items-center justify-center rounded-lg text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-800"
                         }
@@ -2047,7 +3021,7 @@ export default function App() {
                         <Camera size={18} />
 
                         <span className="pointer-events-none absolute left-[58px] z-[100] whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover/submenu:opacity-100">
-                          실사 드론 사진 감염도 확인
+                          드론 실사 감염도 확인
                         </span>
                       </button>
 
@@ -2408,7 +3382,6 @@ export default function App() {
                 {activeModule === "dashboard" && (
                   <div className="h-full min-h-0 overflow-y-auto pr-1">
                     <Dashboard
-                      title={activeModuleLabel}
                       grids={grids}
                       trees={trees}
                       workers={workers}
@@ -2436,6 +3409,12 @@ export default function App() {
                     onDeleteTrees={
                       handleDeleteTrees
                     }
+                    dispatchAssignments={
+                      dispatchAssignments
+                    }
+                    onAssignWorker={
+                      handleAssignWorker
+                    }
                   />
                 )}
 
@@ -2444,11 +3423,16 @@ export default function App() {
                     <FieldSection
                       workers={workers}
                       reports={reports}
+                      fieldPhotos={fieldPhotos}
+                      fieldPhotoUrls={fieldPhotoUrls}
                       dispatchAssignments={dispatchAssignments}
                       onUpdateDispatchStatus={handleUpdateDispatchStatus}
                       onCancelDispatch={handleCancelDispatch}
                       onUpdateWorkerStatus={handleUpdateWorkerStatus}
                       onConfirmInfection={handleConfirmInfection}
+                      onConfirmAssignmentInfection={
+                        handleConfirmAssignmentInfection
+                      }
                       onRejectReport={handleRejectReport}
                       onAssignWorker={handleAssignWorker}
                     />
@@ -2478,6 +3462,9 @@ export default function App() {
                       tasks={tasks}
                       grids={grids}
                       dispatchAssignments={dispatchAssignments}
+                      fieldPhotos={fieldPhotos}
+                      fieldPhotoUrls={fieldPhotoUrls}
+                      fieldVoiceLogs={fieldVoiceLogs}
                       onAddTask={handleAddTask}
                       onUpdateTaskProgress={handleUpdateTaskProgress}
                       onUpdateDispatchStatus={handleUpdateDispatchStatus}
@@ -2487,24 +3474,23 @@ export default function App() {
 
                 {activeModule === "control-work" && (
                   <div className="h-full min-h-0 overflow-y-auto pr-1">
-                    <SimulationSection />
+                    <SpreadSimulationCA />
                   </div>
                 )}
 
                 {(activeModule === "admin-report" ||
                   activeModule === "admin-species") && (
-                  <div className="h-full overflow-y-auto pr-1">
-                    <AdminSection
-                      title={activeModuleLabel}
-                      view={
-                        activeModule ===
-                        "admin-species"
-                          ? "species"
-                          : "report"
-                      }
-                    />
-                  </div>
-                )}
+                    <div className="h-full overflow-y-auto pr-1">
+                      <AdminSection
+                        view={
+                          activeModule ===
+                            "admin-species"
+                            ? "species"
+                            : "report"
+                        }
+                      />
+                    </div>
+                  )}
               </motion.div>
             </AnimatePresence>
           </main>
@@ -2513,106 +3499,93 @@ export default function App() {
 
       <AnimatePresence>
         {isAlertPanelOpen && (
-          <>
-            <motion.button
-              type="button"
-              aria-label="실시간 알림 닫기"
-              onClick={() => setIsAlertPanelOpen(false)}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[45] bg-slate-950/20"
-            />
-
-            <motion.aside
-              initial={{
-                opacity: 0,
-                x: -18,
-                scale: 0.98,
-              }}
-              animate={{
-                opacity: 1,
-                x: 0,
-                scale: 1,
-              }}
-              exit={{
-                opacity: 0,
-                x: -18,
-                scale: 0.98,
-              }}
-              transition={{
-                duration: 0.18,
-              }}
-              className="fixed left-4 top-4 z-[50] flex max-h-[calc(100vh-32px)] w-[390px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-                <div>
-                  <h2 className="mt-1 text-xl font-black text-slate-950">
-                    실시간 통합 알림
-                  </h2>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsAlertPanelOpen(false)}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  aria-label="실시간 알림 닫기"
-                >
-                  <X size={19} />
-                </button>
+          <motion.aside
+            initial={{
+              opacity: 0,
+            }}
+            animate={{
+              opacity: 1,
+            }}
+            exit={{
+              opacity: 0,
+            }}
+            transition={{
+              duration: 0.18,
+            }}
+            style={{
+              left: "58px",
+              top: "16px",
+              zIndex: 50000,
+            }}
+            className="fixed flex max-h-[calc(100vh-32px)] w-[390px] max-w-[calc(100vw-74px)] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div>
+                <h2 className="mt-1 text-xl font-black text-slate-950">
+                  실시간 통합 알림
+                </h2>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-                {liveAlerts.map((alert) => {
-                  const Icon = alert.icon;
+              <button
+                type="button"
+                onClick={() => setIsAlertPanelOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="실시간 알림 닫기"
+              >
+                <X size={19} />
+              </button>
+            </div>
 
-                  const toneClass =
-                    alert.tone === "danger"
-                      ? "text-rose-800"
-                      : alert.tone === "warning"
-                        ? "text-amber-800"
-                        : "text-blue-800";
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+              {liveAlerts.map((alert) => {
+                const Icon = alert.icon;
 
-                  return (
-                    <article
-                      key={alert.id}
-                      className={`p-1 ${toneClass}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex shrink-0 items-center justify-center">
-                          <Icon size={18} />
+                const toneClass =
+                  alert.tone === "danger"
+                    ? "text-rose-800"
+                    : alert.tone === "warning"
+                      ? "text-amber-800"
+                      : "text-blue-800";
+
+                return (
+                  <article
+                    key={alert.id}
+                    className={`p-1 ${toneClass}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 flex shrink-0 items-center justify-center">
+                        <Icon size={18} />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-sm font-extrabold">
+                            {alert.title}
+                          </h3>
+
+                          <span className="shrink-0 text-[10px] font-black opacity-70">
+                            {alert.time}
+                          </span>
                         </div>
 
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-3">
-                            <h3 className="text-sm font-extrabold">
-                              {alert.title}
-                            </h3>
+                        <p className="mt-1 text-xs font-semibold leading-5 opacity-80">
+                          {alert.description}
+                        </p>
 
-                            <span className="shrink-0 text-[10px] font-black opacity-70">
-                              {alert.time}
-                            </span>
-                          </div>
-
-                          <p className="mt-1 text-xs font-semibold leading-5 opacity-80">
-                            {alert.description}
-                          </p>
-
-                          <div className="mt-2 text-[10px] font-black opacity-60">
-                            {alert.id}
-                          </div>
+                        <div className="mt-2 text-[10px] font-black opacity-60">
+                          {alert.id}
                         </div>
                       </div>
-                    </article>
-                  );
-                })}
-              </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
 
-              <div className="border-t border-slate-100 bg-slate-50 px-5 py-3 text-[11px] font-semibold leading-5 text-slate-500">
-                알림은 감염 확정이 아닌 신규 확산위험 후보와 현장 확인 필요사항을 안내합니다.
-              </div>
-            </motion.aside>
-          </>
+            <div className="border-t border-slate-100 bg-slate-50 px-5 py-3 text-[11px] font-semibold leading-5 text-slate-500">
+              알림은 감염 확정이 아닌 신규 확산위험 후보와 현장 확인 필요사항을 안내합니다.
+            </div>
+          </motion.aside>
         )}
       </AnimatePresence>
 

@@ -134,6 +134,25 @@ function confidencePercent(
     );
 }
 
+function formatConfidenceRange(
+  confidences: number[],
+): string {
+  const values = confidences
+    .map(confidencePercent)
+    .filter(Number.isFinite);
+
+  if (values.length === 0) {
+    return "-";
+  }
+
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+
+  return minimum === maximum
+    ? `${minimum.toFixed(1)}%`
+    : `${minimum.toFixed(1)}~${maximum.toFixed(1)}%`;
+}
+
 async function getEdgeFunctionErrorMessage(
   error: unknown,
 ): Promise<string> {
@@ -729,7 +748,7 @@ export default function DroneVisionAnalysisSection({
               className="text-emerald-700"
             />
             <h2 className="text-base font-black text-slate-950">
-              실사 드론 사진 감염도 확인
+              드론 실사 감염도 확인
             </h2>
           </div>
           <p className="mt-1 text-[10px] font-semibold text-slate-400">
@@ -1176,20 +1195,15 @@ export default function DroneVisionAnalysisSection({
 
                 <div className="rounded-lg bg-slate-50 p-3">
                   <p className="text-[9px] font-bold text-slate-400">
-                    최고 신뢰도
+                    탐지 신뢰도 범위
                   </p>
                   <p className="mt-1 text-xl font-black text-rose-600">
-                    {selectedResult.predictions.length > 0
-                      ? Math.max(
-                        ...selectedResult.predictions.map(
-                          (prediction) =>
-                            confidencePercent(
-                              prediction.confidence,
-                            ),
-                        ),
-                      ).toFixed(1)
-                      : "0.0"}
-                    %
+                    {formatConfidenceRange(
+                      selectedResult.predictions.map(
+                        (prediction) =>
+                          prediction.confidence,
+                      ),
+                    )}
                   </p>
                 </div>
               </div>

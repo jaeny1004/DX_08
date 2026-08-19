@@ -26,7 +26,6 @@ import {
   LoaderCircle,
   Mic,
   PlayCircle,
-  Trash2,
 } from "lucide-react";
 
 import {
@@ -34,6 +33,13 @@ import {
   TreeRecord,
   FieldVoiceLogRecord,
 } from "../types";
+import type {
+  TreeWorkflowStatus,
+} from "../types";
+import type {
+  DispatchAssignment,
+  DispatchTaskType,
+} from "../types/dispatch";
 
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL as string;
@@ -47,6 +53,293 @@ const supabase = createClient(
 );
 
 const DRONE_BUCKET = "drone-images";
+
+const WORKERS_PATH = "/data/workforce_v2/workers.json";
+const WORKER_CAPABILITIES_PATH =
+  "/data/workforce_v2/worker_capabilities.json";
+const WORKER_AVAILABILITY_PATH =
+  "/data/workforce_v2/worker_availability.json";
+const WORKER_CURRENT_STATUS_PATH =
+  "/data/workforce_v2/worker_current_status.json";
+
+type ControlWorkerCapability = {
+  taskType: DispatchTaskType;
+  skillLevel: number;
+};
+
+type ControlWorkerCandidate = {
+  workerId: string;
+  workerName: string;
+  homeSidoName: string;
+  homeSigunguCode: string;
+  homeSigunguName: string;
+  baseLatitude: number;
+  baseLongitude: number;
+  capabilities: ControlWorkerCapability[];
+  availabilityStatus: string;
+  currentStatus: string;
+  remainingMinutes: number;
+  batteryPercent: number | null;
+};
+
+type ControlWorkerRecommendation = {
+  worker: ControlWorkerCandidate;
+  skillLevel: number;
+  distanceKm: number;
+  assignmentType:
+  | "지역 내 배정"
+  | "인접지역 지원"
+  | "광역 지원";
+};
+
+function safeNumber(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function calculateDistanceKm(
+  latitude1: number,
+  longitude1: number,
+  latitude2: number,
+  longitude2: number,
+): number {
+  const toRadians = (degree: number) =>
+    degree * Math.PI / 180;
+  const earthRadiusKm = 6371;
+  const latitudeDelta = toRadians(latitude2 - latitude1);
+  const longitudeDelta = toRadians(longitude2 - longitude1);
+  const a =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(toRadians(latitude1)) *
+    Math.cos(toRadians(latitude2)) *
+    Math.sin(longitudeDelta / 2) ** 2;
+
+  return 2 * earthRadiusKm *
+    Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+const DISPLAY_MANAGEMENT_ID_PATTERN =
+  /^PT-2026-(\d{4})$/;
+
+function hashTreeId(value: string): number {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash >>> 0;
+}
+
+/**
+ * 실제 DB ID는 그대로 유지하면서 화면에서만 사용할 4자리 관리 ID를 만듭니다.
+ * 이미 PT-2026-0000 형식인 ID는 우선 보존하고, 나머지는 실제 ID를 기반으로
+ * 결정적인 번호를 만든 뒤 현재 목록 안에서 중복되지 않게 조정합니다.
+ */
+function createDisplayManagementIdMap(
+  trees: TreeRecord[],
+): Map<string, string> {
+  const result = new Map<string, string>();
+  const usedNumbers = new Set<number>();
+
+  const sortedTrees = [...trees].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  );
+
+  sortedTrees.forEach((tree) => {
+    const matched = tree.id.match(
+      DISPLAY_MANAGEMENT_ID_PATTERN,
+    );
+
+    if (!matched) {
+      return;
+    }
+
+    const number = Number(matched[1]);
+
+    if (usedNumbers.has(number)) {
+      return;
+    }
+
+    usedNumbers.add(number);
+    result.set(tree.id, tree.id);
+  });
+
+  sortedTrees.forEach((tree) => {
+    if (result.has(tree.id)) {
+      return;
+    }
+
+    let number = hashTreeId(tree.id) % 10000;
+
+    while (usedNumbers.has(number)) {
+      number = (number + 1) % 10000;
+    }
+
+    usedNumbers.add(number);
+    result.set(
+      tree.id,
+      `PT-2026-${String(number).padStart(4, "0")}`,
+    );
+  });
+
+  return result;
+}
+
+function parseCoordinatesFromRegion(
+  region: string,
+): { latitude: number; longitude: number } | null {
+  const matched = region.match(
+    /위도\s*(-?\d+(?:\.\d+)?)\s*[,·/]?\s*경도\s*(-?\d+(?:\.\d+)?)/i,
+  );
+
+  if (!matched) {
+    return null;
+  }
+
+  const latitude = Number(matched[1]);
+  const longitude = Number(matched[2]);
+
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude)
+  ) {
+    return null;
+  }
+
+  return { latitude, longitude };
+}
+
+function getTreeLocationDisplay(tree: TreeRecord): {
+  regionName: string;
+  coordinateText: string;
+} {
+  const region = tree.region.trim();
+  const coordinatesFromRegion =
+    parseCoordinatesFromRegion(region);
+  const hasNumericCoordinates =
+    typeof tree.latitude === "number" &&
+    Number.isFinite(tree.latitude) &&
+    typeof tree.longitude === "number" &&
+    Number.isFinite(tree.longitude);
+  const coordinates = hasNumericCoordinates
+    ? {
+      latitude: tree.latitude as number,
+      longitude: tree.longitude as number,
+    }
+    : coordinatesFromRegion;
+
+  return {
+    regionName: coordinatesFromRegion
+      ? "좌표 기반 등록 지점"
+      : region || "지역 정보 없음",
+    coordinateText: coordinates
+      ? `위도 ${coordinates.latitude.toFixed(6)} · 경도 ${coordinates.longitude.toFixed(6)}`
+      : "좌표 정보 없음",
+  };
+}
+
+type TimelineDateInfo = {
+  timestamp: number | null;
+  formatted: string;
+};
+
+function getTimelineDateInfo(
+  value: string | null | undefined,
+): TimelineDateInfo {
+  const source = String(value ?? "").trim();
+
+  if (!source) {
+    return {
+      timestamp: null,
+      formatted: "시간 미기록",
+    };
+  }
+
+  const pad = (number: number) =>
+    String(number).padStart(2, "0");
+  const localPattern =
+    /^(\d{4})[.\/-]\s*(\d{1,2})[.\/-]\s*(\d{1,2})(?:\.?\s*(?:(오전|오후)\s*)?(\d{1,2}):(\d{2})(?::(\d{2}))?)?/;
+  const localMatch = source.match(localPattern);
+  const isIsoTimestamp =
+    /^\d{4}-\d{2}-\d{2}T/.test(source);
+
+  if (localMatch && !isIsoTimestamp) {
+    const year = Number(localMatch[1]);
+    const month = Number(localMatch[2]);
+    const day = Number(localMatch[3]);
+    const meridiem = localMatch[4];
+    const hasTime = localMatch[5] !== undefined;
+    let hour = hasTime ? Number(localMatch[5]) : 0;
+    const minute = hasTime ? Number(localMatch[6]) : 0;
+    const second = hasTime
+      ? Number(localMatch[7] ?? 0)
+      : 0;
+
+    if (meridiem === "오후" && hour < 12) {
+      hour += 12;
+    }
+
+    if (meridiem === "오전" && hour === 12) {
+      hour = 0;
+    }
+
+    const timestamp = Date.UTC(
+      year,
+      month - 1,
+      day,
+      hour - 9,
+      minute,
+      second,
+    );
+
+    return {
+      timestamp,
+      formatted: hasTime
+        ? `${year}.${pad(month)}.${pad(day)} ${pad(hour)}:${pad(minute)}`
+        : `${year}.${pad(month)}.${pad(day)} --:--`,
+    };
+  }
+
+  const parsed = new Date(source);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return {
+      timestamp: null,
+      formatted: "시간 미기록",
+    };
+  }
+
+  const hasTime =
+    /T\d{1,2}:\d{2}|\d{1,2}:\d{2}/.test(source);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: hasTime ? "2-digit" : undefined,
+    minute: hasTime ? "2-digit" : undefined,
+    hourCycle: "h23",
+  }).formatToParts(parsed);
+  const part = (type: string) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  const dateText =
+    `${part("year")}.${part("month")}.${part("day")}`;
+
+  return {
+    timestamp: parsed.getTime(),
+    formatted: hasTime
+      ? `${dateText} ${part("hour")}:${part("minute")}`
+      : `${dateText} --:--`,
+  };
+}
+
+function formatTimelineDate(
+  value: string | null | undefined,
+): string {
+  return getTimelineDateInfo(value).formatted;
+}
 
 type ThermalPrediction = {
   x: number;
@@ -268,13 +561,19 @@ interface MonitoringSectionProps {
 
   onUpdateTreeStatus: (
     id: string,
-    newStatus:
-      TreeRecord["status"]
-  ) => void;
+    newStatus: TreeWorkflowStatus
+  ) => void | Promise<void>;
 
   onDeleteTrees: (
     ids: string[]
   ) => Promise<string[]>;
+
+  dispatchAssignments:
+  DispatchAssignment[];
+
+  onAssignWorker: (
+    assignment: DispatchAssignment
+  ) => Promise<boolean>;
 }
 
 export default function MonitoringSection({
@@ -284,6 +583,8 @@ export default function MonitoringSection({
   onAddTree,
   onUpdateTreeStatus,
   onDeleteTrees,
+  dispatchAssignments,
+  onAssignWorker,
 }: MonitoringSectionProps) {
 
   // =========================================================
@@ -328,6 +629,169 @@ export default function MonitoringSection({
 
   const [isDeletingTrees, setIsDeletingTrees] =
     useState(false);
+
+  const [controlAssignmentTreeId, setControlAssignmentTreeId] =
+    useState<string | null>(null);
+
+  const [controlWorkers, setControlWorkers] =
+    useState<ControlWorkerCandidate[]>([]);
+
+  const [isControlWorkersLoading, setIsControlWorkersLoading] =
+    useState(true);
+
+  const [controlWorkersError, setControlWorkersError] =
+    useState("");
+
+  const [controlAssignmentMessage, setControlAssignmentMessage] =
+    useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    setIsControlWorkersLoading(true);
+    setControlWorkersError("");
+
+    Promise.all([
+      fetch(WORKERS_PATH, {
+        cache: "no-cache",
+        signal: controller.signal,
+      }),
+      fetch(WORKER_CAPABILITIES_PATH, {
+        cache: "no-cache",
+        signal: controller.signal,
+      }),
+      fetch(WORKER_AVAILABILITY_PATH, {
+        cache: "no-cache",
+        signal: controller.signal,
+      }),
+      fetch(WORKER_CURRENT_STATUS_PATH, {
+        cache: "no-cache",
+        signal: controller.signal,
+      }),
+    ])
+      .then(async (responses) => {
+        for (const response of responses) {
+          if (!response.ok) {
+            throw new Error(
+              `방제 요원 데이터 로드 실패 (${response.status})`,
+            );
+          }
+        }
+
+        const [
+          workersData,
+          capabilitiesData,
+          availabilityData,
+          currentStatusData,
+        ] = await Promise.all(
+          responses.map((response) => response.json()),
+        );
+
+        if (
+          !Array.isArray(workersData) ||
+          !Array.isArray(capabilitiesData) ||
+          !Array.isArray(availabilityData) ||
+          !Array.isArray(currentStatusData)
+        ) {
+          throw new Error(
+            "방제 요원 데이터 형식이 올바르지 않습니다.",
+          );
+        }
+
+        const capabilityMap = new Map<
+          string,
+          ControlWorkerCapability[]
+        >();
+
+        capabilitiesData.forEach((row: any) => {
+          const workerId = String(row.worker_id ?? "");
+          const taskType = String(
+            row.task_type ?? "",
+          ) as DispatchTaskType;
+
+          if (
+            !workerId ||
+            !["SURVEY", "DRONE", "CONTROL"].includes(taskType)
+          ) {
+            return;
+          }
+
+          const capabilities = capabilityMap.get(workerId) ?? [];
+          capabilities.push({
+            taskType,
+            skillLevel: safeNumber(row.skill_level),
+          });
+          capabilityMap.set(workerId, capabilities);
+        });
+
+        const availabilityMap = new Map<string, any>(
+          availabilityData.map((row: any) => [
+            String(row.worker_id ?? ""),
+            row,
+          ]),
+        );
+        const currentStatusMap = new Map<string, any>(
+          currentStatusData.map((row: any) => [
+            String(row.worker_id ?? ""),
+            row,
+          ]),
+        );
+
+        setControlWorkers(
+          workersData.map((row: any) => {
+            const workerId = String(row.worker_id ?? "");
+            const availability = availabilityMap.get(workerId) ?? {};
+            const currentStatus = currentStatusMap.get(workerId) ?? {};
+
+            return {
+              workerId,
+              workerName: String(row.worker_name ?? ""),
+              homeSidoName: String(row.home_sido_name ?? ""),
+              homeSigunguCode: String(row.home_sigungu_code ?? ""),
+              homeSigunguName: String(row.home_sigungu_name ?? ""),
+              baseLatitude: safeNumber(row.base_lat),
+              baseLongitude: safeNumber(row.base_lon),
+              capabilities: capabilityMap.get(workerId) ?? [],
+              availabilityStatus: String(
+                availability.availability_status ?? "UNAVAILABLE",
+              ),
+              currentStatus: String(
+                currentStatus.status ?? "UNAVAILABLE",
+              ),
+              remainingMinutes: safeNumber(
+                availability.remaining_minutes,
+              ),
+              batteryPercent:
+                currentStatus.battery_level == null
+                  ? null
+                  : safeNumber(currentStatus.battery_level),
+            };
+          }),
+        );
+      })
+      .catch((error) => {
+        if (
+          error instanceof DOMException &&
+          error.name === "AbortError"
+        ) {
+          return;
+        }
+
+        console.error("방제 요원 데이터 로드 오류:", error);
+        setControlWorkersError(
+          error instanceof Error
+            ? error.message
+            : "방제 요원 목록을 불러오지 못했습니다.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsControlWorkersLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, []);
 
 
   // =========================================================
@@ -581,37 +1045,281 @@ export default function MonitoringSection({
         tree.id === selectedTreeId
     ) ?? null;
 
+  /**
+   * 모바일 현장 기록은 구현 시점에 따라 확진목 ID, 원본 예찰 배정 ID,
+   * 방제 배정 ID 또는 GRID 접두사가 붙은 값으로 저장될 수 있습니다.
+   * 한 확진목에 연결될 수 있는 식별자를 모두 모아 동일 업무의 기록을
+   * 안정적으로 찾습니다.
+   */
+  const getTreeRelatedIds = (
+    tree: TreeRecord,
+  ) => {
+    const relatedIds = new Set<string>();
+
+    const addId = (
+      value?: string | number | null,
+    ) => {
+      if (
+        value === undefined ||
+        value === null
+      ) {
+        return;
+      }
+
+      const normalized = String(value).trim();
+
+      if (!normalized) {
+        return;
+      }
+
+      relatedIds.add(normalized);
+
+      const gridId = normalized.replace(
+        /^GRID-/i,
+        "",
+      );
+
+      relatedIds.add(gridId);
+      relatedIds.add(`GRID-${gridId}`);
+    };
+
+    addId(tree.id);
+    addId(tree.sourceReportId);
+
+    dispatchAssignments.forEach(
+      (assignment) => {
+        const assignmentIds = [
+          assignment.assignmentId,
+          assignment.gridId,
+        ];
+
+        const isRelated = assignmentIds.some(
+          (value) => {
+            const normalized = String(
+              value,
+            ).trim();
+            const gridId = normalized.replace(
+              /^GRID-/i,
+              "",
+            );
+
+            return (
+              relatedIds.has(normalized) ||
+              relatedIds.has(gridId) ||
+              relatedIds.has(`GRID-${gridId}`)
+            );
+          },
+        );
+
+        if (isRelated) {
+          addId(assignment.assignmentId);
+          addId(assignment.gridId);
+        }
+      },
+    );
+
+    return relatedIds;
+  };
+
+  const isRelatedRecordId = (
+    relatedIds: Set<string>,
+    value: string | number,
+  ) => {
+    const normalized = String(value).trim();
+    const gridId = normalized.replace(
+      /^GRID-/i,
+      "",
+    );
+
+    return (
+      relatedIds.has(normalized) ||
+      relatedIds.has(gridId) ||
+      relatedIds.has(`GRID-${gridId}`)
+    );
+  };
+
+  const controlAssignmentTree =
+    controlAssignmentTreeId
+      ? trees.find(
+        (tree) =>
+          tree.id === controlAssignmentTreeId
+      ) ?? null
+      : null;
+
+  const activeControlAssignment =
+    controlAssignmentTree
+      ? dispatchAssignments.find(
+        (assignment) =>
+          assignment.taskType === "CONTROL" &&
+          assignment.gridId === controlAssignmentTree.id &&
+          assignment.status !== "복귀 완료"
+      ) ?? null
+      : null;
+
+  const recommendedControlWorkers =
+    useMemo<ControlWorkerRecommendation[]>(() => {
+      if (
+        !controlAssignmentTree ||
+        typeof controlAssignmentTree.latitude !== "number" ||
+        !Number.isFinite(controlAssignmentTree.latitude) ||
+        typeof controlAssignmentTree.longitude !== "number" ||
+        !Number.isFinite(controlAssignmentTree.longitude)
+      ) {
+        return [];
+      }
+
+      const assignedWorkerIds = new Set(
+        dispatchAssignments
+          .filter(
+            (assignment) =>
+              assignment.status !== "복귀 완료"
+          )
+          .map((assignment) => assignment.workerId),
+      );
+
+      return controlWorkers
+        .filter((worker) => {
+          const controlCapability = worker.capabilities.find(
+            (capability) => capability.taskType === "CONTROL",
+          );
+          const availabilityOk = [
+            "AVAILABLE",
+            "PARTIAL",
+            "대기",
+            "가능",
+          ].includes(worker.availabilityStatus);
+          const statusOk = [
+            "AVAILABLE",
+            "대기",
+            "복귀",
+          ].includes(worker.currentStatus);
+
+          return Boolean(controlCapability) &&
+            availabilityOk &&
+            statusOk &&
+            worker.remainingMinutes > 0 &&
+            !assignedWorkerIds.has(worker.workerId);
+        })
+        .map((worker) => {
+          const controlCapability = worker.capabilities.find(
+            (capability) => capability.taskType === "CONTROL",
+          )!;
+          const localRegion = Boolean(
+            worker.homeSigunguName &&
+            controlAssignmentTree.region.includes(
+              worker.homeSigunguName,
+            ),
+          );
+          const distanceKm = calculateDistanceKm(
+            worker.baseLatitude,
+            worker.baseLongitude,
+            controlAssignmentTree.latitude!,
+            controlAssignmentTree.longitude!,
+          );
+
+          return {
+            worker,
+            skillLevel: controlCapability.skillLevel,
+            distanceKm,
+            assignmentType: localRegion
+              ? "지역 내 배정" as const
+              : "광역 지원" as const,
+          };
+        })
+        .sort((left, right) => {
+          const assignmentPriority =
+            (left.assignmentType === "지역 내 배정" ? 1 : 0) -
+            (right.assignmentType === "지역 내 배정" ? 1 : 0);
+
+          if (assignmentPriority !== 0) {
+            return -assignmentPriority;
+          }
+
+          if (left.distanceKm !== right.distanceKm) {
+            return left.distanceKm - right.distanceKm;
+          }
+
+          return right.skillLevel - left.skillLevel;
+        })
+        .slice(0, 12);
+    }, [
+      controlAssignmentTree,
+      controlWorkers,
+      dispatchAssignments,
+    ]);
+
+  const selectedTreeRelatedIds =
+    useMemo(
+      () =>
+        selectedTree
+          ? getTreeRelatedIds(selectedTree)
+          : new Set<string>(),
+      [
+        selectedTree,
+        dispatchAssignments,
+      ],
+    );
+
   const selectedTreeFieldPhotos =
-    selectedTree?.sourceReportId
-      ? fieldPhotos.filter(
-        photo =>
-          photo.relatedRecordId ===
-          selectedTree.sourceReportId
-      )
-      : [];
+    useMemo(
+      () =>
+        selectedTree
+          ? fieldPhotos.filter(
+            (photo) =>
+              isRelatedRecordId(
+                selectedTreeRelatedIds,
+                photo.relatedRecordId,
+              ),
+          )
+          : [],
+      [
+        selectedTree,
+        selectedTreeRelatedIds,
+        fieldPhotos,
+      ],
+    );
+
+  const selectedTreeDispatchAssignments =
+    useMemo(
+      () =>
+        selectedTree
+          ? dispatchAssignments.filter(
+            (assignment) =>
+              isRelatedRecordId(
+                selectedTreeRelatedIds,
+                assignment.assignmentId,
+              ) ||
+              isRelatedRecordId(
+                selectedTreeRelatedIds,
+                assignment.gridId,
+              ),
+          )
+          : [],
+      [
+        selectedTree,
+        selectedTreeRelatedIds,
+        dispatchAssignments,
+      ],
+    );
 
   const selectedTreeVoiceLogs =
     useMemo(
       () => {
-        if (
-          !selectedTree
-            ?.sourceReportId
-        ) {
+        if (!selectedTree) {
           return [];
         }
 
         return fieldVoiceLogs.filter(
           log =>
-            log.relatedRecordId ===
-            selectedTree
-              .sourceReportId &&
-            log.sttStatus ===
-            "completed"
+            isRelatedRecordId(
+              selectedTreeRelatedIds,
+              log.relatedRecordId,
+            )
         );
       },
       [
-        selectedTree
-          ?.sourceReportId,
+        selectedTree,
+        selectedTreeRelatedIds,
         fieldVoiceLogs,
       ]
     );
@@ -1026,35 +1734,62 @@ export default function MonitoringSection({
         }
       );
 
+      /*
+       * 방제 업무에서 인증한 자재·약제 QR
+       */
+      selectedTreeDispatchAssignments.forEach(
+        (assignment) => {
+          if (
+            assignment.taskType !== "CONTROL" ||
+            !assignment.chemicalQrCode
+          ) {
+            return;
+          }
+
+          items.push({
+            id:
+              `timeline-chemical-qr-${assignment.assignmentId}`,
+
+            stage:
+              "자재·약제 QR 인증 완료",
+
+            date:
+              assignment.chemicalQrScannedAt ||
+              assignment.completedAt ||
+              assignment.startedAt ||
+              assignment.assignedAt,
+
+            note:
+              `방제 작업에 사용한 자재·약제 QR ` +
+              `(${assignment.chemicalQrCode}) 인증이 완료되었습니다.`,
+
+            actor:
+              assignment.workerName ||
+              "현장관리자",
+          });
+        },
+      );
+
       return items.sort(
         (first, second) => {
           const firstTime =
-            new Date(
-              first.date
-            ).getTime();
+            getTimelineDateInfo(
+              first.date,
+            ).timestamp ?? 0;
 
           const secondTime =
-            new Date(
-              second.date
-            ).getTime();
-
-          const safeFirst =
-            Number.isNaN(firstTime)
-              ? 0
-              : firstTime;
-
-          const safeSecond =
-            Number.isNaN(secondTime)
-              ? 0
-              : secondTime;
+            getTimelineDateInfo(
+              second.date,
+            ).timestamp ?? 0;
 
           return (
-            safeSecond - safeFirst
+            secondTime - firstTime
           );
         }
       );
     }, [
       selectedTree,
+      selectedTreeDispatchAssignments,
       selectedTreeFieldPhotos,
       selectedTreeVoiceLogs,
     ]);
@@ -1251,6 +1986,17 @@ export default function MonitoringSection({
   // 검색 결과
   // =========================================================
 
+  const displayManagementIdByTreeId = useMemo(
+    () => createDisplayManagementIdMap(trees),
+    [trees],
+  );
+
+  const getDisplayManagementId = (
+    treeId: string,
+  ) =>
+    displayManagementIdByTreeId.get(treeId) ??
+    treeId;
+
   const filteredTrees =
     trees.filter((tree) => {
 
@@ -1265,6 +2011,10 @@ export default function MonitoringSection({
 
       return (
         tree.id
+          .toLowerCase()
+          .includes(keyword) ||
+
+        getDisplayManagementId(tree.id)
           .toLowerCase()
           .includes(keyword) ||
 
@@ -1340,7 +2090,7 @@ export default function MonitoringSection({
           .toISOString()
           .split("T")[0],
 
-      status: "예찰의심",
+      status: "배정 대기",
 
       severity,
 
@@ -1612,17 +2362,305 @@ export default function MonitoringSection({
     status: TreeRecord["status"]
   ) => {
 
-    if (status === "확진완료") {
+    if (status === "작업 완료") {
       return "bg-emerald-50 text-emerald-700 border-emerald-200";
     }
 
-    if (status === "방제중") {
+    if (
+      status === "출동" ||
+      status === "현장 도착" ||
+      status === "작업 중"
+    ) {
       return "bg-blue-50 text-blue-700 border-blue-200";
+    }
+
+    if (status === "배정 수락") {
+      return "bg-violet-50 text-violet-700 border-violet-200";
+    }
+
+    if (status === "배정 대기") {
+      return "bg-amber-50 text-amber-700 border-amber-200";
     }
 
     return "bg-slate-50 text-slate-700 border-slate-200";
 
   };
+
+  const getTreeType = (
+    tree: TreeRecord,
+  ) => {
+    const relatedIds =
+      getTreeRelatedIds(tree);
+
+    const relatedAssignments =
+      dispatchAssignments.filter(
+        (assignment) =>
+          isRelatedRecordId(
+            relatedIds,
+            assignment.assignmentId,
+          ) ||
+          isRelatedRecordId(
+            relatedIds,
+            assignment.gridId,
+          ),
+      );
+
+    const surveyMovedToControl =
+      relatedAssignments.some(
+        (assignment) =>
+          assignment.taskType === "SURVEY" &&
+          assignment.status === "작업 완료",
+      );
+
+    const hasControlWork =
+      surveyMovedToControl ||
+      relatedAssignments.some(
+        (assignment) =>
+          assignment.taskType === "CONTROL",
+      ) ||
+      fieldPhotos.some(
+        (photo) =>
+          photo.workMode === "control" &&
+          isRelatedRecordId(
+            relatedIds,
+            photo.relatedRecordId,
+          ),
+      ) ||
+      fieldVoiceLogs.some(
+        (log) =>
+          log.workMode === "control" &&
+          isRelatedRecordId(
+            relatedIds,
+            log.relatedRecordId,
+          ),
+      );
+
+    if (hasControlWork) {
+      return "방제";
+    }
+
+    const hasSurveyWork =
+      relatedAssignments.some(
+        (assignment) =>
+          assignment.taskType === "SURVEY",
+      ) ||
+      fieldPhotos.some(
+        (photo) =>
+          photo.workMode === "surveillance" &&
+          isRelatedRecordId(
+            relatedIds,
+            photo.relatedRecordId,
+          ),
+      ) ||
+      fieldVoiceLogs.some(
+        (log) =>
+          log.workMode === "surveillance" &&
+          isRelatedRecordId(
+            relatedIds,
+            log.relatedRecordId,
+          ),
+      );
+
+    if (hasSurveyWork) {
+      return "예찰";
+    }
+
+    if (tree.imageSource === "thermal") {
+      return "비가시";
+    }
+
+    if (tree.imageSource === "drone-visible") {
+      return "가시";
+    }
+
+    if (tree.imageSource === "citizen") {
+      return "시민신고";
+    }
+
+    const timelineText = tree.timeline
+      .map(
+        (item) =>
+          `${item.stage} ${item.note} ${item.actor}`,
+      )
+      .join(" ");
+
+    if (
+      timelineText.includes("AI 예측") ||
+      timelineText.includes("AI예측") ||
+      tree.inspector.includes("AI 예측") ||
+      tree.inspector.includes("AI예측")
+    ) {
+      return "AI 예측";
+    }
+
+    if (tree.sourceReportId) {
+      return "시민신고";
+    }
+
+    return "수동등록";
+  };
+
+  const getTreeTypeClass = (
+    type: string,
+  ) => {
+    if (type === "시민신고") {
+      return "border-blue-200 bg-blue-50 text-blue-700";
+    }
+
+    if (type === "AI 예측") {
+      return "border-violet-200 bg-violet-50 text-violet-700";
+    }
+
+    if (type === "비가시") {
+      return "border-indigo-200 bg-indigo-50 text-indigo-700";
+    }
+
+    if (type === "가시") {
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    }
+
+    if (type === "예찰") {
+      return "border-cyan-200 bg-cyan-50 text-cyan-700";
+    }
+
+    if (type === "방제") {
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    }
+
+    return "border-slate-200 bg-slate-50 text-slate-600";
+  };
+
+  const handleAssignControlWorker = async (
+    recommendation: ControlWorkerRecommendation,
+  ) => {
+    if (!controlAssignmentTree) {
+      return;
+    }
+
+    const latitude = controlAssignmentTree.latitude;
+    const longitude = controlAssignmentTree.longitude;
+
+    if (
+      typeof latitude !== "number" ||
+      !Number.isFinite(latitude) ||
+      typeof longitude !== "number" ||
+      !Number.isFinite(longitude)
+    ) {
+      setControlAssignmentMessage(
+        "이 확진목에는 위도·경도가 없어 방제 요원을 배정할 수 없습니다.",
+      );
+      return;
+    }
+
+    if (activeControlAssignment) {
+      setControlAssignmentMessage(
+        `이미 ${activeControlAssignment.workerName} 요원이 배정되어 있습니다.`,
+      );
+      return;
+    }
+
+    const { worker, skillLevel, distanceKm, assignmentType } =
+      recommendation;
+    const duplicated = dispatchAssignments.some(
+      (assignment) =>
+        assignment.workerId === worker.workerId &&
+        assignment.gridId === controlAssignmentTree.id &&
+        assignment.status !== "복귀 완료",
+    );
+
+    if (duplicated) {
+      setControlAssignmentMessage(
+        "이미 이 확진목에 배정된 요원입니다.",
+      );
+      return;
+    }
+
+    const severityRiskScore =
+      controlAssignmentTree.severity === "심"
+        ? 90
+        : controlAssignmentTree.severity === "중"
+          ? 70
+          : 50;
+    const priorityGrade =
+      controlAssignmentTree.severity === "심"
+        ? "최우선 방제"
+        : controlAssignmentTree.severity === "중"
+          ? "우선 방제"
+          : "일반 방제";
+    const regionParts = controlAssignmentTree.region
+      .split(/\s+/)
+      .filter(Boolean);
+
+    const assignment: DispatchAssignment = {
+      assignmentId:
+        `DISPATCH-${Date.now()}-${worker.workerId}`,
+      workerId: worker.workerId,
+      workerName: worker.workerName,
+      workerType: "방제요원",
+      taskType: "CONTROL",
+      workerCapabilities: worker.capabilities.map(
+        (capability) => ({
+          taskType: capability.taskType,
+          skillLevel: capability.skillLevel,
+        }),
+      ),
+      assignedSkillLevel: skillLevel,
+      homeSidoName: worker.homeSidoName,
+      homeSigunguCode: worker.homeSigunguCode,
+      homeSigunguName: worker.homeSigunguName,
+      targetSidoName: regionParts[0] ?? "",
+      targetSigunguCode: "",
+      targetSigunguName: regionParts.slice(0, 2).join(" "),
+      targetEmdCode: "",
+      targetEmdName: regionParts.slice(2).join(" "),
+      gridId: controlAssignmentTree.id,
+      targetLatitude: latitude,
+      targetLongitude: longitude,
+      priorityGrade,
+      riskGrade: controlAssignmentTree.severity,
+      riskScore: severityRiskScore,
+      accessScore: 0,
+      distanceKm,
+      travelTimeHour: distanceKm / 35,
+      batteryPercent: worker.batteryPercent,
+      remainingMinutesAtAssignment: worker.remainingMinutes,
+      recommendationReason:
+        `${assignmentType} · 방제 ${skillLevel}단계 · ` +
+        `잔여 ${Math.round(worker.remainingMinutes)}분`,
+      assignmentType,
+      status: "배정 대기",
+      assignedAt: new Date().toISOString(),
+    };
+
+    try {
+      await onUpdateTreeStatus(
+        controlAssignmentTree.id,
+        "배정 대기",
+      );
+      const assignmentSaved = await onAssignWorker(assignment);
+
+      if (!assignmentSaved) {
+        throw new Error(
+          "방제 업무 배정 정보를 저장하지 못했습니다.",
+        );
+      }
+
+      /*
+       * 저장이 완료된 뒤에만 우측 배정 패널을 닫습니다.
+       * 실패하면 패널을 유지해 사용자가 다시 시도할 수 있습니다.
+       */
+      setControlAssignmentMessage("");
+      setControlAssignmentTreeId(null);
+    } catch (error) {
+      console.error("방제 요원 배정 상태 변경 오류:", error);
+      setControlAssignmentMessage(
+        error instanceof Error
+          ? error.message
+          : "방제 요원을 배정하지 못했습니다.",
+      );
+    }
+  };
+
   const getImageSourceLabel = (
     source: TimelineImageSource
   ) => {
@@ -1805,30 +2843,13 @@ export default function MonitoringSection({
 
                   </div>
 
-
-                  {/* AI 드론 분석 */}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsVideoOpen(true);
-                      setIsRegistering(false);
-
-                      setIsImageOpen(false);
-                      setSelectedImage(null);
-                    }}
-                    className="flex h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-black text-emerald-700 transition hover:bg-emerald-100"
-                  >
-                    <Bot size={16} />
-                    AI 드론 분석
-                  </button>
-
-
                   {/* 신규 등록 */}
 
                   <button
                     type="button"
                     onClick={() => {
+                      setControlAssignmentTreeId(null);
+                      setControlAssignmentMessage("");
                       setIsRegistering(true);
                       setIsVideoOpen(false);
 
@@ -1840,60 +2861,6 @@ export default function MonitoringSection({
                     <Plus size={16} />
                     신규 등록
                   </button>
-
-
-                  {/* 선택 삭제 */}
-
-                  {isDeleteMode ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={cancelDeleteMode}
-                        disabled={isDeletingTrees}
-                        className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <X size={15} />
-                        취소
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleDeleteSelectedTrees();
-                        }}
-                        disabled={
-                          selectedDeleteIds.size === 0 ||
-                          isDeletingTrees
-                        }
-                        className="flex h-10 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isDeletingTrees ? (
-                          <LoaderCircle
-                            size={15}
-                            className="animate-spin"
-                          />
-                        ) : (
-                          <Trash2 size={15} />
-                        )}
-
-                        {isDeletingTrees
-                          ? "삭제 중"
-                          : `선택 삭제 (${selectedDeleteIds.size})`}
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsDeleteMode(true);
-                        setSelectedDeleteIds(new Set());
-                      }}
-                      className="flex h-10 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-600 transition hover:bg-rose-100"
-                    >
-                      <Trash2 size={15} />
-                      삭제
-                    </button>
-                  )}
 
                 </div>
 
@@ -1930,6 +2897,10 @@ export default function MonitoringSection({
                     </th>
 
                     <th className="px-5 py-3 text-left text-[11px] font-black text-slate-500">
+                      유형
+                    </th>
+
+                    <th className="px-5 py-3 text-left text-[11px] font-black text-slate-500">
                       발견 지역
                     </th>
 
@@ -1943,6 +2914,10 @@ export default function MonitoringSection({
 
                     <th className="px-5 py-3 text-right text-[11px] font-black text-slate-500">
                       상태
+                    </th>
+
+                    <th className="px-5 py-3 text-right text-[11px] font-black text-slate-500">
+                      배정 요원
                     </th>
 
                   </tr>
@@ -1964,11 +2939,34 @@ export default function MonitoringSection({
                           tree.id
                         );
 
+                      const treeType =
+                        getTreeType(tree);
+
+                      const displayManagementId =
+                        getDisplayManagementId(
+                          tree.id,
+                        );
+
+                      const locationDisplay =
+                        getTreeLocationDisplay(
+                          tree,
+                        );
+
+                      const assignedControlWorker =
+                        dispatchAssignments.find(
+                          (assignment) =>
+                            assignment.taskType === "CONTROL" &&
+                            assignment.gridId === tree.id &&
+                            assignment.status !== "복귀 완료",
+                        ) ?? null;
+
                       return (
 
                         <tr
                           key={tree.id}
                           onClick={() => {
+                            setControlAssignmentTreeId(null);
+                            setControlAssignmentMessage("");
                             setSelectedTreeId(
                               tree.id
                             );
@@ -2000,7 +2998,7 @@ export default function MonitoringSection({
                                   )
                                 }
                                 disabled={isDeletingTrees}
-                                aria-label={`${tree.id} 삭제 선택`}
+                                aria-label={`${displayManagementId} 삭제 선택`}
                                 className="h-4 w-4 cursor-pointer accent-rose-600 disabled:cursor-not-allowed"
                               />
                             </td>
@@ -2015,7 +3013,7 @@ export default function MonitoringSection({
                               )}
 
                               <span className="text-sm font-black text-emerald-700">
-                                {tree.id}
+                                {displayManagementId}
                               </span>
 
                             </div>
@@ -2023,8 +3021,21 @@ export default function MonitoringSection({
                           </td>
 
 
-                          <td className="px-5 py-4 text-xs font-semibold text-slate-700">
-                            {tree.region}
+                          <td className="px-5 py-4">
+                            <span
+                              className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-black ${getTreeTypeClass(
+                                treeType,
+                              )}`}
+                            >
+                              {treeType}
+                            </span>
+                          </td>
+
+
+                          <td className="px-5 py-4">
+                            <div className="text-xs font-bold text-slate-700">
+                              {locationDisplay.coordinateText}
+                            </div>
                           </td>
 
 
@@ -2048,59 +3059,46 @@ export default function MonitoringSection({
 
                           <td className="px-5 py-4 text-right">
 
-                            <select
-                              value={
-                                tree.status
-                              }
-                              onChange={(event) =>
-                                onUpdateTreeStatus(
-                                  tree.id,
-                                  event.target.value as TreeRecord["status"]
-                                )
-                              }
-                              onClick={(event) =>
-                                event.stopPropagation()
-                              }
-                              disabled={isDeletingTrees}
-                              className={`rounded-lg border px-3 py-1.5 text-[10px] font-black outline-none ${getStatusClass(
+                            <span
+                              className={`inline-flex whitespace-nowrap rounded-lg border px-3 py-1.5 text-[10px] font-black ${getStatusClass(
                                 tree.status
                               )}`}
                             >
+                              {tree.status}
+                            </span>
 
-                              <option value="예찰의심">
-                                예찰의심
-                              </option>
+                          </td>
 
-                              <option value="현장확인">
-                                현장확인
-                              </option>
-
-                              <option value="시료검사">
-                                시료검사
-                              </option>
-
-                              <option value="확진완료">
-                                확진완료
-                              </option>
-
-                              <option value="방제대기">
-                                방제대기
-                              </option>
-
-                              <option value="방제중">
-                                방제중
-                              </option>
-
-                              <option value="방제완료">
-                                방제완료
-                              </option>
-
-                              <option value="사후관리">
-                                사후관리
-                              </option>
-
-                            </select>
-
+                          <td
+                            className="px-5 py-4 text-right"
+                            onClick={(event) =>
+                              event.stopPropagation()
+                            }
+                          >
+                            {assignedControlWorker ? (
+                              <span className="inline-flex whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-700">
+                                {assignedControlWorker.workerName}
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedTreeId(tree.id);
+                                  setIsRegistering(false);
+                                  setIsVideoOpen(false);
+                                  setIsImageOpen(false);
+                                  setSelectedImage(null);
+                                  setIsAudioOpen(false);
+                                  setSelectedAudio(null);
+                                  setControlAssignmentMessage("");
+                                  setControlAssignmentTreeId(tree.id);
+                                }}
+                                disabled={isDeletingTrees}
+                                className="inline-flex whitespace-nowrap rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-[10px] font-black text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                요원 배정
+                              </button>
+                            )}
                           </td>
                         </tr>
 
@@ -2116,7 +3114,7 @@ export default function MonitoringSection({
 
                       <td
                         colSpan={
-                          isDeleteMode ? 6 : 5
+                          isDeleteMode ? 8 : 7
                         }
                         className="px-5 py-20 text-center text-xs font-bold text-slate-400"
                       >
@@ -2182,7 +3180,9 @@ export default function MonitoringSection({
                   </div>
 
                   <div className="mt-0.5 text-sm font-black text-emerald-700">
-                    {selectedTree.id}
+                    {getDisplayManagementId(
+                      selectedTree.id,
+                    )}
                   </div>
 
                 </div>
@@ -2301,7 +3301,10 @@ export default function MonitoringSection({
                                 size={12}
                               />
 
-                              {item.date}
+                              {/* ISO와 한국어 날짜 원본을 동일한 표시 형식으로 변환 */}
+                              {formatTimelineDate(
+                                item.date,
+                              )}
 
                             </div>
 
@@ -2330,7 +3333,198 @@ export default function MonitoringSection({
             - AI 드론 영상
         =================================================== */}
 
-        {isRegistering ? (
+        {controlAssignmentTree ? (
+
+          <aside className="flex w-[500px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex h-full min-h-0 flex-col"
+            >
+
+              <div className="flex shrink-0 items-center justify-between bg-emerald-900 px-5 py-4 text-white">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <UserRound size={17} />
+                    <span className="text-[10px] font-black tracking-widest">
+                      CONTROL WORKER ASSIGNMENT
+                    </span>
+                  </div>
+                  <h3 className="mt-1 text-sm font-black">
+                    방제 요원 배정
+                  </h3>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setControlAssignmentTreeId(null);
+                    setControlAssignmentMessage("");
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition hover:bg-white/10 hover:text-white"
+                  aria-label="방제 요원 배정 패널 닫기"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
+                <div className="shrink-0 rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-emerald-600">
+                        방제 대상 확진목
+                      </p>
+                      <p className="mt-1 truncate text-sm font-black text-slate-950">
+                        {controlAssignmentTree.id}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-slate-600">
+                        {controlAssignmentTree.region}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black text-emerald-700 shadow-sm">
+                      배정 대기
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 text-[10px] font-bold text-slate-500">
+                    <MapPin size={13} className="text-emerald-600" />
+                    {typeof controlAssignmentTree.latitude === "number" &&
+                      Number.isFinite(controlAssignmentTree.latitude) &&
+                      typeof controlAssignmentTree.longitude === "number" &&
+                      Number.isFinite(controlAssignmentTree.longitude)
+                      ? `위도 ${controlAssignmentTree.latitude.toFixed(6)}, 경도 ${controlAssignmentTree.longitude.toFixed(6)}`
+                      : "위도·경도 없음 — 요원 배정 불가"}
+                  </div>
+                </div>
+
+                {controlAssignmentMessage && (
+                  <div className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-bold ${activeControlAssignment
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-amber-200 bg-amber-50 text-amber-700"
+                    }`}>
+                    {controlAssignmentMessage}
+                  </div>
+                )}
+
+                {activeControlAssignment && (
+                  <div className="shrink-0 rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400">
+                          현재 배정 요원
+                        </p>
+                        <p className="mt-1 text-sm font-black text-slate-950">
+                          {activeControlAssignment.workerName}
+                          <span className="ml-2 text-[10px] font-bold text-slate-400">
+                            {activeControlAssignment.workerId}
+                          </span>
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-emerald-100 px-3 py-1 text-[10px] font-black text-emerald-700">
+                        {activeControlAssignment.status}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[10px] font-semibold text-slate-500">
+                      {activeControlAssignment.recommendationReason}
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200">
+                  <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+                    <div>
+                      <p className="text-xs font-black text-slate-900">
+                        배정 가능 방제 요원
+                      </p>
+                      <p className="mt-0.5 text-[9px] font-semibold text-slate-400">
+                        방제 역량·가용 상태·거리 순 추천
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black text-emerald-700">
+                      {recommendedControlWorkers.length}명
+                    </span>
+                  </div>
+
+                  <div className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+                    {isControlWorkersLoading ? (
+                      <div className="flex h-full min-h-[160px] flex-col items-center justify-center gap-2 text-xs font-bold text-slate-400">
+                        <LoaderCircle size={22} className="animate-spin text-emerald-600" />
+                        방제 요원을 불러오는 중입니다.
+                      </div>
+                    ) : controlWorkersError ? (
+                      <div className="flex h-full min-h-[160px] items-center justify-center rounded-xl bg-rose-50 px-4 text-center text-xs font-bold text-rose-600">
+                        {controlWorkersError}
+                      </div>
+                    ) : recommendedControlWorkers.length === 0 ? (
+                      <div className="flex h-full min-h-[160px] items-center justify-center rounded-xl bg-slate-50 px-4 text-center text-xs font-bold text-slate-400">
+                        {typeof controlAssignmentTree.latitude !== "number" ||
+                          !Number.isFinite(controlAssignmentTree.latitude) ||
+                          typeof controlAssignmentTree.longitude !== "number" ||
+                          !Number.isFinite(controlAssignmentTree.longitude)
+                          ? "확진목 좌표를 등록한 뒤 요원을 배정해 주세요."
+                          : activeControlAssignment
+                            ? "이 확진목에는 이미 방제 요원이 배정되었습니다."
+                            : "현재 배정 가능한 방제 요원이 없습니다."}
+                      </div>
+                    ) : (
+                      recommendedControlWorkers.map((recommendation) => {
+                        const { worker } = recommendation;
+
+                        return (
+                          <div
+                            key={worker.workerId}
+                            className="rounded-xl border border-slate-200 bg-white p-3 transition hover:border-emerald-200 hover:bg-emerald-50/40"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="truncate text-xs font-black text-slate-900">
+                                    {worker.workerName}
+                                  </p>
+                                  <span className="text-[9px] font-bold text-slate-400">
+                                    {worker.workerId}
+                                  </span>
+                                </div>
+                                <p className="mt-1 truncate text-[10px] font-semibold text-slate-500">
+                                  {worker.homeSidoName} {worker.homeSigunguName}
+                                </p>
+                                <p className="mt-1 text-[9px] font-bold text-emerald-700">
+                                  방제 {recommendation.skillLevel}단계 · {recommendation.assignmentType} · {recommendation.distanceKm.toFixed(1)}km
+                                </p>
+                                <p className="mt-0.5 text-[9px] font-semibold text-slate-400">
+                                  잔여 {Math.round(worker.remainingMinutes)}분
+                                  {worker.batteryPercent == null
+                                    ? ""
+                                    : ` · 배터리 ${Math.round(worker.batteryPercent)}%`}
+                                </p>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleAssignControlWorker(recommendation)
+                                }
+                                disabled={Boolean(activeControlAssignment)}
+                                className="shrink-0 rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-black text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                              >
+                                {activeControlAssignment
+                                  ? "배정 완료"
+                                  : "배정"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </aside>
+
+        ) : isRegistering ? (
 
           <aside className="flex w-[420px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
 
@@ -2915,45 +4109,45 @@ export default function MonitoringSection({
               {/* 드론 AI 판독 정보 */}
               {(selectedImage.source === "thermal" ||
                 selectedImage.source === "drone-visible") && (
-                <div className="space-y-3 rounded-2xl border border-rose-100 bg-rose-50 p-4">
-                  <div className="flex items-center gap-2">
-                    <Bot
-                      size={15}
-                      className="text-rose-600"
-                    />
+                  <div className="space-y-3 rounded-2xl border border-rose-100 bg-rose-50 p-4">
+                    <div className="flex items-center gap-2">
+                      <Bot
+                        size={15}
+                        className="text-rose-600"
+                      />
 
-                    <span className="text-xs font-black text-rose-700">
-                      {selectedImage.source === "thermal"
-                        ? "AI 열화상 판독 결과"
-                        : "AI 실사 비전 판독 결과"}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-white p-3">
-                      <p className="text-[9px] font-bold text-slate-400">
-                        감염 신뢰도
-                      </p>
-
-                      <p className="mt-1 text-lg font-black text-rose-600">
-                        {selectedImage.aiProbability ?? 0}%
-                      </p>
+                      <span className="text-xs font-black text-rose-700">
+                        {selectedImage.source === "thermal"
+                          ? "AI 열화상 판독 결과"
+                          : "AI 실사 비전 판독 결과"}
+                      </span>
                     </div>
 
-                    <div className="rounded-xl bg-white p-3">
-                      <p className="text-[9px] font-bold text-slate-400">
-                        감염 의심목
-                      </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-[9px] font-bold text-slate-400">
+                          감염 신뢰도
+                        </p>
 
-                      <p className="mt-1 text-lg font-black text-slate-900">
-                        {selectedImage.analysisResult
-                          ?.infectedCount ?? 1}
-                        개
-                      </p>
+                        <p className="mt-1 text-lg font-black text-rose-600">
+                          {selectedImage.aiProbability ?? 0}%
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-[9px] font-bold text-slate-400">
+                          감염 의심목
+                        </p>
+
+                        <p className="mt-1 text-lg font-black text-slate-900">
+                          {selectedImage.analysisResult
+                            ?.infectedCount ?? 1}
+                          개
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
               <div className="rounded-xl bg-emerald-50 px-4 py-3 text-[11px] font-bold text-emerald-700">
                 {getImageSourceLabel(
@@ -3169,467 +4363,469 @@ export default function MonitoringSection({
 
 
 
-        /* =================================================
-          AI 드론 열화상 일괄 분석 패널
-        ================================================= */
+          /* =================================================
+            AI 드론 열화상 일괄 분석 패널
+          ================================================= */
 
-        <aside className="flex w-[500px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+          <aside className="flex w-[500px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
 
-          <div className="flex shrink-0 items-center justify-between bg-emerald-900 px-5 py-4 text-white">
-            <div>
-              <div className="flex items-center gap-2">
-                <Bot size={17} />
-                <span className="text-[14px] font-black tracking-widest">
-                  AI 드론 열화상 일괄 분석
-                </span>
-              </div>
-
-              <p className="mt-1 text-[10px] font-semibold text-white/65">
-                열화상 이미지를 여러 장 선택하면 자동 분석합니다.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsVideoOpen(false)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition hover:bg-white/10 hover:text-white"
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          <div className="relative aspect-video shrink-0 overflow-hidden bg-slate-950">
-            {selectedPreviewUrl ? (
-              <div className="relative h-full w-full">
-                <img
-                  src={selectedPreviewUrl}
-                  alt={
-                    selectedThermalInput?.file.name ??
-                    "드론 열화상 이미지"
-                  }
-                  className="h-full w-full object-fill"
-                />
-
-                {selectedResult?.predictions.map(
-                  (prediction, index) => {
-                    const imageWidth =
-                      selectedResult.image?.width ?? 1;
-
-                    const imageHeight =
-                      selectedResult.image?.height ?? 1;
-
-                    const left =
-                      (
-                        (
-                          prediction.x -
-                          prediction.width / 2
-                        ) /
-                        imageWidth
-                      ) * 100;
-
-                    const top =
-                      (
-                        (
-                          prediction.y -
-                          prediction.height / 2
-                        ) /
-                        imageHeight
-                      ) * 100;
-
-                    const width =
-                      (
-                        prediction.width /
-                        imageWidth
-                      ) * 100;
-
-                    const height =
-                      (
-                        prediction.height /
-                        imageHeight
-                      ) * 100;
-
-                    return (
-                      <div
-                        key={`${prediction.x}-${prediction.y}-${index}`}
-                        className="absolute rounded-md border-2 border-yellow-300 bg-yellow-300/10"
-                        style={{
-                          left: `${left}%`,
-                          top: `${top}%`,
-                          width: `${width}%`,
-                          height: `${height}%`,
-                        }}
-                      >
-                        <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-yellow-300 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
-                          #{index + 1}{" "}
-                          {confidencePercent(
-                            prediction.confidence
-                          ).toFixed(1)}
-                          %
-                        </span>
-                      </div>
-                    );
-                  }
-                )}
-
-                {selectedProcess?.status ===
-                  "uploading" && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs font-black text-white">
-                      Supabase Storage 업로드 중...
-                    </div>
-                  )}
-
-                {selectedProcess?.status ===
-                  "analyzing" && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs font-black text-white">
-                      Roboflow AI 분석 중...
-                    </div>
-                  )}
-
-                {selectedThermalInput && (
-                  <div className="absolute right-3 top-3 rounded-xl border border-white/10 bg-black/65 p-2.5 font-mono text-[9px] text-white backdrop-blur-sm">
-                    <div>
-                      ALT {selectedThermalInput.gps.altitude.toFixed(1)}m
-                    </div>
-                    <div>
-                      LAT {selectedThermalInput.gps.latitude.toFixed(6)}
-                    </div>
-                    <div>
-                      LNG {selectedThermalInput.gps.longitude.toFixed(6)}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center text-slate-400">
-                <Thermometer
-                  size={40}
-                  className="mb-3 opacity-70"
-                />
-                <p className="text-xs font-black">
-                  열화상 이미지 묶음을 선택해 주세요.
-                </p>
-                <p className="mt-1 text-[10px] font-semibold">
-                  JPG, PNG, WEBP 다중 선택 지원
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-5">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">
-                    분석 대상 확진목
-                  </div>
-                  <div className="mt-1 truncate text-sm font-black text-slate-950">
-                    {selectedTree.id}
-                  </div>
-                  <div className="mt-1 flex items-center gap-1 truncate text-[10px] font-semibold text-slate-500">
-                    <MapPin size={12} />
-                    {selectedTree.region}
-                  </div>
-                </div>
-
-                <span
-                  className={`shrink-0 rounded-full px-2.5 py-1 text-[9px] font-black ${getSeverityClass(
-                    selectedTree.severity,
-                  )}`}
-                >
-                  심각도 {selectedTree.severity}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-2">
-              <label className="block text-[11px] font-black text-slate-600">
-                비가시 열화상 이미지 일괄 업로드
-              </label>
-
-              <input
-                type="file"
-                multiple
-                accept="image/jpeg,image/png,image/webp"
-                disabled={isBatchAnalyzing}
-                onChange={handleThermalFilesSelect}
-                className="block w-full rounded-xl border border-slate-200 bg-white p-2 text-[11px] text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
-              />
-
-              <p className="text-[9px] font-semibold leading-relaxed text-slate-400">
-                파일 선택 직후 Storage 업로드와 AI 분석이 자동으로 시작됩니다.
-              </p>
-            </div>
-
-            {batchProgress.total > 0 && (
-              <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-white p-3">
-                <div className="flex items-center justify-between text-[10px] font-black">
-                  <span className="text-slate-500">
-                    일괄 분석 진행률
-                  </span>
-                  <span className="font-mono text-emerald-700">
-                    {batchProgress.completed}/
-                    {batchProgress.total}
+            <div className="flex shrink-0 items-center justify-between bg-emerald-900 px-5 py-4 text-white">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Bot size={17} />
+                  <span className="text-[14px] font-black tracking-widest">
+                    AI 드론 열화상 일괄 분석
                   </span>
                 </div>
 
-                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full bg-emerald-600 transition-all duration-300"
-                    style={{
-                      width: `${progressPercent}%`,
-                    }}
+                <p className="mt-1 text-[10px] font-semibold text-white/65">
+                  열화상 이미지를 여러 장 선택하면 자동 분석합니다.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsVideoOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition hover:bg-white/10 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="relative aspect-video shrink-0 overflow-hidden bg-slate-950">
+              {selectedPreviewUrl ? (
+                <div className="relative h-full w-full">
+                  <img
+                    src={selectedPreviewUrl}
+                    alt={
+                      selectedThermalInput?.file.name ??
+                      "드론 열화상 이미지"
+                    }
+                    className="h-full w-full object-fill"
                   />
-                </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-lg bg-slate-50 p-2.5">
-                    <p className="text-[9px] font-black text-slate-400">
-                      업로드 이미지
-                    </p>
-                    <p className="mt-1 text-lg font-black text-slate-900">
-                      {thermalInputs.length}장
-                    </p>
-                  </div>
+                  {selectedResult?.predictions.map(
+                    (prediction, index) => {
+                      const imageWidth =
+                        selectedResult.image?.width ?? 1;
 
-                  <div className="rounded-lg bg-slate-50 p-2.5">
-                    <p className="text-[9px] font-black text-slate-400">
-                      감염 의심목 합계
-                    </p>
-                    <p className="mt-1 text-lg font-black text-rose-600">
-                      {totalInfectedCount}개
-                    </p>
-                  </div>
-                </div>
+                      const imageHeight =
+                        selectedResult.image?.height ?? 1;
 
-                {isBatchAnalyzing && (
-                  <p className="text-center text-[9px] font-black text-amber-600">
-                    이미지를 한 장씩 순차 분석하고 있습니다.
-                  </p>
-                )}
-              </div>
-            )}
+                      const left =
+                        (
+                          (
+                            prediction.x -
+                            prediction.width / 2
+                          ) /
+                          imageWidth
+                        ) * 100;
 
-            {batchError && (
-              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[10px] font-bold leading-relaxed text-rose-700">
-                분석 오류: {batchError}
-              </div>
-            )}
+                      const top =
+                        (
+                          (
+                            prediction.y -
+                            prediction.height / 2
+                          ) /
+                          imageHeight
+                        ) * 100;
 
-            {thermalInputs.length > 0 && (
-              <div className="mt-4 space-y-2">
-                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  파일별 분석 결과
-                </div>
+                      const width =
+                        (
+                          prediction.width /
+                          imageWidth
+                        ) * 100;
 
-                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                  {thermalInputs.map((item, index) => {
-                    const process =
-                      thermalProcessById[item.id];
-                    const result = process?.result;
+                      const height =
+                        (
+                          prediction.height /
+                          imageHeight
+                        ) * 100;
 
-                    let statusText = "대기";
-                    let statusClass =
-                      "bg-slate-100 text-slate-600";
-
-                    if (process?.status === "uploading") {
-                      statusText = "업로드 중";
-                      statusClass =
-                        "bg-sky-100 text-sky-700";
-                    }
-
-                    if (process?.status === "analyzing") {
-                      statusText = "AI 분석 중";
-                      statusClass =
-                        "bg-amber-100 text-amber-700";
-                    }
-
-                    if (process?.status === "completed") {
-                      if (result?.status === "INFECTED") {
-                        statusText =
-                          `감염 ${result.infectedCount}개`;
-                        statusClass =
-                          "bg-rose-100 text-rose-700";
-                      } else {
-                        statusText = "정상";
-                        statusClass =
-                          "bg-emerald-100 text-emerald-700";
-                      }
-                    }
-
-                    if (process?.status === "error") {
-                      statusText = "오류";
-                      statusClass =
-                        "bg-rose-100 text-rose-700";
-                    }
-
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() =>
-                          setSelectedThermalId(item.id)
-                        }
-                        className={`w-full rounded-xl border p-3 text-left transition ${selectedThermalId === item.id
-                          ? "border-emerald-300 bg-emerald-50"
-                          : "border-slate-200 bg-white hover:bg-slate-50"
-                          }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-[10px] font-black text-slate-800">
-                              {index + 1}. {item.file.name}
-                            </p>
-                            <p className="mt-1 text-[9px] font-mono text-slate-400">
-                              {(item.file.size /
-                                1024 /
-                                1024).toFixed(2)}{" "}
-                              MB
-                            </p>
-                          </div>
-
-                          <span
-                            className={`shrink-0 rounded px-2 py-0.5 text-[9px] font-black ${statusClass}`}
-                          >
-                            {statusText}
-                          </span>
-                        </div>
-
-                        <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-2 text-[9px]">
-                          <div>
-                            <p className="font-bold text-slate-400">
-                              위도
-                            </p>
-                            <p className="mt-0.5 font-mono font-bold text-slate-700">
-                              {item.gps.latitude.toFixed(6)}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="font-bold text-slate-400">
-                              경도
-                            </p>
-                            <p className="mt-0.5 font-mono font-bold text-slate-700">
-                              {item.gps.longitude.toFixed(6)}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="font-bold text-slate-400">
-                              촬영 고도
-                            </p>
-                            <p className="mt-0.5 font-mono font-bold text-slate-700">
-                              {item.gps.altitude.toFixed(1)} m
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="font-bold text-slate-400">
-                              촬영 시각
-                            </p>
-                            <p className="mt-0.5 font-medium text-slate-700">
-                              {new Date(
-                                item.gps.capturedAt,
-                              ).toLocaleTimeString("ko-KR")}
-                            </p>
-                          </div>
-                        </div>
-
-                        {process?.error && (
-                          <p className="mt-2 text-[9px] font-bold leading-relaxed text-rose-600">
-                            {process.error}
-                          </p>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {selectedResult && (
-              <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-slate-600">
-                    선택 이미지 분석
-                  </span>
-
-                  <span
-                    className={`rounded px-2 py-1 text-[9px] font-black ${selectedResult.status === "INFECTED"
-                      ? "bg-rose-100 text-rose-700"
-                      : "bg-emerald-100 text-emerald-700"
-                      }`}
-                  >
-                    {selectedResult.status}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <p className="text-[9px] font-black text-slate-400">
-                      감염 의심목
-                    </p>
-                    <p className="mt-1 text-xl font-black text-slate-900">
-                      {selectedResult.infectedCount}개
-                    </p>
-                  </div>
-
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <p className="text-[9px] font-black text-slate-400">
-                      최고 신뢰도
-                    </p>
-                    <p className="mt-1 text-xl font-black text-rose-600">
-                      {selectedResult.predictions.length > 0
-                        ? Math.max(
-                          ...selectedResult.predictions.map(
-                            (prediction) =>
-                              confidencePercent(
-                                prediction.confidence,
-                              ),
-                          ),
-                        ).toFixed(1)
-                        : "0.0"}
-                      %
-                    </p>
-                  </div>
-                </div>
-
-                {selectedResult.status === "NORMAL" ? (
-                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-[10px] font-bold text-emerald-700">
-                    열 이상 의심목이 탐지되지 않았습니다.
-                  </div>
-                ) : (
-                  <div className="max-h-40 space-y-2 overflow-y-auto">
-                    {selectedResult.predictions.map(
-                      (prediction, index) => (
+                      return (
                         <div
                           key={`${prediction.x}-${prediction.y}-${index}`}
-                          className="rounded-lg border border-slate-100 bg-slate-50 p-2.5 text-[10px]"
+                          className="absolute rounded-md border-2 border-yellow-300 bg-yellow-300/10"
+                          style={{
+                            left: `${left}%`,
+                            top: `${top}%`,
+                            width: `${width}%`,
+                            height: `${height}%`,
+                          }}
                         >
-                          <div className="flex justify-between font-black text-slate-800">
-                            <span>
-                              감염 의심목 #{index + 1}
-                            </span>
-                            <span className="text-rose-600">
-                              {confidencePercent(
-                                prediction.confidence,
-                              ).toFixed(1)}
-                              %
+                          <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-yellow-300 px-1.5 py-0.5 text-[9px] font-black text-slate-950">
+                            #{index + 1}{" "}
+                            {confidencePercent(
+                              prediction.confidence
+                            ).toFixed(1)}
+                            %
+                          </span>
+                        </div>
+                      );
+                    }
+                  )}
+
+                  {selectedProcess?.status ===
+                    "uploading" && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs font-black text-white">
+                        Supabase Storage 업로드 중...
+                      </div>
+                    )}
+
+                  {selectedProcess?.status ===
+                    "analyzing" && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs font-black text-white">
+                        Roboflow AI 분석 중...
+                      </div>
+                    )}
+
+                  {selectedThermalInput && (
+                    <div className="absolute right-3 top-3 rounded-xl border border-white/10 bg-black/65 p-2.5 font-mono text-[9px] text-white backdrop-blur-sm">
+                      <div>
+                        ALT {selectedThermalInput.gps.altitude.toFixed(1)}m
+                      </div>
+                      <div>
+                        LAT {selectedThermalInput.gps.latitude.toFixed(6)}
+                      </div>
+                      <div>
+                        LNG {selectedThermalInput.gps.longitude.toFixed(6)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center text-slate-400">
+                  <Thermometer
+                    size={40}
+                    className="mb-3 opacity-70"
+                  />
+                  <p className="text-xs font-black">
+                    열화상 이미지 묶음을 선택해 주세요.
+                  </p>
+                  <p className="mt-1 text-[10px] font-semibold">
+                    JPG, PNG, WEBP 다중 선택 지원
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                      분석 대상 확진목
+                    </div>
+                    <div className="mt-1 truncate text-sm font-black text-slate-950">
+                      {getDisplayManagementId(
+                        selectedTree.id,
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center gap-1 truncate text-[10px] font-semibold text-slate-500">
+                      <MapPin size={12} />
+                      {selectedTree.region}
+                    </div>
+                  </div>
+
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-[9px] font-black ${getSeverityClass(
+                      selectedTree.severity,
+                    )}`}
+                  >
+                    심각도 {selectedTree.severity}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <label className="block text-[11px] font-black text-slate-600">
+                  비가시 열화상 이미지 일괄 업로드
+                </label>
+
+                <input
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp"
+                  disabled={isBatchAnalyzing}
+                  onChange={handleThermalFilesSelect}
+                  className="block w-full rounded-xl border border-slate-200 bg-white p-2 text-[11px] text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+
+                <p className="text-[9px] font-semibold leading-relaxed text-slate-400">
+                  파일 선택 직후 Storage 업로드와 AI 분석이 자동으로 시작됩니다.
+                </p>
+              </div>
+
+              {batchProgress.total > 0 && (
+                <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+                  <div className="flex items-center justify-between text-[10px] font-black">
+                    <span className="text-slate-500">
+                      일괄 분석 진행률
+                    </span>
+                    <span className="font-mono text-emerald-700">
+                      {batchProgress.completed}/
+                      {batchProgress.total}
+                    </span>
+                  </div>
+
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-emerald-600 transition-all duration-300"
+                      style={{
+                        width: `${progressPercent}%`,
+                      }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-slate-50 p-2.5">
+                      <p className="text-[9px] font-black text-slate-400">
+                        업로드 이미지
+                      </p>
+                      <p className="mt-1 text-lg font-black text-slate-900">
+                        {thermalInputs.length}장
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg bg-slate-50 p-2.5">
+                      <p className="text-[9px] font-black text-slate-400">
+                        감염 의심목 합계
+                      </p>
+                      <p className="mt-1 text-lg font-black text-rose-600">
+                        {totalInfectedCount}개
+                      </p>
+                    </div>
+                  </div>
+
+                  {isBatchAnalyzing && (
+                    <p className="text-center text-[9px] font-black text-amber-600">
+                      이미지를 한 장씩 순차 분석하고 있습니다.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {batchError && (
+                <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-[10px] font-bold leading-relaxed text-rose-700">
+                  분석 오류: {batchError}
+                </div>
+              )}
+
+              {thermalInputs.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    파일별 분석 결과
+                  </div>
+
+                  <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                    {thermalInputs.map((item, index) => {
+                      const process =
+                        thermalProcessById[item.id];
+                      const result = process?.result;
+
+                      let statusText = "대기";
+                      let statusClass =
+                        "bg-slate-100 text-slate-600";
+
+                      if (process?.status === "uploading") {
+                        statusText = "업로드 중";
+                        statusClass =
+                          "bg-sky-100 text-sky-700";
+                      }
+
+                      if (process?.status === "analyzing") {
+                        statusText = "AI 분석 중";
+                        statusClass =
+                          "bg-amber-100 text-amber-700";
+                      }
+
+                      if (process?.status === "completed") {
+                        if (result?.status === "INFECTED") {
+                          statusText =
+                            `감염 ${result.infectedCount}개`;
+                          statusClass =
+                            "bg-rose-100 text-rose-700";
+                        } else {
+                          statusText = "정상";
+                          statusClass =
+                            "bg-emerald-100 text-emerald-700";
+                        }
+                      }
+
+                      if (process?.status === "error") {
+                        statusText = "오류";
+                        statusClass =
+                          "bg-rose-100 text-rose-700";
+                      }
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedThermalId(item.id)
+                          }
+                          className={`w-full rounded-xl border p-3 text-left transition ${selectedThermalId === item.id
+                            ? "border-emerald-300 bg-emerald-50"
+                            : "border-slate-200 bg-white hover:bg-slate-50"
+                            }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-[10px] font-black text-slate-800">
+                                {index + 1}. {item.file.name}
+                              </p>
+                              <p className="mt-1 text-[9px] font-mono text-slate-400">
+                                {(item.file.size /
+                                  1024 /
+                                  1024).toFixed(2)}{" "}
+                                MB
+                              </p>
+                            </div>
+
+                            <span
+                              className={`shrink-0 rounded px-2 py-0.5 text-[9px] font-black ${statusClass}`}
+                            >
+                              {statusText}
                             </span>
                           </div>
 
-                          <div className="mt-1 font-mono text-slate-500">
-                            중심 픽셀: ({prediction.x.toFixed(1)}, {" "}
-                            {prediction.y.toFixed(1)})
+                          <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-2 text-[9px]">
+                            <div>
+                              <p className="font-bold text-slate-400">
+                                위도
+                              </p>
+                              <p className="mt-0.5 font-mono font-bold text-slate-700">
+                                {item.gps.latitude.toFixed(6)}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="font-bold text-slate-400">
+                                경도
+                              </p>
+                              <p className="mt-0.5 font-mono font-bold text-slate-700">
+                                {item.gps.longitude.toFixed(6)}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="font-bold text-slate-400">
+                                촬영 고도
+                              </p>
+                              <p className="mt-0.5 font-mono font-bold text-slate-700">
+                                {item.gps.altitude.toFixed(1)} m
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="font-bold text-slate-400">
+                                촬영 시각
+                              </p>
+                              <p className="mt-0.5 font-medium text-slate-700">
+                                {new Date(
+                                  item.gps.capturedAt,
+                                ).toLocaleTimeString("ko-KR")}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ),
-                    )}
+
+                          {process?.error && (
+                            <p className="mt-2 text-[9px] font-bold leading-relaxed text-rose-600">
+                              {process.error}
+                            </p>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-        </aside>
+                </div>
+              )}
+
+              {selectedResult && (
+                <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-slate-600">
+                      선택 이미지 분석
+                    </span>
+
+                    <span
+                      className={`rounded px-2 py-1 text-[9px] font-black ${selectedResult.status === "INFECTED"
+                        ? "bg-rose-100 text-rose-700"
+                        : "bg-emerald-100 text-emerald-700"
+                        }`}
+                    >
+                      {selectedResult.status}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-slate-50 p-3">
+                      <p className="text-[9px] font-black text-slate-400">
+                        감염 의심목
+                      </p>
+                      <p className="mt-1 text-xl font-black text-slate-900">
+                        {selectedResult.infectedCount}개
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg bg-slate-50 p-3">
+                      <p className="text-[9px] font-black text-slate-400">
+                        최고 신뢰도
+                      </p>
+                      <p className="mt-1 text-xl font-black text-rose-600">
+                        {selectedResult.predictions.length > 0
+                          ? Math.max(
+                            ...selectedResult.predictions.map(
+                              (prediction) =>
+                                confidencePercent(
+                                  prediction.confidence,
+                                ),
+                            ),
+                          ).toFixed(1)
+                          : "0.0"}
+                        %
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedResult.status === "NORMAL" ? (
+                    <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-[10px] font-bold text-emerald-700">
+                      열 이상 의심목이 탐지되지 않았습니다.
+                    </div>
+                  ) : (
+                    <div className="max-h-40 space-y-2 overflow-y-auto">
+                      {selectedResult.predictions.map(
+                        (prediction, index) => (
+                          <div
+                            key={`${prediction.x}-${prediction.y}-${index}`}
+                            className="rounded-lg border border-slate-100 bg-slate-50 p-2.5 text-[10px]"
+                          >
+                            <div className="flex justify-between font-black text-slate-800">
+                              <span>
+                                감염 의심목 #{index + 1}
+                              </span>
+                              <span className="text-rose-600">
+                                {confidencePercent(
+                                  prediction.confidence,
+                                ).toFixed(1)}
+                                %
+                              </span>
+                            </div>
+
+                            <div className="mt-1 font-mono text-slate-500">
+                              중심 픽셀: ({prediction.x.toFixed(1)}, {" "}
+                              {prediction.y.toFixed(1)})
+                            </div>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </aside>
 
         ) : null}
 

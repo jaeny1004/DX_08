@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Download,
   FilePlus2,
+  FileText,
   Loader2,
   Send,
 } from "lucide-react";
@@ -230,7 +231,10 @@ export default function NewReportGenerator({ onRegistered }: NewReportGeneratorP
       <section className="flex min-h-[720px] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:col-span-7">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
           <div>
-            <h3 className="text-lg font-extrabold text-slate-900">{draft?.title || "신규 문서 초안 미리보기"}</h3>
+            <h3 className="flex items-center gap-2 text-lg font-extrabold text-slate-900">
+            <FileText size={19} className="text-emerald-800" />
+            신규 문서 초안 미리보기
+          </h3>
             <p className="mt-1 text-xs text-slate-500">
               {draft ? `${draft.sido_name} ${draft.sigungu_name} · 중심 격자 ${draft.center_grid_ids[0]}` : "신규 초안을 생성하면 행정양식 PDF가 즉시 표시됩니다."}
             </p>

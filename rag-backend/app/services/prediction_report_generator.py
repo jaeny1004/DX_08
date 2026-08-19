@@ -8,6 +8,7 @@ import re
 import time
 import zipfile
 from dataclasses import dataclass
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,42 @@ class ReportSourceData:
     infection_positions: list[dict[str, Any]]
     stats: dict[str, Any]
     stats_year: int
+
+
+def normalize_report_period(
+    year: int,
+    start_date: str | None,
+    end_date: str | None,
+) -> tuple[str, str]:
+    """요청 기간을 검증하고 PDF/DOCX에서 공통으로 쓸 ISO 날짜를 반환한다."""
+    start_text = str(start_date or "").strip()
+    end_text = str(end_date or "").strip()
+
+    if bool(start_text) != bool(end_text):
+        raise ValueError("시작일과 종료일을 모두 입력해야 합니다.")
+
+    # 기존 배치 생성 호출과의 호환용 기본값. 웹 초안 생성은 서비스 계층에서
+    # 시작일/종료일을 필수로 검증한 뒤 항상 명시적으로 전달한다.
+    if not start_text:
+        return f"{year}-01-01", f"{year}-12-31"
+
+    try:
+        start_value = date.fromisoformat(start_text)
+        end_value = date.fromisoformat(end_text)
+    except ValueError as exc:
+        raise ValueError(
+            "시작일과 종료일은 YYYY-MM-DD 형식이어야 합니다."
+        ) from exc
+
+    if end_value < start_value:
+        raise ValueError("종료일은 시작일보다 빠를 수 없습니다.")
+
+    return start_value.isoformat(), end_value.isoformat()
+
+
+def dotted_date(value: str) -> str:
+    parsed = date.fromisoformat(value)
+    return f"{parsed.year}. {parsed.month:02d}. {parsed.day:02d}."
 
 
 def sanitize_filename(value: str) -> str:
@@ -1528,6 +1565,8 @@ def create_docx(
     appendix_directory: Path,
     record: ReportRecord,
     metrics: dict[str, Any],
+    start_date: str,
+    end_date: str,
 ) -> None:
     document = Document(template_path)
     region = f"{record.sido_name} {record.sigungu_name}"
@@ -1540,10 +1579,10 @@ def create_docx(
     while len(adjacent_ids) < 4:
         adjacent_ids.append(record.center_grid_id)
     replacements = {
-        "[작성일]": f"{record.year}. 12. {10 + (record.report_no % 18):02d}.",
-        "-지역, 기간-": f"-{region}, {record.year}년-",
+        "[작성일]": dotted_date(end_date),
+        "-지역, 기간-": f"-{region}, {start_date} ~ {end_date}-",
         "[지역]": region,
-        "[기간]": f"{record.year}년",
+        "[기간]": f"{start_date} ~ {end_date}",
         "[격자 ID]": str(record.center_grid_id),
         "[단계 수]": "5",
         "[단계]": str(metrics["risk_stage"]),
@@ -1560,7 +1599,7 @@ def create_docx(
         "[인접 격자 3]": str(adjacent_ids[2]),
         "[인접 격자 4]": str(adjacent_ids[3]),
         "[대응 단계명]": "우선 예찰 검토",
-        "[일자]": f"{record.year}. 12. {11 + (record.report_no % 18):02d}.",
+        "[일자]": dotted_date(end_date),
         "[대상 격자]": ", ".join(map(str, grid_ids)),
     }
     replace_everywhere(document, replacements)
@@ -1688,6 +1727,8 @@ def build_prediction_render_payload(
     metrics: dict[str, Any],
     source: ReportSourceData,
     map_path: Path,
+    start_date: str,
+    end_date: str,
 ) -> dict[str, Any]:
     center_point = source.static.get("center_point_4326") or {}
     coordinates = center_point.get("coordinates") or [None, None]
@@ -1699,7 +1740,6 @@ def build_prediction_render_payload(
         for grid_id in block_grid_ids
         if grid_id != record.center_grid_id
     ][:4]
-    end_day = 10 + (record.report_no % 18)
     center_grid = {
         "grid_id": record.center_grid_id,
         "sido_name": record.sido_name,
@@ -1738,8 +1778,8 @@ def build_prediction_render_payload(
             f"{record.year}년 {record.sigungu_name} "
             "신규 확산위험 분석 보고서"
         ),
-        "start_date": f"{record.year}-01-01",
-        "end_date": f"{record.year}-12-{end_day:02d}",
+        "start_date": start_date,
+        "end_date": end_date,
         "sido_name": record.sido_name,
         "sigungu_name": record.sigungu_name,
         "center_grid_id": record.center_grid_id,
@@ -1767,9 +1807,17 @@ def generate_single_prediction_report(
     zoom: int | None = None,
     candidate_metrics: dict[str, Any] | None = None,
     client: Any | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict[str, Any]:
     if year < 2016 or year > 2100:
         raise ValueError("보고서 연도는 2016~2100 범위여야 합니다.")
+
+    normalized_start_date, normalized_end_date = normalize_report_period(
+        year,
+        start_date,
+        end_date,
+    )
 
     load_dotenv(BACKEND_ROOT / ".env")
     api_key = os.getenv("VWORLD_API_KEY", "").strip()
@@ -1846,12 +1894,16 @@ def generate_single_prediction_report(
         appendix_directory=appendix_directory,
         record=record,
         metrics=metrics,
+        start_date=normalized_start_date,
+        end_date=normalized_end_date,
     )
     render_payload = build_prediction_render_payload(
         record=record,
         metrics=metrics,
         source=source,
         map_path=map_path,
+        start_date=normalized_start_date,
+        end_date=normalized_end_date,
     )
     from app.services.report_render.renderer import render_report_pdf
 
@@ -1868,6 +1920,8 @@ def generate_single_prediction_report(
     return {
         "center_grid_id": record.center_grid_id,
         "year": record.year,
+        "start_date": normalized_start_date,
+        "end_date": normalized_end_date,
         "sido_name": record.sido_name,
         "sigungu_name": record.sigungu_name,
         "annual_count": record.annual_count,
