@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
 import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL as string;
 
@@ -60,7 +60,8 @@ import {
   FileUpIcon,
   ShieldOffIcon,
   ShieldHalfIcon,
-  Camera
+  Camera,
+  Download // lucide-react에서 Download 아이콘 추가 임포트
 } from "lucide-react";
 
 import Dashboard from "./components/Dashboard";
@@ -74,6 +75,9 @@ import SpreadSimulationCA from "./components/SpreadSimulationCA";
 import AdminSection from "./components/AdminSection";
 import Chatbot from "./components/Chatbot";
 import AuthScreen from "./components/auth/AuthScreen";
+
+// 신규 DownloadPage 컴포넌트 임포트
+import DownloadPage from "./DownloadPage";
 
 import {
   getAccessToken,
@@ -663,6 +667,7 @@ function mapPineRecordToCrowdReport(
   };
 }
 
+// ModuleId 타입정의에 'download' 모듈 추가
 type ModuleId =
   | "dashboard"
   | "monitoring"
@@ -673,7 +678,8 @@ type ModuleId =
   | "control-status"
   | "control-work"
   | "admin-report"
-  | "admin-species";
+  | "admin-species"
+  | "download";
 
 const LIVE_ALERT_GROUPS = [
   [
@@ -2274,10 +2280,10 @@ export default function App() {
         : 0;
 
     const confirmedTreeRegion =
-  Number.isFinite(Number(latitude)) &&
-  Number.isFinite(Number(longitude))
-    ? `위도 ${Number(latitude).toFixed(6)}, 경도 ${Number(longitude).toFixed(6)}`
-    : "위치 정보 미확인";
+      Number.isFinite(Number(latitude)) &&
+        Number.isFinite(Number(longitude))
+        ? `위도 ${Number(latitude).toFixed(6)}, 경도 ${Number(longitude).toFixed(6)}`
+        : "위치 정보 미확인";
 
     /*
      * 해당 예찰 배정에서 가장 최근에 촬영한 사진을 찾습니다.
@@ -2393,6 +2399,11 @@ export default function App() {
 
         image_url:
           imageUrl,
+
+        image_source:
+          relatedPhoto
+            ? "manual"
+            : null,
 
         image_source:
           relatedPhoto
@@ -3482,6 +3493,7 @@ export default function App() {
                   activeModule === "admin-species") && (
                     <div className="h-full overflow-y-auto pr-1">
                       <AdminSection
+                        title={activeModuleLabel} // 필수 프로퍼티인 title에 현재 활성 모듈의 라벨을 전달합니다.
                         view={
                           activeModule ===
                             "admin-species"
