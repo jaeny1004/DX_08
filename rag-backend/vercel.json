@@ -7,6 +7,10 @@
   },
   "rewrites": [
     {
+      "source": "/download",
+      "destination": "/index.html"
+    },
+    {
       "source": "/((?!api/|app/).*)",
       "destination": "/index.html"
     }
