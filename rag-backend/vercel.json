@@ -4,15 +4,5 @@
     "app/main.py": {
       "excludeFiles": "{data/docs/**,data/docs_text_cache/**,data/chroma/**,data/*.db,data/final_ui_candidate_v4_before_admin.geojson,data/final_ui_candidate_v4_with_admin.geojson,scripts/**,**/__pycache__/**,**/*.pyc}"
     }
-  },
-  "rewrites": [
-    {
-      "source": "/download",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/((?!api/|app/).*)",
-      "destination": "/index.html"
-    }
-  ]
+  }
 }
